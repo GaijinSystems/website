@@ -43,6 +43,11 @@
                                       style absolute paths also work. Names
                                       starting with a dot are hidden (ls -a).
     == dir: NAME ==                   an empty folder (same path rules)
+    == man: NAME ==                   the manual page for NAME (man NAME): the
+                                      DESCRIPTION part. Replaces a built-in
+                                      page, fills in a custom command's page
+                                      (otherwise made from its help text), or
+                                      adds a page for anything else.
     == aliases ==                     one per line:  new words = real command
                                       e.g.  ll = ls -l   or  cl = clear ; ls
                                       (the alias command lists them;
@@ -157,6 +162,7 @@ please do not unplug me.
 == file: .trash/.deeper/note ==
 you found the bottom of the trash.
 there is nothing else down here.
+~ unless you know the magic word.
 ~ go back up: cd ..
 
 == file: .old/readme.v8 ==
@@ -281,10 +287,8 @@ body{
   66%{opacity:.55}74%{opacity:1}79%{opacity:.45}88%{opacity:.85}95%{opacity:.6}
 }
 .band{position:absolute;left:-4%;right:-4%;z-index:2;pointer-events:none;mix-blend-mode:screen}
-.band.b1{height:90px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.085) 50%,rgba(61,255,126,0));animation:down 27s linear infinite}
-.band.b2{height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:up 19s linear infinite}
-@keyframes down{0%{top:-90px;transform:skewY(-1.2deg)}50%{transform:skewY(1.2deg)}100%{top:100%;transform:skewY(-1.2deg)}}
-@keyframes up{0%{top:100%}100%{top:-150px}}
+.band.b2{height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:down 19s linear infinite}
+@keyframes down{0%{top:-150px}100%{top:100%}}
 .scan{z-index:3;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.38) 2px,rgba(0,0,0,.38) 3px)}
 .vig{z-index:4;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 58%,rgba(0,0,0,.35) 80%,rgba(0,0,0,.8) 100%)}
 
@@ -327,7 +331,6 @@ body{
         <div id="term"><div id="out"></div></div>
         <div id="glow" aria-hidden="true"></div>
         <div class="fx flicker"></div>
-        <div class="band b1"></div>
         <div class="band b2"></div>
         <div class="fx scan"></div>
         <div class="fx vig"></div>
@@ -345,7 +348,7 @@ body{
 /* ---------- content (parsed from the block at the top of the file) ---------- */
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],
-    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],commands:[],files:[],dirs:[],aliases:[]};
+    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],commands:[],files:[],dirs:[],man:{},aliases:[]};
   var el=document.getElementById('content'),src=el?el.textContent:'',cur=null,secs=[];
   src.replace(/\r/g,'').split('\n').forEach(function(raw){
     if(/^\s*#/.test(raw))return;
@@ -393,6 +396,7 @@ var PROFILE=(function(){
       P.files.push({name:fn,body:body});
     }
     else if((m=hd.match(/^dir(?:ectory)?\s*:\s*(\S+)$/i)))P.dirs.push(m[1].toLowerCase());
+    else if((m=hd.match(/^man\s*:\s*(\S+)$/i)))P.man[m[1].toLowerCase()]=body;
   });
   if(!P.welcome)P.welcome=[up('welcome to '+P.name.toLowerCase()+'.'),[up('type help and press return.'),'dim']];
   return P;
@@ -459,8 +463,9 @@ function trim(){while(out.childElementCount>240)out.firstElementChild.remove()}
 /* ---------- typing engine ---------- */
 function UP(t){return PROFILE.upper?String(t).toUpperCase():t}
 function typeLine(text,cls,cb,opt){
-  opt=opt||{};text=UP(text);
+  opt=opt||{};
   return queue(function(){return new Promise(function(res){
+    text=UP(typeof text==='function'?text():text); /* a function = text worked out when its turn comes (ping) */
     var d=document.createElement('div'),host=d;
     d.className='line'+(cls?' '+cls:'');
     if(opt.href){host=document.createElement('a');host.href=opt.href;
@@ -494,6 +499,8 @@ function prompt(p,mode){
 /* ---------- shell (Version 7 Unix, 1979) ---------- */
 var OWNER=PROFILE.name.split(/\s+/)[0].replace(/[^a-z0-9]/gi,'').slice(0,8).toLowerCase()||'operator';
 var USER='guest',HOME='/usr/guest',CWD=HOME;
+var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
+var HOSTNAME=(SITE.replace(/^www\./,'').split('.')[0]||OWNER).replace(/[^a-z0-9-]/g,'').slice(0,8)||'phosphor';
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
 function in79(n){return new Date(1979,n.getMonth(),n.getDate(),n.getHours(),n.getMinutes(),n.getSeconds())}
@@ -572,7 +579,7 @@ function longRow(name,n){
 (function(){ /* build the tree */
   function sys(p,type,o){var x={owner:'root',date:SD};if(o)for(var k in o)x[k]=o[k];return put(p,type,x)}
   sys('/bin','d',{owner:'bin'});
-  ['cat','date','echo','ls','mail','pwd','rm','su','who'].forEach(function(b){
+  ['cat','date','echo','hostname','ls','mail','ps','pwd','rm','su','uptime','who'].forEach(function(b){
     var h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
     sys('/bin/'+b,'f',{owner:'bin',bin:true,size:2048+h});
   });
@@ -583,6 +590,14 @@ function longRow(name,n){
   sys('/dev/mem','c',{mode:'cr--r-----',dev:[3,0],prot:true});
   sys('/dev/kmem','c',{mode:'cr--r-----',dev:[3,1],prot:true});
   sys('/etc','d');
+  sys('/etc/dmesg','f',{bin:true,size:3712});
+  sys('/etc/ifconfig','f',{bin:true,size:5390});
+  sys('/etc/ping','f',{bin:true,size:6144});
+  sys('/etc/hosts','f',{body:function(){
+    var L=['127.0.0.1    localhost '+HOSTNAME];
+    if(SITE)L.push('             '+SITE+'   (somewhere out there)');
+    return L;
+  }});
   sys('/etc/motd','f',{body:PROFILE.welcome});
   sys('/etc/passwd','f',{body:function(){
     var L=['root:VwL97VCAx1Qhs:0:1:the super-user:/:','daemon:x:1:1::/:','bin:x:3:3::/bin:'];
@@ -612,19 +627,27 @@ var CMDS={
     var H=[
       ['about','the owner of this machine'],
       ['alias','list or set aliases'],
-      ['cat file','print a file'],
-      ['cd [dir]','change directory'],
+      ['cat','print a file'],
+      ['cd','change directory'],
       ['clear','clear the screen'],
       ['date','the date, more or less'],
+      ['dmesg','boot messages'],
       ['exit','log out'],
-      ['ls [-la] [dir]','list files'],
+      ['hostname','the name of this machine'],
+      ['ifconfig','network interfaces'],
+      ['ls','list files'],
       ['mail','read your mail'],
+      ['man','the manual'],
+      ['ping','is anyone out there'],
+      ['ps','what is running'],
       ['pwd','where am i'],
-      ['sound on|off','keyclicks'],
+      ['sound','keyclicks on or off'],
+      ['uptime','how long the machine has been up'],
       ['who','who is logged in']
     ].concat(PROFILE.commands.filter(function(c){return c.help}).map(function(c){return [c.names[0],c.help]}));
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
-    say(['commands:'].concat(H.map(function(h){return '  '+h[0].padEnd(14)+' '+h[1]})));
+    say(['commands:'].concat(H.map(function(h){return '  '+h[0].padEnd(13)+' '+h[1]}),
+      ['',['man name for details, or name -h.','dim']]));
   },
   ls:function(a){
     var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),
@@ -661,6 +684,25 @@ var CMDS={
     var sent=new Date(LOGIN.getTime()-36e5*3);
     typeLine('From '+OWNER+' '+ctime(sent)+' 1979');
     typeLine('');
+    typeLine('welcome to '+(SITE||HOSTNAME)+'!');
+    typeLine('');
+    say([
+      'this is a workshop of adventure, tinkering, and low',
+      'cunning. in it you will find some of the most curious',
+      'projects ever seen by mortals.'
+    ]);
+    if(Object.prototype.hasOwnProperty.call(CMDS,'projects'))say([
+      '',
+      'to see what is being built now, and what comes next,',
+      'type:',
+      '',
+      '    projects'
+    ]);
+    say([
+      '',
+      ['no terminal should be without one!','dim'],
+      ''
+    ]);
     typeLine('to reach the operator, write to:');
     typeLine(PROFILE.email,'',null,{href:'mailto:'+PROFILE.email.toLowerCase()});
     typeLine('no modem detected. copy it down by hand.','dim');
@@ -679,7 +721,11 @@ var CMDS={
     CWD=pathOf(n);
   },
   echo:function(a,raw){typeLine(raw.replace(/^\s*\S+\s?/,''))},
-  man:function(a){if(a[0])typeLine('No manual entry for '+a[0]+'.');else CMDS.help()},
+  man:function(a){
+    if(!a[0]){CMDS.help();return}
+    if(Object.prototype.hasOwnProperty.call(MAN,a[0]))say(manPage(a[0]));
+    else typeLine('No manual entry for '+a[0]+'.');
+  },
   sudo:function(){say([
     ['sudo: not found','err'],
     'it is 1979. there is no sudo.',
@@ -715,6 +761,101 @@ var CMDS={
   }
 };
 CMDS.email=CMDS.mail;CMDS.logout=CMDS.exit;
+CMDS.dmesg=function(){say([
+  'unix/v7 (pdp-11/70)',
+  'mem = 1032192',
+  'avail mem = 917504',
+  'rk0 at 177400 vector 220',
+  'rp0 at 176700 vector 254: rm03',
+  'dz0 at 160100 vector 300: 8 lines',
+  'lp0 at 177514 vector 200',
+  'tty0: phosphor-9 video terminal, 9600 baud',
+  'tty0: p1 phosphor, 525 lines, 24 kv',
+  'tty0: keyboard detected (yours)',
+  ['lp0: out of paper','dim'],
+  'root on rp0, swap on rp0'
+])};
+var PSN=57; /* each ps gets the next process id */
+CMDS.ps=function(a){
+  var fl=a.join('').replace(/-/g,''),P=[];
+  if(/x/.test(fl))P.push(['0','?','0:41','swapper'],['1','?','0:02','/etc/init'],['23','?','2:17','/etc/update'],['27','?','0:06','/etc/cron']);
+  if(/a/.test(fl))P.push(['31','co','0:12','-sh'],['52','co','0:03','ed secrets']);
+  P.push(['44','0','0:01','-sh'],[String(PSN++),'0','0:00',('ps '+a.join(' ')).trim()]);
+  say(['  PID TTY  TIME CMD'].concat(P.map(function(p){return p[0].padStart(5)+' '+p[1].padEnd(3)+' '+p[2].padStart(5)+' '+p[3]})));
+};
+CMDS.uptime=function(){ /* up since the system was installed (or three days, early in january) */
+  var now=in79(new Date()),boot=now-SD>864e5?SD:new Date(now-(3*864e5+4*36e5+12*6e4)),
+      m=Math.floor((now-boot)/6e4),d=Math.floor(m/1440),hr=now.getHours();
+  function la(){return (Math.random()*.06).toFixed(2)}
+  typeLine((hr%12||12)+':'+p2(now.getMinutes())+(hr<12?'am':'pm')+' up '+(d?d+' day'+(d>1?'s':'')+', ':'')+
+    Math.floor(m%1440/60)+':'+p2(m%60)+', 2 users, load average: '+la()+', '+la()+', '+la());
+};
+CMDS.ifconfig=function(a){
+  if(a[0]&&a[0]!=='lo0'){typeLine('ifconfig: '+a[0]+': no such interface','err');return}
+  say(['lo0: flags=9<UP,LOOPBACK>','     inet 127.0.0.1 netmask 0xff000000']);
+  if(!a[0])typeLine('no other interfaces. the arpanet is down the hall.','dim');
+};
+CMDS.hostname=function(a){
+  if(a[0]){typeLine('hostname: permission denied','err');return} /* only root may rename the machine */
+  typeLine(HOSTNAME);
+};
+/* ping: localhost answers instantly (fake). The page's own server answers for real: each "packet"
+   is a HEAD request for this page, so the times are genuine round trips. Nothing else is reachable. */
+CMDS.ping=function(a){
+  var c=4,h=null,i;
+  for(i=0;i<a.length;i++){if(a[i]==='-c'&&a[i+1])c=parseInt(a[++i],10)||4;else if(a[i].charAt(0)!=='-')h=a[i]}
+  c=Math.max(1,Math.min(10,c));
+  if(!h){typeLine('usage: '+MAN.ping.syn);return}
+  var loop=['localhost','127.0.0.1',HOSTNAME].indexOf(h)>=0,
+      real=!!SITE&&(h===SITE||h==='www.'+SITE||'www.'+h===SITE);
+  if(!loop&&!real){typeLine('ping: unknown host '+h,'err');typeLine('the arpanet is down the hall.','dim');return}
+  var R=[],name=loop?'localhost':h;
+  function ok(){return R.filter(function(x){return x!=null})}
+  typeLine('PING '+name+(loop?' (127.0.0.1)':'')+': 56 data bytes');
+  for(i=0;i<c;i++)(function(seq){
+    if(seq)pause(1000);
+    queue(function(){
+      if(loop){R[seq]=.04+Math.random()*.05;return}
+      var t=performance.now(),done=false;
+      return Promise.race([
+        fetch(location.origin+location.pathname+'?ping='+Date.now()+'-'+seq,{method:'HEAD',cache:'no-store'})
+          .then(function(){if(!done)R[seq]=performance.now()-t},function(){}),
+        sleep(2000)
+      ]).then(function(){done=true;if(R[seq]===undefined)R[seq]=null});
+    });
+    typeLine(function(){
+      return R[seq]==null?'request timeout for icmp_seq '+seq
+        :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(loop?3:1)+' ms';
+    });
+  })(i);
+  typeLine('');
+  typeLine('--- '+name+' ping statistics ---');
+  typeLine(function(){var n=ok().length;
+    return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'});
+  typeLine(function(){var o=ok(),d=loop?3:1;if(!o.length)return 'no answer.';
+    return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(d)+'/'+
+      (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(d)+'/'+Math.max.apply(null,o).toFixed(d)+' ms'});
+};
+/* easter egg: the magic word from colossal cave (hinted in ~/.adventure and the bottom of ~/.trash).
+   Not in help, no manual page. */
+CMDS.xyzzy=function(){say([
+  '         ___',
+  '        (___)',
+  '         | |',
+  "       .-'-'-.",
+  '       |=====|',
+  '      /  .-.  \\',
+  '     |  ( * )  |',
+  "     |   '-'   |",
+  '      \\       /',
+  '       |=====|',
+  "       '-----'",
+  '',
+  'your lamp is now on.',
+  'you are in a maze of twisty little passages, all alike.',
+  ['(you are still in 1979.)','dim']
+])};
+CMDS.plugh=function(){typeLine('a hollow voice says "plugh".')};
 /* aliases (csh, 1979): from the == aliases == section, plus any set this session */
 var ALIASES=PROFILE.aliases.slice();
 var LOGOUT=false;
@@ -754,15 +895,142 @@ PROFILE.commands.forEach(function(c){
   c.names.forEach(function(n){if(RESERVED.indexOf(n)<0)CMDS[n]=fn});
 });
 
+/* ---------- the manual (man NAME, NAME -h) ---------- */
+var MAN={};
+function page(names,what,syn,desc,bugs){
+  var p={names:names,what:what,syn:syn,desc:desc||[],bugs:bugs||[]};
+  names.split(/,\s*/).forEach(function(n){MAN[n]=p});
+  return p;
+}
+page('about','who owns this machine','about',[
+  'prints the about file. same as cat about.']);
+page('alias','list or set aliases',"alias [ name[='command'] ]",[
+  'with no argument, lists every alias. with a name,',
+  'shows that one alias.',
+  '',
+  "alias name='command' sets an alias for this session;",
+  'it is forgotten at logout. the longest matching alias',
+  'wins, and any extra words are passed through.',
+  'commands may be joined with ; inside the quotes.']);
+page('cat','catenate and print','cat file ...',[
+  'prints each file in turn.',
+  '',
+  'locked files cannot be opened, and neither can folders.'],[
+  'cat of a program prints exactly what you deserve.']);
+page('cd','change working directory','cd [ dir ]',[
+  'makes dir the working directory. with no argument,',
+  'goes home. understands ~, . and .. in any path.',
+  '',
+  'a locked folder is a bad directory.']);
+page('clear','clear the screen','clear',[
+  'wipes the glass. the phosphor takes a moment to forget.']);
+page('date','print the date','date',[
+  'prints the date and time.'],[
+  'the year is always 1979.']);
+page('echo','echo arguments','echo [ arg ... ]',[
+  'prints its arguments, separated by spaces.']);
+page('exit, logout','log out','exit',[
+  'ends the session. the terminal runs its self-test and',
+  'waits at login: for a new name. any name will do,',
+  'within reason. aliases set this session are lost.']);
+page('help','list the commands','help',[
+  'lists the commands, alphabetically, with a few words',
+  'about each. man name says more about any of them.']);
+page('ls','list contents of directory','ls [ -la ] [ name ... ]',[
+  'for each folder named, lists its contents; for each',
+  'file, repeats its name. with no name, lists the',
+  'working directory, in alphabetical order.',
+  '',
+  '-l   long listing: mode, links, owner, size in bytes',
+  '     and the time of last change.',
+  '-a   also list names beginning with a dot, which are',
+  '     otherwise hidden. this includes . and .., the',
+  '     folder itself and the one above it.',
+  '',
+  'the aliases ll, la and lla stand for ls -l, ls -a',
+  'and ls -l -a.']);
+page('mail, email','read your mail','mail',[
+  'prints your mail. there is usually one letter.'],[
+  'there is no modem, so you cannot answer it from here.']);
+page('man','print the manual','man name',[
+  'prints the manual page for name. with no name, the',
+  'same as help.']);
+page('pwd','print working directory','pwd',[
+  'prints the full name of the working directory.']);
+page('rm','remove files','rm [ -fri ] file ...',[
+  'removes each file named.'],[
+  'nothing is ever removed.']);
+page('sound','keyclicks on or off','sound [ on | off ]',[
+  'turns the keyclicks on or off. with no argument,',
+  'reports which. the browser stays silent until the',
+  'first tap or keypress, whatever this says.']);
+page('su','become super-user','su',[
+  'asks for the root password, then makes you the',
+  'super-user.'],[
+  'you do not know the root password.']);
+page('who','who is on the system','who [ am i ]',[
+  'lists everyone logged in: name, terminal, and the',
+  'time they arrived. who am i lists only you.']);
+page('whoami','print your login name','whoami',[
+  'prints the name you logged in as.']);
+page('dmesg','print the boot messages','dmesg',[
+  'prints what the system said to itself while it was',
+  'starting up.']);
+page('ps','process status','ps [ ax ]',[
+  'lists your processes: process id, terminal, cpu time',
+  'used, and the command.',
+  '',
+  'a    also list processes on other terminals.',
+  'x    also list processes with no terminal at all.'],[
+  'it shows what other people are doing.']);
+page('uptime','show how long the system has been up','uptime',[
+  'prints the time, how long the machine has been',
+  'running, how many users are logged in, and the load',
+  'average over the last 1, 5 and 15 minutes.']);
+page('ifconfig','configure network interface','ifconfig [ interface ]',[
+  'prints the state of the network interfaces, or of',
+  'the one named.'],[
+  'there is only one, and it only talks to itself.']);
+page('hostname','print name of current host system','hostname',[
+  'prints the name of this machine. only the super-user',
+  'may change it.']);
+page('ping','send echo requests to a host','ping [ -c count ] host',[
+  'sends count echo requests (default 4, at most 10), one',
+  'a second, and reports how long each answer took.',
+  '',
+  'localhost answers at once. one other host answers as',
+  'well: the server this terminal came from. those times',
+  'are real round trips across your own network.'],[
+  'every other host is unknown. it is 1979.']);
+PROFILE.commands.forEach(function(c){ /* custom commands: a page made from the help text */
+  var n=c.names.filter(function(x){return RESERVED.indexOf(x)<0});
+  if(n.length)page(n.join(', '),c.help.toLowerCase(),n[0],c.help?[c.help.toLowerCase()+'.']:[]);
+});
+Object.keys(PROFILE.man).forEach(function(k){ /* == man: NAME == sections */
+  if(Object.prototype.hasOwnProperty.call(MAN,k))MAN[k].desc=PROFILE.man[k];
+  else page(k,'',k,PROFILE.man[k]);
+});
+function manPage(n){
+  var p=MAN[n],I='     ',L=[n.toUpperCase()+'(1)','','NAME',I+p.names+(p.what?' - '+p.what:''),'','SYNOPSIS',I+p.syn];
+  function block(title,lines){
+    if(!lines.length)return;
+    L.push('',title);
+    lines.forEach(function(l){L.push(Array.isArray(l)?[I+l[0]].concat(l.slice(1)):(l?I+l:''))});
+  }
+  block('DESCRIPTION',p.desc);block('BUGS',p.bugs);
+  return L;
+}
+
 function runOne(s){
   s=s.trim();if(!s)return;
   var parts=s.toLowerCase().split(/\s+/),c=parts[0],args=parts.slice(1);
-  var f=Object.prototype.hasOwnProperty.call(CMDS,c)?CMDS[c]:null;
+  var f=Object.prototype.hasOwnProperty.call(CMDS,c)?CMDS[c]:null,name=c;
   if(!f&&c.indexOf('/')>=0){ /* /bin/ls runs ls; any other path is not a program */
     var n=find(c);
-    if(n&&n.bin&&Object.prototype.hasOwnProperty.call(CMDS,n.name))f=CMDS[n.name];
+    if(n&&n.bin&&Object.prototype.hasOwnProperty.call(CMDS,n.name)){f=CMDS[n.name];name=n.name}
     else if(n){typeLine(s.split(/\s+/)[0]+': cannot execute','err');return}
   }
+  if(f&&name!=='echo'&&args.indexOf('-h')>=0&&Object.prototype.hasOwnProperty.call(MAN,name)){typeLine('usage: '+MAN[name].syn);return}
   if(f)f(args,s);else typeLine(s.split(/\s+/)[0]+': not found','err');
 }
 function run(raw){
