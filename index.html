@@ -15,7 +15,8 @@
     speed:      printing speed. 1 = original, 1.25 = 25% faster
     uppercase:  no  = normal Unix lowercase
                 yes = everything in capitals, like an uppercase-only teletype
-    protected:  comma list of locked files shown in ls (cat: can't open)
+    protected:  comma list of locked files shown in ls (cat: can't open).
+                Paths work (.trash/core); a trailing / makes a locked folder.
     sound:      on = keyclicks from the start (browsers stay silent until the
                 first tap or keypress), off = silent until "sound on"
 
@@ -36,8 +37,14 @@
     == command: NAME | HELP TEXT ==   adds a new command (listed in help)
     == command: A, B | HELP TEXT ==   one command with several names
     == file: NAME ==                  adds a file to ls, read with cat NAME
+                                      NAME may be a path (notes/todo); folders
+                                      are made as needed. Relative paths live in
+                                      the home directory /usr/guest; /etc/motd
+                                      style absolute paths also work. Names
+                                      starting with a dot are hidden (ls -a).
+    == dir: NAME ==                   an empty folder (same path rules)
     == aliases ==                     one per line:  new words = real command
-                                      e.g.  dir -w = ls -l   or  cl = clear ; ls
+                                      e.g.  ll = ls -l   or  cl = clear ; ls
                                       (the alias command lists them;
                                       the longest matching alias wins, extra words pass through)
 
@@ -57,7 +64,7 @@ name:      gaijin
 email:     support@gaijin.systems
 speed:     1.25
 uppercase: no
-protected: photo01.pic, photo02.pic, photo03.pic, secrets
+protected: photo01.pic, photo02.pic, photo03.pic, secrets, .trash/core, .old/terminal.rom
 sound:     on
 
 cord turns:     7
@@ -68,8 +75,9 @@ cord straight:  7.35
 cord sway:      2.5
 
 == aliases ==
-dir    = ls
-dir -w = ls -l
+ll  = ls -l
+la  = ls -a
+lla = ls -l -a
 
 == welcome ==
 welcome to gaijin.systems.
@@ -93,6 +101,68 @@ phosphor-9
 == file: now ==
 what i am doing now:
   ~ (placeholder - edit the now section)
+
+# ---------------------------------------------------------------------
+# The rest of the home directory (/usr/guest). Paths are relative to
+# home and folders are made automatically. Names starting with a dot
+# are hidden: only ls -a (or la, lla) shows them.
+# ---------------------------------------------------------------------
+
+== file: notes/todo ==
+[x] warm up the tube
+[x] teach it ls
+[ ] teach it vi
+[ ] find out who keeps logging in as guest
+[ ] empty the trash
+
+== file: notes/ideas ==
+- a terminal that remembers you.
+~   (no.)
+- a printer that only prints in lowercase.
+- more phosphor.
+
+== file: src/hello.c ==
+main()
+{
+    printf("hello, world\n");
+}
+
+== file: .profile ==
+: .profile - read by sh at login
+PATH=:/bin:/usr/bin
+TERM=p9
+export PATH TERM
+stty erase '^h' kill '^u'
+umask 022
+
+== file: .plan ==
+plan for this week:
+  1. keep the tube warm.
+  2. answer the mail.
+  3. empty the trash. it can wait.
+
+== file: .adventure ==
+~ saved game - colossal cave
+you are in a maze of twisty little passages, all alike.
+score: 36 of 350.
+~ your lamp is growing dim.
+
+== file: .trash/letter.bak ==
+dear operator,
+i have been inside this terminal for some time now.
+the keyboard is nice. the phosphor is warm.
+please do not unplug me.
+~ (never sent)
+
+== file: .trash/.deeper/note ==
+you found the bottom of the trash.
+there is nothing else down here.
+~ go back up: cd ..
+
+== file: .old/readme.v8 ==
+this is a phosphor-8 video terminal.
+it is plugged into the wall.
+please do not lick it.
 </script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
@@ -275,7 +345,7 @@ body{
 /* ---------- content (parsed from the block at the top of the file) ---------- */
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],
-    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],commands:[],files:[],aliases:[]};
+    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],commands:[],files:[],dirs:[],aliases:[]};
   var el=document.getElementById('content'),src=el?el.textContent:'',cur=null,secs=[];
   src.replace(/\r/g,'').split('\n').forEach(function(raw){
     if(/^\s*#/.test(raw))return;
@@ -322,6 +392,7 @@ var PROFILE=(function(){
       var fn=m[1].toLowerCase();
       P.files.push({name:fn,body:body});
     }
+    else if((m=hd.match(/^dir(?:ectory)?\s*:\s*(\S+)$/i)))P.dirs.push(m[1].toLowerCase());
   });
   if(!P.welcome)P.welcome=[up('welcome to '+P.name.toLowerCase()+'.'),[up('type help and press return.'),'dim']];
   return P;
@@ -422,7 +493,7 @@ function prompt(p,mode){
 
 /* ---------- shell (Version 7 Unix, 1979) ---------- */
 var OWNER=PROFILE.name.split(/\s+/)[0].replace(/[^a-z0-9]/gi,'').slice(0,8).toLowerCase()||'operator';
-var USER='guest',HOME='/usr/guest';
+var USER='guest',HOME='/usr/guest',CWD=HOME;
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
 function in79(n){return new Date(1979,n.getMonth(),n.getDate(),n.getHours(),n.getMinutes(),n.getSeconds())}
@@ -434,28 +505,106 @@ function tz(){
 function ctime(d){return DAYS[d.getDay()]+' '+MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+' '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())}
 function short(d){return MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
 var LOGIN=in79(new Date());
-var FDATE=(function(){var d=new Date(LOGIN.getTime()-864e5);d.setHours(21,41,0);return short(d)})(); /* files: last night */
+var FD=(function(){var d=new Date(LOGIN.getTime()-864e5);d.setHours(21,41,0,0);return d})(); /* home files: last night */
+var SD=new Date(1979,0,10,16,12,0); /* system files: january 1979 */
+function lsdate(d){ /* as ls does it: older than six months shows the year instead of the time */
+  return LOGIN-d>15552e6?MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+'  '+d.getFullYear():short(d);
+}
 
-var FILES={},SIZES={};
+/* ---------- file system: a small v7 tree; the content-block files live in home ---------- */
+function mk(type,name,o){
+  var n={type:type,name:name,owner:OWNER,date:FD,prot:false,bin:false,body:null,size:0,mode:null,dev:null,
+    kids:type==='d'?{}:null,parent:null};
+  if(o)for(var k in o)if(Object.prototype.hasOwnProperty.call(o,k))n[k]=o[k];
+  return n;
+}
+var ROOT=mk('d','',{owner:'root',date:SD});ROOT.parent=ROOT;
+function parts(p){return p.split('/').filter(Boolean)}
+function put(abs,type,o){ /* create a node, making any missing parent folders */
+  var s=parts(abs),n=ROOT,i,k;
+  if(!s.length)return ROOT;
+  for(i=0;i<s.length-1;i++){
+    k=n.kids[s[i]];
+    if(!k||k.type!=='d'){k=n.kids[s[i]]=mk('d',s[i],{owner:n.owner,date:n.date});k.parent=n}
+    n=k;
+  }
+  var last=s[s.length-1],ex=n.kids[last];
+  if(ex&&ex.type==='d'&&type==='d'){if(o)for(k in o)ex[k]=o[k];return ex}
+  ex=n.kids[last]=mk(type,last,o);ex.parent=n;return ex;
+}
+function home(p){return p.charAt(0)==='/'?p:p.slice(0,2)==='~/'?HOME+p.slice(1):HOME+'/'+p}
+function norm(p){ /* absolute path; handles ~, . and .. */
+  if(p==='~'||p.slice(0,2)==='~/')p=HOME+p.slice(1);
+  var s=p.charAt(0)==='/'?[]:parts(CWD);
+  parts(p).forEach(function(x){if(x==='..')s.pop();else if(x!=='.')s.push(x)});
+  return '/'+s.join('/');
+}
+function pathOf(n){var s=[];while(n!==ROOT){s.unshift(n.name);n=n.parent}return '/'+s.join('/')}
+function find(p){ /* node or null; nobody gets through a locked folder */
+  var s=parts(norm(p)),n=ROOT;
+  for(var i=0;i<s.length;i++){
+    if(n.type!=='d'||n.prot)return null;
+    var k=n.kids[s[i]];
+    if(!k&&i===s.length-1) /* cat photo01 finds photo01.pic */
+      k=n.kids[Object.keys(n.kids).sort().filter(function(x){return x.charAt(0)!=='.'&&x.split('.')[0]===s[i]})[0]];
+    if(!k)return null;
+    n=k;
+  }
+  return n;
+}
 function bsize(L){return L.reduce(function(n,l){return n+(Array.isArray(l)?l[0]:l).length+1},0)}
-function addFile(n,body){FILES[n]=function(){say(body)};SIZES[n]=bsize(body)}
-addFile('readme',['this is a phosphor-9 video terminal.','it is plugged into your keyboard.','please be gentle with it.']);
-if(PROFILE.about.length)addFile('about',PROFILE.about);
-PROFILE.files.forEach(function(f){addFile(f.name,f.body)});
-var PROTECTED=PROFILE.protected.filter(function(n){return !FILES[n]});
-function names(){return Object.keys(FILES).concat(PROTECTED).sort()}
-function isProt(n){return PROTECTED.indexOf(n)>=0}
-function resolve(x){
-  var all=names(),i;
-  for(i=0;i<all.length;i++)if(all[i]===x)return all[i];
-  for(i=0;i<all.length;i++)if(all[i].split('.')[0]===x)return all[i];
-  return null;
+function body(n){return typeof n.body==='function'?n.body():n.body}
+function fsize(n){
+  if(n.type==='d')return 16*(Object.keys(n.kids).length+2);
+  if(n.dev)return 0;
+  return n.size||(n.body?bsize(body(n)):0);
 }
-function fsize(n){return isProt(n)?(/\.pic$/.test(n)?16384:2048):SIZES[n]}
-function longRow(n){
-  var pr=isProt(n);
-  return [(pr?'-rw-------':'-rw-r--r--')+'  1 '+OWNER.padEnd(8)+String(fsize(n)).padStart(6)+' '+FDATE+' '+n,pr?'dim':''];
+function modeOf(n){
+  if(n.mode)return n.mode;
+  if(n.type==='d')return n.prot?'drwx------':'drwxr-xr-x';
+  return n.prot?'-rw-------':n.bin?'-rwxr-xr-x':'-rw-r--r--';
 }
+function links(n){return n.type!=='d'?1:2+Object.keys(n.kids).filter(function(k){return n.kids[k].type==='d'}).length}
+function longRow(name,n){
+  var sz=n.dev?String(n.dev[0]).padStart(2)+','+String(n.dev[1]).padStart(3):String(fsize(n)).padStart(6);
+  return [modeOf(n)+' '+String(links(n)).padStart(2)+' '+n.owner.padEnd(8)+sz+' '+lsdate(n.date)+' '+name,n.prot?'dim':''];
+}
+(function(){ /* build the tree */
+  function sys(p,type,o){var x={owner:'root',date:SD};if(o)for(var k in o)x[k]=o[k];return put(p,type,x)}
+  sys('/bin','d',{owner:'bin'});
+  ['cat','date','echo','ls','mail','pwd','rm','su','who'].forEach(function(b){
+    var h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
+    sys('/bin/'+b,'f',{owner:'bin',bin:true,size:2048+h});
+  });
+  sys('/dev','d');
+  sys('/dev/console','c',{mode:'crw--w--w-',dev:[0,0]});
+  sys('/dev/tty0','c',{mode:'crw--w--w-',dev:[1,0]});
+  sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[3,2]});
+  sys('/dev/mem','c',{mode:'cr--r-----',dev:[3,0],prot:true});
+  sys('/dev/kmem','c',{mode:'cr--r-----',dev:[3,1],prot:true});
+  sys('/etc','d');
+  sys('/etc/motd','f',{body:PROFILE.welcome});
+  sys('/etc/passwd','f',{body:function(){
+    var L=['root:VwL97VCAx1Qhs:0:1:the super-user:/:','daemon:x:1:1::/:','bin:x:3:3::/bin:'];
+    if(OWNER!==USER)L.push(OWNER+':Zz8qT3mXcE0aU:8:2::/usr/'+OWNER+':');
+    L.push(USER+'::9:2::/usr/'+USER+':');
+    return L;
+  }});
+  sys('/tmp','d',{mode:'drwxrwxrwx'});
+  sys('/unix','f',{bin:true,size:51862});
+  sys('/usr','d');
+  if(OWNER!==USER)sys('/usr/'+OWNER,'d',{owner:OWNER,date:FD,prot:true});
+  put(HOME,'d',{owner:OWNER});
+  put(HOME+'/readme','f',{body:['this is a phosphor-9 video terminal.','it is plugged into your keyboard.','please be gentle with it.']});
+  if(PROFILE.about.length)put(HOME+'/about','f',{body:PROFILE.about});
+  PROFILE.dirs.forEach(function(d){put(home(d),'d')});
+  PROFILE.files.forEach(function(f){put(home(f.name),'f',{body:f.body})});
+  PROFILE.protected.forEach(function(p){
+    var dir=/\/$/.test(p),abs=home(p.replace(/\/+$/,'')),ex=find(abs);
+    if(ex&&ex!==ROOT)ex.prot=true;
+    else put(abs,dir?'d':'f',{prot:true,size:dir?0:/\.pic$/.test(abs)?16384:2048});
+  });
+})();
 function row(l,v){return (l+' ').padEnd(21,'.')+' '+v}
 
 var CMDS={
@@ -464,33 +613,46 @@ var CMDS={
       ['about','the owner of this machine'],
       ['alias','list or set aliases'],
       ['cat file','print a file'],
+      ['cd [dir]','change directory'],
       ['clear','clear the screen'],
       ['date','the date, more or less'],
       ['exit','log out'],
-      ['ls [-l]','list files'],
+      ['ls [-la] [dir]','list files'],
       ['mail','read your mail'],
+      ['pwd','where am i'],
       ['sound on|off','keyclicks'],
       ['who','who is logged in']
     ].concat(PROFILE.commands.filter(function(c){return c.help}).map(function(c){return [c.names[0],c.help]}));
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
-    say(['commands:'].concat(H.map(function(h){return '  '+h[0].padEnd(13)+' '+h[1]})));
+    say(['commands:'].concat(H.map(function(h){return '  '+h[0].padEnd(14)+' '+h[1]})));
   },
   ls:function(a){
-    var long=a.some(function(x){return /^-\w*l/.test(x)}),
-        want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],list=names();
-    if(want.length){
-      list=[];
-      want.forEach(function(w){var n=resolve(w);if(n)list.push(n);else L.push([w+' not found','err'])});
-    }else if(long){
-      var t=0;list.forEach(function(n){t+=Math.ceil(fsize(n)/512)});L.push('total '+t);
-    }
-    list.forEach(function(n){L.push(long?longRow(n):n)});
+    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),
+        want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
+    if(!want.length)want=['.'];
+    want.forEach(function(w){
+      var n=find(w),shown;
+      if(!n)L.push([w+' not found','err']);
+      else if(n.type!=='d'){shown=w.replace(/[^\/]*$/,n.name);L.push(long?longRow(shown,n):shown)}
+      else if(n.prot)L.push([w+' unreadable','err']);
+      else dirs.push([w,n]);
+    });
+    dirs.forEach(function(d){
+      var n=d[1],ents=Object.keys(n.kids).filter(function(k){return all||k.charAt(0)!=='.'}).sort()
+        .map(function(k){return [k,n.kids[k]]});
+      if(all)ents=[['.',n],['..',n.parent]].concat(ents);
+      if(want.length>1){if(L.length)L.push('');L.push(d[0]+':')}
+      if(long){var t=0;ents.forEach(function(e){t+=Math.ceil(fsize(e[1])/512)});L.push('total '+t)}
+      ents.forEach(function(e){L.push(long?longRow(e[0],e[1]):e[0])});
+    });
     say(L);
   },
   cat:function(a){
     a.forEach(function(x){
-      var n=resolve(x);
-      if(!n||isProt(n))typeLine("cat: can't open "+x,'err');else FILES[n]();
+      var n=find(x);
+      if(!n||n.prot||n.type==='d')typeLine("cat: can't open "+x,'err');
+      else if(n.bin)typeLine('^G^A^@^@^D^P^@^@^@^@^@^@^A^@'+n.name+'^@^H^@^@','dim');
+      else if(n.body)say(body(n));
     });
   },
   about:function(){say(PROFILE.about)},
@@ -506,12 +668,16 @@ var CMDS={
   who:function(a){
     var me=USER.padEnd(9)+'tty0    '+short(LOGIN);
     if(a[0]==='am'&&a[1]==='i'){typeLine(me);return}
-    say([OWNER.padEnd(9)+'console '+FDATE,me]);
+    say([OWNER.padEnd(9)+'console '+short(FD),me]);
   },
   whoami:function(){typeLine(USER)},
   date:function(){var z=tz();typeLine(ctime(in79(new Date()))+(z?' '+z:'')+' 1979')},
-  pwd:function(){typeLine(HOME)},
-  cd:function(a){if(a[0]&&a[0]!=='~'&&a[0]!==HOME)typeLine(a[0]+': bad directory','err')},
+  pwd:function(){typeLine(CWD)},
+  cd:function(a){
+    var t=a[0]||HOME,n=find(t);
+    if(!n||n.type!=='d'||n.prot){typeLine(t+': bad directory','err');return}
+    CWD=pathOf(n);
+  },
   echo:function(a,raw){typeLine(raw.replace(/^\s*\S+\s?/,''))},
   man:function(a){if(a[0])typeLine('No manual entry for '+a[0]+'.');else CMDS.help()},
   sudo:function(){say([
@@ -525,7 +691,8 @@ var CMDS={
     var f=a.filter(function(x){return x.charAt(0)!=='-'});
     if(!f.length){typeLine('usage: rm [-fri] file ...');return}
     f.forEach(function(x){
-      if(resolve(x))typeLine('rm: '+x+' not removed','err');else typeLine('rm: '+x+' nonexistent','err');
+      var n=find(x);
+      typeLine('rm: '+x+(!n?' nonexistent':n.type==='d'?' directory':' not removed'),'err');
     });
     typeLine('nice try.','dim');
   },
@@ -591,6 +758,11 @@ function runOne(s){
   s=s.trim();if(!s)return;
   var parts=s.toLowerCase().split(/\s+/),c=parts[0],args=parts.slice(1);
   var f=Object.prototype.hasOwnProperty.call(CMDS,c)?CMDS[c]:null;
+  if(!f&&c.indexOf('/')>=0){ /* /bin/ls runs ls; any other path is not a program */
+    var n=find(c);
+    if(n&&n.bin&&Object.prototype.hasOwnProperty.call(CMDS,n.name))f=CMDS[n.name];
+    else if(n){typeLine(s.split(/\s+/)[0]+': cannot execute','err');return}
+  }
   if(f)f(args,s);else typeLine(s.split(/\s+/)[0]+': not found','err');
 }
 function run(raw){
@@ -606,8 +778,11 @@ function run(raw){
 function login(name){
   var n=name.trim().toLowerCase();
   if(!n){prompt('login: ','login');return}
-  if(n==='root'||n===OWNER||!/^[a-z][a-z0-9_]{0,7}$/.test(n)){prompt('Password:','password');return}
-  USER=n;HOME='/usr/'+n;LOGIN=in79(new Date());
+  var usr=find('/usr');
+  if(n==='root'||n===OWNER||!/^[a-z][a-z0-9_]{0,7}$/.test(n)||(n!==USER&&usr.kids[n])){prompt('Password:','password');return}
+  var h=usr.kids[USER]; /* the home folder follows whoever logs in */
+  if(h&&n!==USER){delete usr.kids[USER];h.name=n;usr.kids[n]=h}
+  USER=n;HOME='/usr/'+n;CWD=HOME;LOGIN=in79(new Date());
   welcome();prompt();
 }
 
