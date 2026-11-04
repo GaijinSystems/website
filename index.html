@@ -43,6 +43,8 @@
                                       style absolute paths also work. Names
                                       starting with a dot are hidden (ls -a).
     == dir: NAME ==                   an empty folder (same path rules)
+    == mail ==                        the list inside the welcome letter (mail),
+                                      printed after its opening paragraph
     == man: NAME ==                   the manual page for NAME (man NAME): the
                                       DESCRIPTION part. Replaces a built-in
                                       page, fills in a custom command's page
@@ -56,11 +58,14 @@
   INSIDE A SECTION
     ~ line      prints dim green
     ! line      prints red
+    ~~text~~    strikes text through, anywhere in a line (e.g. ~~2026~~ 1979)
     text -> https://example.com
                 makes the whole line a link (same green, dotted underline;
                 opens in a new tab). Works with ~ and ! too. Only http://,
                 https:// and mailto: addresses are accepted.
     Blank lines and leading spaces are kept (good for columns).
+    Long lines wrap to fit the glass, so write each paragraph as ONE line:
+    line breaks typed into the middle of a paragraph look ragged on phones.
     Lines starting with # are notes to yourself and are not printed.
     The one thing you cannot write is a closing script tag.
 ====================================================================== -->
@@ -93,14 +98,24 @@ this terminal is the property of gaijin systems.
 it is always 1979 in here.
 ~ (placeholder - edit the about section)
 
-# Example custom command. Edit or delete.
-== command: projects, proj | things i have built ==
-spellsign: ars signorum -> https://spellsign.gaijin.systems
-~   coming soon.
-phosphor-9
-~   this terminal.
-
+# The list inside the welcome letter (mail): every active project,
+# released or not. Leave empty = the letter has no list.
+# When a project is retired or discontinued, move it to the attic file.
+# Order: newest first. Unreleased (coming soon) projects go at the top.
+# Rows are 41 columns: pad with spaces so the status/date ends at column 41
+# (the ~~ marks do not count; they are not printed). On a screen too narrow
+# for that, the first run of spaces in each row shrinks (down to 2) to fit.
+== mail ==
 ~ tap or click a title to visit.
+
+spellsign: ars signorum       coming soon -> https://spellsign.gaijin.systems
+phosphor-9          ~~2026-11-01~~ 1979-11-01 -> https://phosphor.gaijin.systems
+
+# Retired and discontinued projects, moved here from the mail list.
+# Read it with: cat attic
+== file: attic ==
+retired and discontinued projects:
+~   nothing up here yet.
 
 # Example custom file. Shows up in ls; read it with: cat now
 == file: now ==
@@ -265,6 +280,7 @@ body{
 .line.err{color:var(--err);text-shadow:0 0 6px rgba(255,95,86,.85),0 0 22px rgba(255,95,86,.3)}
 .line a{color:inherit;text-decoration:underline dotted;text-underline-offset:.2em;user-select:text;-webkit-user-select:text}
 .line a:hover,.line a:focus-visible{text-decoration-style:solid;outline:none}
+.line.row{padding:.16em 0} /* project rows (mail) get 25% more room so the underlines do not crowd */
 .cursor{
   display:inline-block;width:.62em;height:1.02em;margin-left:1px;vertical-align:-.17em;
   background:var(--phos);
@@ -348,7 +364,7 @@ body{
 /* ---------- content (parsed from the block at the top of the file) ---------- */
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],
-    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],commands:[],files:[],dirs:[],man:{},aliases:[]};
+    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},welcome:null,about:[],mail:[],commands:[],files:[],dirs:[],man:{},aliases:[]};
   var el=document.getElementById('content'),src=el?el.textContent:'',cur=null,secs=[];
   src.replace(/\r/g,'').split('\n').forEach(function(raw){
     if(/^\s*#/.test(raw))return;
@@ -374,7 +390,8 @@ var PROFILE=(function(){
     return L.map(function(l){
       var href=null,k=l.match(/^(.*?)\s+->\s*((?:https?:\/\/|mailto:)\S+)\s*$/i);
       if(k){l=k[1];href=k[2]}
-      var m=l.match(/^(\s*)([~!])\s?(.*)$/),t=m?up(m[1]+m[3]):up(l),c=m?(m[2]==='~'?'dim':'err'):'';
+      var m=l.match(/^(\s*)(!|~(?!~))\s?(.*)$/),t=m?up(m[1]+m[3]):up(l),c=m?(m[2]==='~'?'dim':'err'):'';
+      t=t.replace(/~~(.+?)~~/g,'\u0001$1\u0002'); /* ~~text~~ = struck through */
       return href?[t,c,{href:href}]:(c?[t,c]:t);
     });
   }
@@ -383,6 +400,12 @@ var PROFILE=(function(){
     var hd=sc.head,body=lines(sc.lines),m;
     if(/^welcome$/i.test(hd))P.welcome=body;
     else if(/^about$/i.test(hd))P.about=body;
+    else if(/^mail$/i.test(hd))P.mail=body.map(function(l){ /* project row = has a run of 2+ spaces inside it: */
+      var re=/(\S)( {2,})(?=\S)/,s=Array.isArray(l)?l[0]:l;      /* that run becomes a squeezable gap */
+      if(!re.test(s))return l;
+      return [s.replace(re,'$1\u0003$2\u0004'),Array.isArray(l)?l[1]||'':'',
+        Object.assign({row:true},Array.isArray(l)&&l[2]||{})];
+    });
     else if(/^alias(es)?$/i.test(hd))sc.lines.forEach(function(l){
       var a=l.match(/^\s*([^=]+?)\s*=\s*(.+?)\s*$/);
       if(a)P.aliases.push({from:a[1].toLowerCase().split(/\s+/),to:a[2].toLowerCase()});
@@ -467,7 +490,9 @@ function typeLine(text,cls,cb,opt){
   return queue(function(){return new Promise(function(res){
     text=UP(typeof text==='function'?text():text); /* a function = text worked out when its turn comes (ping) */
     var d=document.createElement('div'),host=d;
-    d.className='line'+(cls?' '+cls:'');
+    d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
+    /* indent: left margin for the whole line; hang: extra margin for wrapped continuation lines only */
+    if(opt.indent||opt.hang){d.style.paddingLeft=((opt.indent||0)+(opt.hang||0))+'ch';if(opt.hang)d.style.textIndent=(-opt.hang)+'ch'}
     if(opt.href){host=document.createElement('a');host.href=opt.href;
       if(!/^mailto:/i.test(opt.href)){host.target='_blank';host.rel='noopener'}d.appendChild(host)}
     var t=document.createTextNode(opt.pre?UP(opt.pre):'');host.appendChild(t);
@@ -475,7 +500,22 @@ function typeLine(text,cls,cb,opt){
     var sp=opt.speed||1,i=0;
     function step(){
       if(i>=text.length){scrollBottom();if(cb)cb();res();return}
-      var ch=text.charAt(i++);t.data+=ch;scrollBottom();
+      var ch=text.charAt(i++);
+      if(ch==='\u0003'){ /* a squeezable gap (mail rows, self-test dots): shrinks to fit narrow glass */
+        var j=text.indexOf('\u0004',i);if(j<0)j=text.length;
+        var g=document.createElement('span');g.className='gap';
+        g.dataset.n=j-i;g.dataset.f=text.charAt(i)||' ';g.dataset.w=text.replace(/[\u0001-\u0004]/g,'').length;
+        var at2=cursor.parentNode===host?cursor:null;host.insertBefore(g,at2);squeeze(g);
+        t=document.createTextNode('');host.insertBefore(t,at2);
+        i=j+1;step();return;
+      }
+      if(ch==='\u0001'||ch==='\u0002'){ /* ~~struck~~ text: start or end an <s> run */
+        var at=cursor.parentNode===host?cursor:null;t=document.createTextNode('');
+        if(ch==='\u0001'){var s=document.createElement('s');s.appendChild(t);host.insertBefore(s,at)}
+        else host.insertBefore(t,at);
+        step();return;
+      }
+      t.data+=ch;scrollBottom();
       if(ch!==' ')click(.194);
       setTimeout(step,(ch===' '?.35:1)*(14+Math.random()*38)*sp/PROFILE.speed);
     }
@@ -485,6 +525,21 @@ function typeLine(text,cls,cb,opt){
 function say(lines){
   lines.forEach(function(l){Array.isArray(l)?typeLine(l[0],l[1],null,l[2]):typeLine(l)});
 }
+function cols(){ /* how many characters fit on one line of the glass right now */
+  var p=document.createElement('span');p.textContent='0000000000';
+  p.style.cssText='position:absolute;visibility:hidden;white-space:pre';
+  out.appendChild(p);var cw=p.getBoundingClientRect().width/10;p.remove();
+  var cs=getComputedStyle(out),w=out.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  return cw>0?Math.floor(w/cw+.01):999;
+}
+function squeeze(g,c){ /* shrink a gap (never below 2 characters) until its row fits */
+  var over=Math.max(0,+g.dataset.w-(c||cols()));
+  g.textContent=(g.dataset.f||' ').repeat(Math.max(2,+g.dataset.n-over));
+}
+window.addEventListener('resize',function(){ /* rows already printed re-fit on rotate/resize */
+  var gs=out.querySelectorAll('.gap');if(!gs.length)return;
+  var c=cols();for(var i=0;i<gs.length;i++)squeeze(gs[i],c);
+});
 var MODE='shell'; /* shell | login | password (password input is not echoed) */
 function prompt(p,mode){
   queue(function(){
@@ -620,7 +675,7 @@ function longRow(name,n){
     else put(abs,dir?'d':'f',{prot:true,size:dir?0:/\.pic$/.test(abs)?16384:2048});
   });
 })();
-function row(l,v){return (l+' ').padEnd(21,'.')+' '+v}
+function row(l,v){var d=Math.max(2,20-l.length);return l+' \u0003'+'.'.repeat(d)+'\u0004 '+v} /* dot leader squeezes on narrow glass */
 
 var CMDS={
   help:function(){
@@ -646,7 +701,7 @@ var CMDS={
       ['who','who is logged in']
     ].concat(PROFILE.commands.filter(function(c){return c.help}).map(function(c){return [c.names[0],c.help]}));
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
-    say(['commands:'].concat(H.map(function(h){return '  '+h[0].padEnd(13)+' '+h[1]}),
+    say(['commands:'].concat(H.map(function(h){return ['  '+h[0].padEnd(13)+' '+h[1],'',{hang:16}]}), /* wraps under its description */
       ['',['man name for details, or name -h.','dim']]));
   },
   ls:function(a){
@@ -686,18 +741,13 @@ var CMDS={
     typeLine('');
     typeLine('welcome to '+(SITE||HOSTNAME)+'!');
     typeLine('');
-    say([
-      'this is a workshop of adventure, tinkering, and low',
-      'cunning. in it you will find some of the most curious',
-      'projects ever seen by mortals.'
+    say([ /* one line per paragraph: the glass wraps it at its own width (phones included) */
+      'this is a workshop of adventure, tinkering, and low cunning. in it you will find some of the most curious projects ever seen by mortals.'
     ]);
-    if(Object.prototype.hasOwnProperty.call(CMDS,'projects'))say([
+    if(PROFILE.mail.length)say([
       '',
-      'to see what is being built now, and what comes next,',
-      'type:',
-      '',
-      '    projects'
-    ]);
+      'here is what is on the bench:'
+    ].concat(PROFILE.mail));
     say([
       '',
       ['no terminal should be without one!','dim'],
@@ -774,7 +824,7 @@ CMDS.dmesg=function(){say([
   'tty0: keyboard detected (yours)',
   ['lp0: out of paper','dim'],
   'root on rp0, swap on rp0'
-])};
+].map(function(l){return Array.isArray(l)?[l[0],l[1],{hang:4}]:[l,'',{hang:4}]}))}; /* a record too long for the glass wraps indented */
 var PSN=57; /* each ps gets the next process id */
 CMDS.ps=function(a){
   var fl=a.join('').replace(/-/g,''),P=[];
@@ -826,15 +876,15 @@ CMDS.ping=function(a){
     typeLine(function(){
       return R[seq]==null?'request timeout for icmp_seq '+seq
         :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(loop?3:1)+' ms';
-    });
+    },'',null,{hang:4});
   })(i);
   typeLine('');
   typeLine('--- '+name+' ping statistics ---');
   typeLine(function(){var n=ok().length;
-    return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'});
+    return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'},'',null,{hang:4});
   typeLine(function(){var o=ok(),d=loop?3:1;if(!o.length)return 'no answer.';
     return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(d)+'/'+
-      (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(d)+'/'+Math.max.apply(null,o).toFixed(d)+' ms'});
+      (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(d)+'/'+Math.max.apply(null,o).toFixed(d)+' ms'},'',null,{hang:4});
 };
 /* easter egg: the magic word from colossal cave (hinted in ~/.adventure and the bottom of ~/.trash).
    Not in help, no manual page. */
@@ -905,21 +955,16 @@ function page(names,what,syn,desc,bugs){
 page('about','who owns this machine','about',[
   'prints the about file. same as cat about.']);
 page('alias','list or set aliases',"alias [ name[='command'] ]",[
-  'with no argument, lists every alias. with a name,',
-  'shows that one alias.',
+  'with no argument, lists every alias. with a name, shows that one alias.',
   '',
-  "alias name='command' sets an alias for this session;",
-  'it is forgotten at logout. the longest matching alias',
-  'wins, and any extra words are passed through.',
-  'commands may be joined with ; inside the quotes.']);
+  "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]);
 page('cat','catenate and print','cat file ...',[
   'prints each file in turn.',
   '',
   'locked files cannot be opened, and neither can folders.'],[
   'cat of a program prints exactly what you deserve.']);
 page('cd','change working directory','cd [ dir ]',[
-  'makes dir the working directory. with no argument,',
-  'goes home. understands ~, . and .. in any path.',
+  'makes dir the working directory. with no argument, goes home. understands ~, . and .. in any path.',
   '',
   'a locked folder is a bad directory.']);
 page('clear','clear the screen','clear',[
@@ -930,77 +975,54 @@ page('date','print the date','date',[
 page('echo','echo arguments','echo [ arg ... ]',[
   'prints its arguments, separated by spaces.']);
 page('exit, logout','log out','exit',[
-  'ends the session. the terminal runs its self-test and',
-  'waits at login: for a new name. any name will do,',
-  'within reason. aliases set this session are lost.']);
+  'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason. aliases set this session are lost.']);
 page('help','list the commands','help',[
-  'lists the commands, alphabetically, with a few words',
-  'about each. man name says more about any of them.']);
+  'lists the commands, alphabetically, with a few words about each. man name says more about any of them.']);
 page('ls','list contents of directory','ls [ -la ] [ name ... ]',[
-  'for each folder named, lists its contents; for each',
-  'file, repeats its name. with no name, lists the',
-  'working directory, in alphabetical order.',
+  'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
   '',
-  '-l   long listing: mode, links, owner, size in bytes',
-  '     and the time of last change.',
-  '-a   also list names beginning with a dot, which are',
-  '     otherwise hidden. this includes . and .., the',
-  '     folder itself and the one above it.',
+  '-l   long listing: mode, links, owner, size in bytes and the time of last change.',
+  '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.',
   '',
-  'the aliases ll, la and lla stand for ls -l, ls -a',
-  'and ls -l -a.']);
+  'the aliases ll, la and lla stand for ls -l, ls -a and ls -l -a.']);
 page('mail, email','read your mail','mail',[
   'prints your mail. there is usually one letter.'],[
   'there is no modem, so you cannot answer it from here.']);
 page('man','print the manual','man name',[
-  'prints the manual page for name. with no name, the',
-  'same as help.']);
+  'prints the manual page for name. with no name, the same as help.']);
 page('pwd','print working directory','pwd',[
   'prints the full name of the working directory.']);
 page('rm','remove files','rm [ -fri ] file ...',[
   'removes each file named.'],[
   'nothing is ever removed.']);
 page('sound','keyclicks on or off','sound [ on | off ]',[
-  'turns the keyclicks on or off. with no argument,',
-  'reports which. the browser stays silent until the',
-  'first tap or keypress, whatever this says.']);
+  'turns the keyclicks on or off. with no argument, reports which. the browser stays silent until the first tap or keypress, whatever this says.']);
 page('su','become super-user','su',[
-  'asks for the root password, then makes you the',
-  'super-user.'],[
+  'asks for the root password, then makes you the super-user.'],[
   'you do not know the root password.']);
 page('who','who is on the system','who [ am i ]',[
-  'lists everyone logged in: name, terminal, and the',
-  'time they arrived. who am i lists only you.']);
+  'lists everyone logged in: name, terminal, and the time they arrived. who am i lists only you.']);
 page('whoami','print your login name','whoami',[
   'prints the name you logged in as.']);
 page('dmesg','print the boot messages','dmesg',[
-  'prints what the system said to itself while it was',
-  'starting up.']);
+  'prints what the system said to itself while it was starting up.']);
 page('ps','process status','ps [ ax ]',[
-  'lists your processes: process id, terminal, cpu time',
-  'used, and the command.',
+  'lists your processes: process id, terminal, cpu time used, and the command.',
   '',
   'a    also list processes on other terminals.',
   'x    also list processes with no terminal at all.'],[
   'it shows what other people are doing.']);
 page('uptime','show how long the system has been up','uptime',[
-  'prints the time, how long the machine has been',
-  'running, how many users are logged in, and the load',
-  'average over the last 1, 5 and 15 minutes.']);
+  'prints the time, how long the machine has been running, how many users are logged in, and the load average over the last 1, 5 and 15 minutes.']);
 page('ifconfig','configure network interface','ifconfig [ interface ]',[
-  'prints the state of the network interfaces, or of',
-  'the one named.'],[
+  'prints the state of the network interfaces, or of the one named.'],[
   'there is only one, and it only talks to itself.']);
 page('hostname','print name of current host system','hostname',[
-  'prints the name of this machine. only the super-user',
-  'may change it.']);
+  'prints the name of this machine. only the super-user may change it.']);
 page('ping','send echo requests to a host','ping [ -c count ] host',[
-  'sends count echo requests (default 4, at most 10), one',
-  'a second, and reports how long each answer took.',
+  'sends count echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
   '',
-  'localhost answers at once. one other host answers as',
-  'well: the server this terminal came from. those times',
-  'are real round trips across your own network.'],[
+  'localhost answers at once. one other host answers as well: the server this terminal came from. those times are real round trips across your own network.'],[
   'every other host is unknown. it is 1979.']);
 PROFILE.commands.forEach(function(c){ /* custom commands: a page made from the help text */
   var n=c.names.filter(function(x){return RESERVED.indexOf(x)<0});
@@ -1010,12 +1032,20 @@ Object.keys(PROFILE.man).forEach(function(k){ /* == man: NAME == sections */
   if(Object.prototype.hasOwnProperty.call(MAN,k))MAN[k].desc=PROFILE.man[k];
   else page(k,'',k,PROFILE.man[k]);
 });
-function manPage(n){
-  var p=MAN[n],I='     ',L=[n.toUpperCase()+'(1)','','NAME',I+p.names+(p.what?' - '+p.what:''),'','SYNOPSIS',I+p.syn];
+function manPage(n){ /* body text is indented 5 with a real margin, so wrapped lines stay indented */
+  var p=MAN[n],I=5;
+  function at(t,hang,cls,o){return [t,cls||'',Object.assign({indent:I,hang:hang||0},o||{})]}
+  var L=[n.toUpperCase()+'(1)','','NAME',at(p.names+(p.what?' - '+p.what:''),p.what?p.names.length+3:0),
+    '','SYNOPSIS',at(p.syn,p.syn.indexOf(' ')+1)];
   function block(title,lines){
     if(!lines.length)return;
     L.push('',title);
-    lines.forEach(function(l){L.push(Array.isArray(l)?[I+l[0]].concat(l.slice(1)):(l?I+l:''))});
+    lines.forEach(function(l){
+      var a=Array.isArray(l),t=a?l[0]:l;if(!t){L.push('');return}
+      var lead=t.match(/^ */)[0].length;t=t.slice(lead);
+      var opt=t.match(/^(\S+ {2,})\S/); /* "-l   long listing ..." wraps under its text */
+      L.push([t,a?l[1]||'':'',Object.assign({indent:I+lead,hang:opt?opt[1].length:0},a&&l[2]||{})]);
+    });
   }
   block('DESCRIPTION',p.desc);block('BUGS',p.bugs);
   return L;
