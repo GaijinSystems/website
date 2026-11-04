@@ -24,19 +24,30 @@ function has(o,k){return HAS.call(o,k)}
 var PH=window.Phosphor={
   version:'1.0.0',
   upstream:'https://github.com/GaijinSystems/phosphor', /* default for the source command */
-  texts:[],defs:[],hooks:[],errors:[],
-  content:function(s){PH.texts.push(String(s))},   /* a block of settings and == sections == */
-  command:function(def){PH.defs.push(def)},       /* a built-in command, see engine/commands */
-  setup:function(fn){PH.hooks.push(fn)},          /* machine hook: runs after the file tree exists */
+  texts:[],fromSite:[],defs:[],hooks:[],seen:{},
+  content:function(s){var f=me();PH.texts.push(String(s));PH.fromSite.push(!f||/(^|\/)site\//.test(f))}, /* settings and == sections == */
+  command:function(def){me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
+  setup:function(fn){me();PH.hooks.push(fn)},     /* machine hook: runs after the file tree exists */
   start:start
 };
 
-/* a content file with a stray ` or ${ fails to load: note it so the glass can say so */
-window.addEventListener('error',function(e){
-  if(PH.started)return;
-  var f=(e.filename||'').split('/').slice(-2).join('/');
-  PH.errors.push((f?f+': ':'')+(e.message||'failed to load'));
-});
+/* Every file index.html loads calls one of the three functions above, which notes the file
+   as loaded. A file that is missing, or that has a stray ` or ${ in it, never gets that far,
+   so start() can name it on the glass. (The browser's own error event cannot be used: for
+   a page opened from disk it hides which file failed.) */
+function me(){
+  var s=document.currentScript,f=s?(s.getAttribute('src')||s.getAttribute('data-src')||''):'';
+  if(f)PH.seen[f]=true;
+  return f;
+}
+function notLoaded(){
+  var L=[],S=document.querySelectorAll('script[src],script[data-src]');
+  for(var i=0;i<S.length;i++){
+    var f=S[i].getAttribute('src')||S[i].getAttribute('data-src');
+    if(!/(^|\/)engine\/phosphor\.js$/.test(f)&&!PH.seen[f])L.push(f);
+  }
+  return L;
+}
 
 function start(){
 if(PH.started)return;PH.started=true;
@@ -68,7 +79,10 @@ var PROFILE=(function(){
     else if(k==='installed')P.installed=v;
     else if(k==='user'){if(/^[a-z][a-z0-9_]{0,7}$/i.test(v))P.user=v.toLowerCase()}
     else if(k==='hostname')P.hostname=v.toLowerCase();
-    else if(k==='source')P.source=v;
+    else if(k==='source'){ /* becomes a link: same rule as links in the text */
+      if(!v||/^https?:\/\/\S+$/i.test(v))P.source=v;
+      else P.problems.push('source: must start with http:// or https://');
+    }
     else if(k==='prompt')P.prompt=v.replace(/^"(.*)"$/,'$1');
     else if(k==='offline')P.offline=v;
     else if(k==='commands')list(v).forEach(function(x){ /* commands: -ping, -ifconfig switches them off */
@@ -77,12 +91,12 @@ var PROFILE=(function(){
     });
     else P.problems.push('unknown setting "'+k+'"');
   }
-  PH.texts.forEach(function(src){
+  PH.texts.forEach(function(src,ti){
     var cur=null; /* settings come first in each block, before its first == section == */
     src.replace(/\r/g,'').split('\n').forEach(function(raw){
       if(/^\s*#/.test(raw))return;
       var h=raw.match(/^\s*==\s*(.*?)\s*==\s*$/);
-      if(h){cur={head:h[1],lines:[]};secs.push(cur);return}
+      if(h){cur={head:h[1],lines:[],site:PH.fromSite[ti]};secs.push(cur);return}
       if(cur){cur.lines.push(raw.replace(/\s+$/,''));return}
       var m=raw.match(/^\s*([a-z][a-z _-]*?)\s*:\s*(.*?)\s*$/i);if(!m)return;
       setKey(m[1].toLowerCase().replace(/[\s_-]+/g,' '),m[2]);
@@ -125,13 +139,13 @@ var PROFILE=(function(){
       if(!a)return;
       var from=a[1].toLowerCase().split(/\s+/);
       P.aliases=P.aliases.filter(function(x){return x.from.join(' ')!==from.join(' ')});
-      P.aliases.push({from:from,to:a[2].toLowerCase()});
+      P.aliases.push({from:from,to:a[2]}); /* the command keeps its case: echo Hello prints Hello */
     });
     else if((m=hd.match(/^command\s*:\s*([^|]+?)\s*(?:\|\s*(.*))?$/i))){
       var names=m[1].split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean);
       if(!names.length)return;
       P.commands=P.commands.filter(function(c){return !c.names.some(function(n){return names.indexOf(n)>=0})});
-      P.commands.push({names:names,help:up(m[2]||''),body:body});
+      P.commands.push({names:names,help:up(m[2]||''),body:body,site:sc.site});
     }
     else if((m=hd.match(/^file\s*:\s*(\S+)$/i)))P.files.push({name:m[1].toLowerCase(),body:body});
     else if((m=hd.match(/^dir(?:ectory)?\s*:\s*(\S+)$/i)))P.dirs.push(m[1].toLowerCase());
@@ -275,7 +289,11 @@ var OWNER=PROFILE.owner,HOSTNAME=PROFILE.host;
 var ST={owner:OWNER,user:PROFILE.user,home:'/usr/'+PROFILE.user,cwd:'/usr/'+PROFILE.user,site:SITE,hostname:HOSTNAME,login:null};
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
-function in79(n){return new Date(PROFILE.year,n.getMonth(),n.getDate(),n.getHours(),n.getMinutes(),n.getSeconds())} /* now, moved to the machine's year */
+function in79(n){ /* now, moved to the machine's year (February 29 becomes the 28th in a non-leap year) */
+  var y=PROFILE.year,d=n.getDate();
+  if(n.getMonth()===1&&d===29&&new Date(y,1,29).getMonth()!==1)d=28;
+  return new Date(y,n.getMonth(),d,n.getHours(),n.getMinutes(),n.getSeconds());
+}
 function tz(){
   try{var q=new Intl.DateTimeFormat('en-US',{timeZoneName:'short'}).formatToParts(new Date());
     for(var i=0;i<q.length;i++)if(q[i].type==='timeZoneName')return q[i].value}catch(e){}
@@ -296,7 +314,7 @@ function lsdate(d){ /* as ls does it: older than six months shows the year inste
 /* ---------- file system: the machine builds the system folders; site files live in home ---------- */
 function mk(type,name,o){
   var n={type:type,name:name,owner:OWNER,date:FD,prot:false,bin:false,body:null,size:0,mode:null,dev:null,
-    kids:type==='d'?{}:null,parent:null};
+    kids:type==='d'?Object.create(null):null,parent:null};
   if(o)for(var k in o)if(has(o,k))n[k]=o[k];
   return n;
 }
@@ -322,12 +340,13 @@ function norm(p){ /* absolute path; handles ~, . and .. */
   return '/'+s.join('/');
 }
 function pathOf(n){var s=[];while(n!==ROOT){s.unshift(n.name);n=n.parent}return '/'+s.join('/')}
-function find(p){ /* node or null; nobody gets through a locked folder */
+function find(p,exact){ /* node or null; nobody gets through a locked folder.
+                           exact (for building the tree): full names only, locks ignored */
   var s=parts(norm(p)),n=ROOT;
   for(var i=0;i<s.length;i++){
-    if(n.type!=='d'||n.prot)return null;
-    var k=n.kids[s[i]];
-    if(!k&&i===s.length-1) /* cat photo01 finds photo01.pic */
+    if(n.type!=='d'||(n.prot&&!exact))return null;
+    var k=has(n.kids,s[i])?n.kids[s[i]]:null;
+    if(!k&&!exact&&i===s.length-1) /* cat photo01 finds photo01.pic */
       k=n.kids[Object.keys(n.kids).sort().filter(function(x){return x.charAt(0)!=='.'&&x.split('.')[0]===s[i]})[0]];
     if(!k)return null;
     n=k;
@@ -363,6 +382,7 @@ function page(names,what,syn,desc,bugs){
   return p;
 }
 PH.defs.forEach(function(d){ /* later definitions of the same name win */
+  if(typeof d.enabled==='function'&&!d.enabled(PROFILE))return; /* e.g. about, only when there is an about section */
   var names=(d.names||[]).filter(function(n){return PROFILE.off.indexOf(n)<0});
   if(!names.length||typeof d.run!=='function')return;
   names.forEach(function(n){
@@ -373,12 +393,23 @@ PH.defs.forEach(function(d){ /* later definitions of the same name win */
   if(d.help&&!d.hidden)HELP.push([names[0],d.help]);
   if(d.man)page(names.join(', '),d.man.what||'',d.man.syn||names[0],d.man.desc,d.man.bugs);
 });
+/* Text commands (== command: NAME ==). They cannot take the name of a core command while
+   it is running; switch it off first ("commands: -mail") and yours takes its place.
+   "commands: -name" also removes the machine's text commands (sudo), but never the site's:
+   to remove one of yours, delete it. */
 var RESERVED=['help','man','clear','ls','cat','sound','cd','pwd','echo','mail','alias','source'];
 PROFILE.commands.forEach(function(c){
-  var n=c.names.filter(function(x){return RESERVED.indexOf(x)<0&&PROFILE.off.indexOf(x)<0});
+  var n=c.names.filter(function(x){
+    var off=PROFILE.off.indexOf(x)>=0;
+    if(RESERVED.indexOf(x)>=0&&!off)return false;
+    return c.site||!off;
+  });
   if(!n.length)return;
   var fn=function(){say(c.body)};
-  n.forEach(function(x){CMDS[x]=fn;HELP=HELP.filter(function(h){return h[0]!==x})});
+  n.forEach(function(x){ /* replaces any built-in of that name, its manual page and program file too */
+    CMDS[x]=fn;NOH[x]=false;delete MAN[x];delete PATHS[x];
+    HELP=HELP.filter(function(h){return h[0]!==x});
+  });
   if(c.help){
     HELP.push([n[0],c.help]);
     page(n.join(', '),c.help.toLowerCase(),n[0],[c.help.toLowerCase()+'.']); /* a page made from the help text */
@@ -431,7 +462,7 @@ if(PROFILE.about.length)put(ST.home+'/about','f',{body:PROFILE.about});
 PROFILE.dirs.forEach(function(d){put(home(d),'d')});
 PROFILE.files.forEach(function(f){put(home(f.name),'f',{body:f.body})});
 PROFILE.protected.forEach(function(p){
-  var dir=/\/$/.test(p),abs=home(p.replace(/\/+$/,'')),ex=find(abs);
+  var dir=/\/$/.test(p),abs=home(p.replace(/\/+$/,'')),ex=find(abs,true); /* exact: an item inside a locked folder is still found */
   if(ex&&ex!==ROOT)ex.prot=true;
   else put(abs,dir?'d':'f',{prot:true,size:dir?0:/\.pic$/.test(abs)?16384:2048});
 });
@@ -615,12 +646,11 @@ if(window.ResizeObserver)new ResizeObserver(redraw).observe(svg);
 
 /* ---------- boot ---------- */
 function problems(){ /* content mistakes, shown on the glass so they get fixed */
-  var L=PH.errors.map(function(e){return 'content file did not load: '+e})
-    .concat(PROFILE.problems);
+  var bad=notLoaded(),L=bad.map(function(f){return 'did not load: '+f}).concat(PROFILE.problems);
   if(!PH.texts.length)L.push('no content loaded: check the script tags in index.html');
   if(!L.length)return;
   L.forEach(function(m){console.warn('phosphor: '+m);typeLine('! '+m,'warn',null,{speed:.3})});
-  typeLine('(a stray ` or ${ in a site/*.js file stops it loading.)','warn',null,{speed:.3});
+  if(bad.length)typeLine('(is the file there? a stray ` or ${ inside one also stops it loading.)','warn',null,{speed:.3});
   typeLine('');
 }
 function boot(){

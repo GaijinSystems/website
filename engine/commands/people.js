@@ -4,6 +4,7 @@
 'use strict';
 
 P.command({names:['about'],help:'the owner of this machine',
+  enabled:function(p){return p.about.length>0}, /* no == about == section: no about command, no about file */
   man:{what:'who owns this machine',syn:'about',desc:[
     'prints the about file. same as cat about.']},
   run:function(){P.say(P.profile.about)}});

@@ -7,6 +7,8 @@
      path    where its program file appears in the file tree (/bin/ls)
      man     the manual page: what, syn (synopsis), desc and bugs (lists of lines)
      run     function(args, rawLine): args are lowercased words after the name
+     enabled optional function(profile): return false to leave the command out
+     hidden  true to keep it out of help (xyzzy)
    Everything the engine offers is on window.Phosphor (P below), e.g. P.say, P.find. */
 (function(P){
 'use strict';
@@ -48,6 +50,7 @@ P.command({names:['cat'],help:'print a file',path:'/bin',
     'locked files cannot be opened, and neither can folders.'],bugs:[
     'cat of a program prints exactly what you deserve.']},
   run:function(a){
+    if(!a.length){P.typeLine('usage: cat file ...');return} /* real cat would wait for typing; there is no ^D here */
     a.forEach(function(x){
       var n=P.find(x);
       if(!n||n.prot||n.type==='d')P.typeLine("cat: can't open "+x,'err');
