@@ -1,0 +1,133 @@
+/* PHOSPHOR-9 terminal: system commands (dmesg, ps, uptime, hostname, ifconfig, ping, su, rm).
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
+   What these print comes from the machine (machines/<name>/machine.js): its == dmesg ==
+   and == ps == sections and its "offline:" line. */
+(function(P){
+'use strict';
+
+P.command({names:['dmesg'],help:'boot messages',path:'/etc',
+  man:{what:'print the boot messages',syn:'dmesg',desc:[
+    'prints what the system said to itself while it was starting up.']},
+  run:function(){
+    P.say((P.profile.sec.dmesg||[]).map(function(l){ /* a record too long for the glass wraps indented */
+      return Array.isArray(l)?[l[0],l[1],Object.assign({hang:4},l[2]||{})]:[l,'',{hang:4}];
+    }));
+  }});
+
+/* == ps == rows: show pid tty time command. show is x (ps x), a (ps a) or - (always) */
+var PSN=0;
+function table(){
+  return (P.profile.raw.ps||[]).map(function(l){return l.trim().split(/\s+/)})
+    .filter(function(f){return f.length>=5&&/^[xa-]$/i.test(f[0])})
+    .map(function(f){return {show:f[0].toLowerCase(),p:[f[1],f[2],f[3],f.slice(4).join(' ')]}});
+}
+P.command({names:['ps'],help:'what is running',path:'/bin',
+  man:{what:'process status',syn:'ps [ ax ]',desc:[
+    'lists your processes: process id, terminal, cpu time used, and the command.',
+    '',
+    'a    also list processes on other terminals.',
+    'x    also list processes with no terminal at all.'],bugs:[
+    'it shows what other people are doing.']},
+  run:function(a){
+    var fl=a.join('').replace(/-/g,''),T=table(),R=[];
+    if(!PSN)PSN=T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0)+5; /* each ps gets the next id */
+    T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
+    R.push([String(PSN++),'0','0:00',('ps '+a.join(' ')).trim()]);
+    P.say(['  PID TTY  TIME CMD'].concat(R.map(function(p){return p[0].padStart(5)+' '+p[1].padEnd(3)+' '+p[2].padStart(5)+' '+p[3]})));
+  }});
+
+P.command({names:['uptime'],help:'how long the machine has been up',path:'/bin',
+  man:{what:'show how long the system has been up',syn:'uptime',desc:[
+    'prints the time, how long the machine has been running, how many users are logged in, and the load average over the last 1, 5 and 15 minutes.']},
+  run:function(){ /* up since the machine was installed (or three days, early in the year) */
+    var now=P.in79(new Date()),SD=P.systemDate,boot=now-SD>864e5?SD:new Date(now-(3*864e5+4*36e5+12*6e4)),
+        m=Math.floor((now-boot)/6e4),d=Math.floor(m/1440),hr=now.getHours();
+    function la(){return (Math.random()*.06).toFixed(2)}
+    P.typeLine((hr%12||12)+':'+P.p2(now.getMinutes())+(hr<12?'am':'pm')+' up '+(d?d+' day'+(d>1?'s':'')+', ':'')+
+      Math.floor(m%1440/60)+':'+P.p2(m%60)+', 2 users, load average: '+la()+', '+la()+', '+la());
+  }});
+
+P.command({names:['hostname'],help:'the name of this machine',path:'/bin',
+  man:{what:'print name of current host system',syn:'hostname',desc:[
+    'prints the name of this machine. only the super-user may change it.']},
+  run:function(a){
+    if(a[0]){P.typeLine('hostname: permission denied','err');return} /* only root may rename the machine */
+    P.typeLine(P.st.hostname);
+  }});
+
+P.command({names:['ifconfig'],help:'network interfaces',path:'/etc',
+  man:{what:'configure network interface',syn:'ifconfig [ interface ]',desc:[
+    'prints the state of the network interfaces, or of the one named.'],bugs:[
+    'there is only one, and it only talks to itself.']},
+  run:function(a){
+    if(a[0]&&a[0]!=='lo0'){P.typeLine('ifconfig: '+a[0]+': no such interface','err');return}
+    P.say(['lo0: flags=9<UP,LOOPBACK>','     inet 127.0.0.1 netmask 0xff000000']);
+    if(!a[0])P.typeLine('no other interfaces. '+P.profile.offline,'dim');
+  }});
+
+/* ping: localhost answers instantly (fake). The page's own server answers for real: each "packet"
+   is a HEAD request for this page, so the times are genuine round trips. Nothing else is reachable.
+   Switch it off with "commands: -ping" in site/config.js if you would rather it made no requests. */
+P.command({names:['ping'],help:'is anyone out there',path:'/etc',
+  man:{what:'send echo requests to a host',syn:'ping [ -c count ] host',desc:[
+    'sends count echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
+    '',
+    'localhost answers at once. one other host answers as well: the server this terminal came from. those times are real round trips across your own network.'],bugs:[
+    'every other host is unknown. it is {year}.']},
+  run:function(a){
+    var c=4,h=null,i,SITE=P.st.site,HOST=P.st.hostname;
+    for(i=0;i<a.length;i++){if(a[i]==='-c'&&a[i+1])c=parseInt(a[++i],10)||4;else if(a[i].charAt(0)!=='-')h=a[i]}
+    c=Math.max(1,Math.min(10,c));
+    if(!h){P.typeLine('usage: '+P.man.ping.syn);return}
+    var loop=['localhost','127.0.0.1',HOST].indexOf(h)>=0,
+        real=!!SITE&&(h===SITE||h==='www.'+SITE||'www.'+h===SITE);
+    if(!loop&&!real){P.typeLine('ping: unknown host '+h,'err');P.typeLine(P.profile.offline,'dim');return}
+    var R=[],name=loop?'localhost':h;
+    function ok(){return R.filter(function(x){return x!=null})}
+    P.typeLine('PING '+name+(loop?' (127.0.0.1)':'')+': 56 data bytes');
+    for(i=0;i<c;i++)(function(seq){
+      if(seq)P.pause(1000);
+      P.queue(function(){
+        if(loop){R[seq]=.04+Math.random()*.05;return}
+        var t=performance.now(),done=false;
+        return Promise.race([
+          fetch(location.origin+location.pathname+'?ping='+Date.now()+'-'+seq,{method:'HEAD',cache:'no-store'})
+            .then(function(){if(!done)R[seq]=performance.now()-t},function(){}),
+          P.sleep(2000)
+        ]).then(function(){done=true;if(R[seq]===undefined)R[seq]=null});
+      });
+      P.typeLine(function(){
+        return R[seq]==null?'request timeout for icmp_seq '+seq
+          :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(loop?3:1)+' ms';
+      },'',null,{hang:4});
+    })(i);
+    P.typeLine('');
+    P.typeLine('--- '+name+' ping statistics ---');
+    P.typeLine(function(){var n=ok().length;
+      return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'},'',null,{hang:4});
+    P.typeLine(function(){var o=ok(),d=loop?3:1;if(!o.length)return 'no answer.';
+      return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(d)+'/'+
+        (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(d)+'/'+Math.max.apply(null,o).toFixed(d)+' ms'},'',null,{hang:4});
+  }});
+
+P.command({names:['su'],path:'/bin',
+  man:{what:'become super-user',syn:'su',desc:[
+    'asks for the root password, then makes you the super-user.'],bugs:[
+    'you do not know the root password.']},
+  run:function(){P.typeLine('Password:');P.pause(900);P.typeLine('Sorry','err')}});
+
+P.command({names:['rm'],path:'/bin',
+  man:{what:'remove files',syn:'rm [ -fri ] file ...',desc:[
+    'removes each file named.'],bugs:[
+    'nothing is ever removed.']},
+  run:function(a){
+    var f=a.filter(function(x){return x.charAt(0)!=='-'});
+    if(!f.length){P.typeLine('usage: rm [-fri] file ...');return}
+    f.forEach(function(x){
+      var n=P.find(x);
+      P.typeLine('rm: '+x+(!n?' nonexistent':n.type==='d'?' directory':' not removed'),'err');
+    });
+    P.typeLine('nice try.','dim');
+  }});
+
+})(window.Phosphor);

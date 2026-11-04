@@ -1,0 +1,155 @@
+/* PHOSPHOR-9 terminal: engine styles.
+   Copyright (C) 2026 Gaijin Systems. Free software under the GNU Affero General Public
+   License, version 3 or later; see LICENSE. To restyle your own copy, override the
+   variables below in site/theme.css instead of editing this file. */
+:root{
+  --phos:#3dff7e;--dim:#1d8f47;--err:#ff5f56;
+  /* desktop: the whole monitor (glass + bezel) fits inside 80% of the window's width and
+     height, centered. Glass stays 4:3; bezel is 1.079 x 0.842 of the glass width. */
+  --sw:min(calc(80vw / 1.079),calc(var(--app-h,100vh) * .8 / .842));
+  --sh:calc(var(--sw) * .75);
+  --bh:calc(var(--sw) * .842); /* bezel outer height */
+  --fs:clamp(13px,calc(var(--sw) / 44.7),32px); /* text scales with the glass (~67 columns) */
+  --cable:80px; /* fallback only: the script sets this from the cord settings */
+  --nub:11;     /* strain-relief bottom, px below the cable-wrap top */
+}
+@supports (height:100dvh){:root{--sw:min(calc(80vw / 1.079),calc(var(--app-h,100dvh) * .8 / .842))}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#040504}
+body{
+  height:100vh;height:100dvh;height:var(--app-h,100dvh); /* --app-h = visible height, shrinks when a soft keyboard opens */
+  background:radial-gradient(ellipse 70% 55% at 50% 46%,#09110b 0%,#050705 55%,#030403 100%);
+  font-family:"VT323","Courier New",Courier,monospace;
+}
+#stage{
+  position:relative;width:100%;height:100%;margin:0 auto;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+
+/* ---------- monitor ---------- */
+#bezel{
+  position:relative;z-index:2;flex:0 0 auto;
+  padding:calc(var(--sw) * .037) calc(var(--sw) * .0395) calc(var(--sw) * .055);
+  background:linear-gradient(168deg,#232624 0%,#171917 45%,#0b0c0b 100%);
+  border-radius:26px 26px 34px 34px / 22px 22px 44px 44px;
+  box-shadow:
+    inset 0 2px 1px rgba(255,255,255,.055),
+    inset 0 -8px 16px rgba(0,0,0,.65),
+    inset 2px 0 3px rgba(255,255,255,.02),
+    0 2px 0 #1c1f1d,
+    0 34px 70px rgba(0,0,0,.75),
+    0 8px 18px rgba(0,0,0,.5);
+  -webkit-tap-highlight-color:transparent;
+}
+#bezel::after{ /* strain relief nub */
+  content:"";position:absolute;left:50%;bottom:-15px;width:36px;height:19px;
+  transform:translateX(-50%);
+  background:linear-gradient(180deg,#1d201e,#0c0d0c);
+  border-radius:4px 4px 11px 11px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 5px 8px rgba(0,0,0,.6);
+}
+.badge{
+  position:absolute;left:calc(var(--sw) * .045);bottom:calc(var(--sw) * .017);
+  font:max(11px,calc(var(--sw) * .0145))/1 "Courier New",Courier,monospace;letter-spacing:.32em;
+  color:#2b2f2c;text-shadow:0 1px 0 rgba(0,0,0,.8),0 -1px 0 rgba(255,255,255,.03);
+  user-select:none;pointer-events:none;
+}
+
+/* ---------- glass ---------- */
+#screen{
+  position:relative;width:var(--sw);height:var(--sh);overflow:hidden;
+  border-radius:4.5% / 6.5%;
+  background:radial-gradient(ellipse at 50% 46%,#07130b 0%,#051009 50%,#020603 100%);
+  box-shadow:inset 0 0 40px 12px rgba(0,0,0,.85),inset 0 0 120px rgba(0,0,0,.55),0 0 0 2px #050605;
+  -webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  cursor:text;
+}
+#crt{position:absolute;inset:0;animation:warm 1s cubic-bezier(.2,.7,.2,1) both}
+#crt::before{
+  content:"";position:absolute;inset:0;z-index:5;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 50%,rgba(61,255,126,.4),rgba(61,255,126,0) 70%);
+  animation:flash 1.1s ease-out forwards;
+}
+@keyframes warm{0%{transform:scale(.85,.004)}30%{transform:scale(1,.02)}55%{transform:scale(1,1)}100%{transform:none}}
+@keyframes flash{0%{opacity:1}100%{opacity:0}}
+#crt.lit::before{display:none} /* power-on flash removed outright once it has faded */
+
+#term{
+  position:absolute;inset:0;z-index:1;overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:none;
+}
+#term::-webkit-scrollbar{display:none}
+#out,.ghost{
+  padding:calc(var(--fs)*1.6) calc(var(--fs)*2.1) calc(var(--fs)*1.9);
+  font-size:var(--fs);line-height:1.28;
+}
+.line{
+  min-height:1.28em;white-space:pre-wrap;word-break:break-word;
+  color:var(--phos);
+  text-shadow:0 0 6px rgba(61,255,126,.9),0 0 22px rgba(61,255,126,.35);
+}
+.line.dim{color:var(--dim);text-shadow:0 0 6px rgba(29,143,71,.8),0 0 18px rgba(29,143,71,.3)}
+.line.err{color:var(--err);text-shadow:0 0 6px rgba(255,95,86,.85),0 0 22px rgba(255,95,86,.3)}
+.line a{color:inherit;text-decoration:underline dotted;text-underline-offset:.2em;user-select:text;-webkit-user-select:text}
+.line a:hover,.line a:focus-visible{text-decoration-style:solid;outline:none}
+.line.row{padding:.16em 0} /* project rows (mail) get 25% more room so the underlines do not crowd */
+.cursor{
+  display:inline-block;width:.62em;height:1.02em;margin-left:1px;vertical-align:-.17em;
+  background:var(--phos);
+  box-shadow:0 0 6px rgba(61,255,126,.9),0 0 22px rgba(61,255,126,.35);
+}
+#term.idle .cursor{animation:blink 1.06s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* afterglow: fading copies of the previous frame (P1 persistence) */
+#glow{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none}
+.ghost{position:absolute;top:0;left:0;right:0;animation:decay 460ms linear forwards;will-change:opacity}
+@keyframes decay{from{opacity:var(--a,.38)}to{opacity:0}}
+
+/* ---------- tube effects ---------- */
+.fx{position:absolute;inset:0;pointer-events:none}
+.flicker{z-index:2;background:rgba(61,255,126,.03);animation:flick 3.1s steps(1) infinite}
+@keyframes flick{
+  0%{opacity:.55}6%{opacity:1}9%{opacity:.35}17%{opacity:.8}24%{opacity:.5}
+  31%{opacity:1}38%{opacity:.6}46%{opacity:.9}53%{opacity:.3}57%{opacity:.75}
+  66%{opacity:.55}74%{opacity:1}79%{opacity:.45}88%{opacity:.85}95%{opacity:.6}
+}
+.band{position:absolute;left:-4%;right:-4%;z-index:2;pointer-events:none;mix-blend-mode:screen}
+.band.b2{height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:down 19s linear infinite}
+@keyframes down{0%{top:-150px}100%{top:100%}}
+.scan{z-index:3;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.38) 2px,rgba(0,0,0,.38) 3px)}
+.vig{z-index:4;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 58%,rgba(0,0,0,.35) 80%,rgba(0,0,0,.8) 100%)}
+
+/* ---------- cable ---------- */
+/* desktop: runs from just under the bezel to the bottom of the window, whatever the gap */
+#cablewrap{position:absolute;z-index:1;left:0;right:0;bottom:0;top:calc(50% + var(--bh) / 2 - 4px)}
+#cable{position:absolute;inset:0;width:100%;height:100%;overflow:visible;display:block}
+#sway{transform-box:view-box;transform-origin:50% 0;animation:sway 7.3s ease-in-out infinite}
+@keyframes sway{0%,100%{transform:skewX(calc(var(--sa,.5deg) * -1))}50%{transform:skewX(var(--sa,.5deg))}}
+
+/* ---------- hidden input (soft keyboard bridge) ---------- */
+#kb{
+  position:fixed;left:0;bottom:0;width:1px;height:16px;
+  font-size:16px;opacity:0;border:0;padding:0;margin:0;outline:none;
+  background:transparent;color:transparent;caret-color:transparent;
+}
+
+/* ---------- content problems (shown on the glass, see engine/phosphor.js) ---------- */
+.line.warn{color:#ffd166;text-shadow:0 0 6px rgba(255,209,102,.7)}
+
+@media (max-width:640px){
+  /* monitor fills the phone down to a short cable; when the soft keyboard opens,
+     --app-h shrinks and the whole rig resizes to sit just above it */
+  :root{--sw:calc(100vw - 30px);--sh:clamp(140px,calc(var(--app-h,100dvh) - 128px),900px);--fs:clamp(13px,2.2vw,17px);--cable:77px;--nub:8}
+  #stage{justify-content:flex-end;padding-top:calc(8px + env(safe-area-inset-top,0px))}
+  #cablewrap{position:relative;top:auto;bottom:auto;left:auto;right:auto;width:100%;flex:0 0 var(--cable);margin-top:-4px}
+  #bezel{padding:12px 12px 22px;border-radius:16px 16px 22px 22px / 14px 14px 28px 28px}
+  #bezel::after{bottom:-12px;width:28px;height:15px}
+  .badge{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  #crt,#crt::before,.flicker,.band,#sway{animation:none}
+  #crt::before{display:none}
+  .band{display:none}
+}
