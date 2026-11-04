@@ -7,18 +7,23 @@ P.command({names:['help'],
   man:{what:'list the commands',syn:'help',desc:[
     'lists the commands, alphabetically, with a few words about each. man name says more about any of them.']},
   run:function(){
-    var H=P.help();
+    var H=P.help(),man=Object.prototype.hasOwnProperty.call(P.cmds,'man');
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
     P.say(['commands:'].concat(H.map(function(h){return ['  '+h[0].padEnd(13)+' '+h[1],'',{hang:16}]}), /* wraps under its description */
-      ['',['man name for details, or name -h.','dim']]));
+      ['',[man?'man name for details, or name -h.':'name -h for usage.','dim']]));
   }});
 
 P.command({names:['man'],help:'the manual',
   man:{what:'print the manual',syn:'man name',desc:[
     'prints the manual page for name. with no name, the same as help.']},
   run:function(a){
-    if(!a[0]){P.cmds.help([],'help');return}
-    if(Object.prototype.hasOwnProperty.call(P.man,a[0]))P.say(P.manPage(a[0]));
+    var has=Object.prototype.hasOwnProperty;
+    if(!a[0]){
+      if(has.call(P.cmds,'help')){P.cmds.help([],'help');return}
+      P.say(['usage: man name',['pages: '+Object.keys(P.man).sort().join(', '),'dim',{hang:7}]]); /* help is switched off */
+      return;
+    }
+    if(has.call(P.man,a[0]))P.say(P.manPage(a[0]));
     else P.typeLine('No manual entry for '+a[0]+'.');
   }});
 
@@ -30,18 +35,18 @@ P.command({names:['alias'],help:'list or set aliases',
     '',
     "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]},
   run:function(a,raw){
-    var rest=raw.replace(/^\s*\S+\s*/,'').toLowerCase().trim(),m;
+    var rest=raw.replace(/^\s*\S+\s*/,'').trim(),m; /* names are case-blind; the command keeps its case */
     if(!rest){
       if(!P.aliases.length){P.typeLine('no aliases.');return}
       P.say(P.aliases.map(aliasRow));return;
     }
     var nm,to;
-    if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=m[1];to=m[2].replace(/^(\x27|\x22)(.*)\1$/,'$2').trim()}
+    if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=m[1].toLowerCase();to=m[2].replace(/^(\x27|\x22)(.*)\1$/,'$2').trim()}
     else{
-      var hit=P.aliases.filter(function(x){return x.from.join(' ')===rest});
+      var hit=P.aliases.filter(function(x){return x.from.join(' ')===rest.toLowerCase().split(/\s+/).join(' ')});
       if(hit.length){P.typeLine(aliasRow(hit[0]));return}
-      if(rest.indexOf(' ')<0){P.typeLine('alias: '+rest+': not found','err');return}
-      nm=rest.split(/\s+/)[0];to=rest.replace(/^\S+\s+/,''); /* csh style: alias name value */
+      if(rest.indexOf(' ')<0){P.typeLine('alias: '+rest.toLowerCase()+': not found','err');return}
+      nm=rest.split(/\s+/)[0].toLowerCase();to=rest.replace(/^\S+\s+/,''); /* csh style: alias name value */
     }
     if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
     if(nm.split(/\s+/)[0]==='alias'){P.typeLine('alias: too dangerous to alias that.','err');return}
