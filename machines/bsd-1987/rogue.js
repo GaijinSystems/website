@@ -5740,17 +5740,6 @@ function keycode(k){
 }
 
 /* One run on the terminal: the glass while it plays, the terminal for its shell escape and its last words. */
-var fitting=false,SMALLEST=9;
-function fit(S){ /* smaller type for the whole 80x24 where it stays readable; where it would not, the map pans */
-  var el=document.getElementById('full');
-  if(!el)return;
-  fitting=true;
-  el.style.fontSize='';
-  window.dispatchEvent(new Event('resize'));
-  var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/80,b*S.rows/24)*.995;
-  if(f<b&&f>=SMALLEST){el.style.fontSize=f+'px';window.dispatchEvent(new Event('resize'))}
-  fitting=false;
-}
 function session(argv){
   var proc=Process(null,argv,P.rogueTest),why=proc.start(),result;
   P.say(proc.before());
@@ -5768,9 +5757,9 @@ function session(argv){
             result=a;
             res();
           }
-        },function(){if(!fitting)fit(S);proc.render()});
+        },function(){S.fit(80,24);proc.render()}); /* smaller type for the whole 80x24 where it stays readable; where it would not, the map pans */
         proc.glass(S);
-        fit(S);
+        S.fit(80,24);
         proc.render();
       });
     },true);

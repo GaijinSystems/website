@@ -146,11 +146,10 @@ P.command({names:['backgammon'],run:function(a,raw,words){
     }
     if(s<argv.length&&!recover(argv[s]))return;
   }
-  if(P.piped()){P.typeLine('backgammon: needs a terminal','err');return}
   var randstate=Math.floor(Date.now()/1000);
   P.program(function(S,finish_){
     /* the terminal */
-    var G=[],tr=0,tc=0,pan_y=0,pan_x=0,fitting=false,SMALLEST=9;
+    var G=[],tr=0,tc=0,pan_y=0,pan_x=0;
     function blankline(){return new Array(CO).fill(' ')}
     for(var y0=0;y0<LI;y0++)G.push(blankline());
     function addbuf(c){
@@ -160,16 +159,6 @@ P.command({names:['backgammon'],run:function(a,raw,words){
     }
     function CEput(){if(G[tr])for(var x=tc;x<CO;x++)G[tr][x]=' '}
     function CDput(){CEput();for(var y=tr+1;y<LI;y++)G[y]=blankline()}
-    function fit(){
-      var el=typeof document==='undefined'?null:document.getElementById('full');
-      if(!el)return;
-      fitting=true;
-      el.style.fontSize='';
-      window.dispatchEvent(new Event('resize'));
-      var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/CO,b*S.rows/LI)*.995;
-      if(f<b&&f>=SMALLEST){el.style.fontSize=f+'px';window.dispatchEvent(new Event('resize'))}
-      fitting=false;
-    }
     function view(){
       var rows=Math.min(S.rows,LI),cols=Math.min(S.cols,CO),cy=Math.max(0,Math.min(tr,LI-1)),cx=Math.max(0,Math.min(tc,CO-1));
       if(cy<pan_y||cy>=pan_y+rows)pan_y=cy-(rows>>1);
@@ -1615,11 +1604,11 @@ P.command({names:['backgammon'],run:function(a,raw,words){
         else step(c);
       },
       draw:view,
-      resize:function(){if(!fitting&&!over){fit();view()}}
+      resize:function(){if(!over)view()}
     };
     step();
-    setTimeout(function(){if(!over){fit();view()}},0);
+    if(!over)view();
     return api;
-  });
+  },{tty:'backgammon',fit:[CO,LI]});
 }});
 })(window.Phosphor);

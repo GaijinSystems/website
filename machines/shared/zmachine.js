@@ -350,7 +350,7 @@ function create(story,io,seed){
 
   /* ---------- reading a line, and saved games ---------- */
   function answer(line){
-    var clean=String(line).toLowerCase().replace(/[^ -~]/g,''),max=Math.max(0,mem[textBuf]-1),i;
+    var clean=String(line).toLowerCase().replace(/[^ -~]/g,''),max=maxInput(),i;
     clean=clean.slice(0,max);
     for(i=0;i<clean.length;i++)wb(textBuf+1+i,clean.charCodeAt(i));
     wb(textBuf+1+clean.length,0);

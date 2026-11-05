@@ -46,7 +46,6 @@ P.command({names:['worms'],run:function(a,raw,words){
     default:usage();return;
     }
   }
-  if(P.piped()){P.typeLine('worms: needs a terminal','err');return}
   P.program(function(S,done){
     var CO=S.cols,LI=S.rows,last=CO-1,bottom=LI-1,C=S.grid(),ref=[],worm=[],randx=1,over=false,n,x,y,cx=0,cy=0,fp=0;
     function ranf(){
@@ -113,6 +112,6 @@ P.command({names:['worms'],run:function(a,raw,words){
       feed:function(k){if(k==='C-c'){over=true;S.close();done()}},
       draw:draw
     };
-  });
+  },{tty:'worms'});
 }});
 })(window.Phosphor);

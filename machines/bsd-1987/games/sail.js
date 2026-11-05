@@ -333,19 +333,8 @@ P.command({names:['sail'],run:function(a,raw,argv){
     }
     if(!w.leave){pcy=w.cury+w.begy;pcx=w.curx+w.begx}
   }
-  /* the glass is narrower than the 80 columns this needs: the letters shrink until they fit, or as far as they can be read */
-  var fitting=false,SMALLEST=9;
-  function fit(T){
-    var el=typeof document==='undefined'?null:document.getElementById('full');
-    if(!el)return;
-    fitting=true;
-    el.style.fontSize='';
-    window.dispatchEvent(new Event('resize'));
-    var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*T.cols/80,b*T.rows/24)*.995;
-    if(f<b)el.style.fontSize=Math.max(f,SMALLEST)+'px';
-    window.dispatchEvent(new Event('resize'));
-    fitting=false;
-  }
+  /* the glass is narrower than the 80 columns this needs: the letters shrink until they fit, or as far as they can be read (FIT) */
+  var FIT={fit:[80,24],clamp:true};
   function paint(){
     if(!S||over)return;
     var L=phys.map(function(r){return r.join('').replace(/ +$/,'')}).slice(0,S.rows);
@@ -2450,14 +2439,13 @@ P.command({names:['sail'],run:function(a,raw,argv){
         flushout();
         P.program(function(T,done){
           function got(){
-            fit(T);
             COLS=Math.min(T.cols,80);LINES=Math.min(T.rows,24);
             T.close();done();
           }
           if(typeof document==='undefined')got();
           else setTimeout(got,0);
           return {feed:function(){},draw:function(){},resize:function(){}};
-        });
+        },FIT);
         P.queue(function(){step()});
         return;
       }
@@ -2468,7 +2456,7 @@ P.command({names:['sail'],run:function(a,raw,argv){
           S=T;
           screen_done=function(L){left=L;done()};
           step();
-          if(typeof document!=='undefined')setTimeout(function(){fit(T);paint()},0);
+          if(typeof document!=='undefined')setTimeout(paint,0);
           return {
             feed:function(k){
               if(over||!S)return;
@@ -2479,10 +2467,9 @@ P.command({names:['sail'],run:function(a,raw,argv){
               var c=k==='Enter'?'\n':k==='Backspace'?'\b':k==='Tab'?'\t':k==='Escape'?'\x1b':k.length===1?k:/^C-[a-z]$/.test(k)?String.fromCharCode(k.charCodeAt(2)-96):null;
               if(c!==null)step(c);
             },
-            draw:paint,
-            resize:function(){if(!fitting){fit(T);paint()}}
+            draw:paint
           };
-        });
+        },FIT);
         P.queue(function(){if(left)P.say(left)}); /* the last screen stays on the glass */
         return;
       }

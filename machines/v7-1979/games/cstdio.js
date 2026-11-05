@@ -36,20 +36,12 @@ P.cprog=function(body){
   function finish(){if(out){P.say([out]);out=''}}
   function step(v){
     var r=gen.next(v);
-    if(r.done){finish();return}
-    var p=out;out='';
-    P.ask(p,function(l){
-      if(l===P.INT){
-        if(io.onint&&io.onint()){step2();return}
-        finish();return;
-      }
-      step(l);
-    },true);
+    if(r.done)finish();else wait();
   }
-  function step2(){ /* an interrupt the program survives: it is still waiting for the same line */
+  function wait(){ /* the part line goes up as the prompt; an interrupt the program survives leaves it waiting for the same line */
     var p=out;out='';
     P.ask(p,function(l){
-      if(l===P.INT){if(io.onint&&io.onint()){step2();return}finish();return}
+      if(l===P.INT){if(io.onint&&io.onint())wait();else finish();return}
       step(l);
     },true);
   }
