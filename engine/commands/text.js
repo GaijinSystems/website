@@ -49,14 +49,14 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
   var n=P.find(a[0],true),to=target(a[1],a[0]),there=P.find(to,true);
-  if(!n||n.prot||n===P.root||!P.canWrite(P.pathOf(n))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
+  if(!n||n.prot||n===P.root||!P.canWrite(P.norm(a[0]))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
-  var from=P.norm(a[0]),was=P.pathOf(n),cwd=P.st.cwd;
+  var from=P.norm(a[0]),was=P.pathOf(n);
   delete P.find(P.dirOf(from),true).kids[from.split('/').pop()]; /* by the name given: a link has its own */
-  n.name=name;n.parent=parent;parent.kids[name]=n;
-  if(cwd===was||cwd.indexOf(was+'/')===0)P.st.cwd=to+cwd.slice(was.length); /* you stay in a folder that moves */
+  parent.kids[name]=n;
+  if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
 });
 cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}

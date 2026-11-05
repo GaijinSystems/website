@@ -193,12 +193,12 @@ P.command({names:['rm'],path:'/bin',
       var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
       if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
-      if(n===P.root||n.prot||!P.canWrite(at)||cwd===at||cwd.indexOf(at+'/')===0){
-        denied=denied||!P.canWrite(at);
+      var abs=P.norm(x);
+      if(n===P.root||n.prot||!P.canWrite(abs)||cwd===at||cwd.indexOf(at+'/')===0){
+        denied=denied||!P.canWrite(abs);
         P.typeLine('rm: '+x+' not removed','err');
         return;
       }
-      var abs=P.norm(x);
       delete P.find(P.dirOf(abs),true).kids[abs.split('/').pop()]; /* by the name given: a link has its own */
     });
     if(denied)P.typeLine('nice try.','dim');

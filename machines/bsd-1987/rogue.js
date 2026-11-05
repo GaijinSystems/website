@@ -5420,9 +5420,10 @@ function file_exists(name){
   return P.saved('rogue/'+abs)!==null||P.find(abs,true)!==null;
 }
 function md_unlink(name){
+  if(cant_save(name)!==null)return; /* the write will fail too: keep what is there */
   var abs=P.norm(name),n=P.find(abs,true);
   P.save('rogue/'+abs,null);
-  if(n&&n.parent&&n.type!=='d'&&cant_save(name)===null)delete n.parent.kids[n.name];
+  if(n&&n.parent&&n.type!=='d')delete n.parent.kids[n.name];
 }
 function cant_save(name){ /* null, or what strerror would say of opening it to write */
   var abs=P.norm(name),ex=P.find(abs,true);

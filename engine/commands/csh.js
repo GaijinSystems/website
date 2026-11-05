@@ -35,15 +35,20 @@ P.command({names:['w'],path:'/usr/ucb',enabled:on,
   }});
 /* the shell's own variables, and the rest of what it does for itself */
 function builtin(names,run){P.command({names:names,noHelpFlag:true,enabled:on,run:run})}
-builtin(['set'],function(a,raw){
-  var t=raw.replace(/^\s*set\s*/,''),m;
+function value(x){ /* a word as written: 'as is', "with $variables", or bare */
+  x=x.trim();
+  if(/^'.*'$/.test(x))return P.plain(x.slice(1,-1));
+  return P.vars(P.unquote(x));
+}
+builtin(['set'],function(){
+  var t=P.source().replace(/^\s*set\s*/,''),m;
   if(!t){
     var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
     Object.keys(P.shvars).forEach(function(k){V[k]=P.shvars[k]});
     P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
     return;
   }
-  while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|\S*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=P.unquote(m[2]||'');t=t.slice(m[0].length)}
+  while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|\S*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
   if(t)P.typeLine('set: Syntax error.','err');
 });
 builtin(['unset'],function(a){if(!a.length){P.typeLine('unset: Too few arguments.','err');return}a.forEach(function(k){delete P.shvars[k]})});
@@ -56,20 +61,53 @@ builtin(['unalias'],function(a){
   if(!a.length){P.typeLine('unalias: Too few arguments.','err');return}
   P.aliases=P.aliases.filter(function(x){return a.indexOf(x.from.join(' '))<0});
 });
-builtin(['if'],function(a,raw){ /* the one-line form: if (expr) command */
-  var m=/^\s*if\s*\((.*?)\)\s*(.*)$/.exec(raw);
-  if(!m||/^then\b/.test(m[2])){P.typeLine('if: Expression syntax.','err');return}
-  var e=m[1].trim(),q,yes;
-  if((q=/^(.*?)\s*(==|!=)\s*(.*)$/.exec(e)))yes=(P.unquote(q[1])===P.unquote(q[3]))===(q[2]==='==');
-  else if((q=/^(!?)\s*-([edfrwx])\s+(\S+)$/.exec(e))){
-    var n=P.find(q[3]);
-    yes=!!n&&(q[2]!=='d'||n.type==='d')&&(q[2]!=='f'||n.type!=='d');
-    if(q[1])yes=!yes;
+function closing(s,from){ /* the ) that matches, outside quotes */
+  var depth=1,q=null;
+  for(var i=from;i<s.length;i++){
+    var c=s.charAt(i);
+    if(q){if(c===q)q=null}
+    else if(c==='"'||c==="'")q=c;
+    else if(c==='(')depth++;
+    else if(c===')'&&!--depth)return i;
   }
-  else if((q=/^!\s*(-?\d+)$/.exec(e)))yes=+q[1]===0;
-  else if(/^-?\d+$/.test(e))yes=+e!==0;
-  else{P.typeLine('if: Expression syntax.','err');return}
-  if(yes&&m[2])P.exec(m[2]); /* a command like any other: exit here logs you out */
+  return -1;
+}
+function operator(e){ /* [left,op,right], looking outside quotes */
+  var q=null;
+  for(var i=0;i<e.length;i++){
+    var c=e.charAt(i),two=e.substr(i,2);
+    if(q){if(c===q)q=null}
+    else if(c==='"'||c==="'")q=c;
+    else if(/^(==|!=|>=|<=)$/.test(two))return [e.slice(0,i),two,e.slice(i+2)];
+    else if(c==='>'||c==='<')return [e.slice(0,i),c,e.slice(i+1)];
+  }
+  return null;
+}
+function truth(e){ /* true, false, or null when it makes no sense */
+  var o=operator(e),q;
+  if(o){
+    var l=value(o[0]),r=value(o[2]);
+    if(o[1]==='==')return l===r;
+    if(o[1]==='!=')return l!==r;
+    if(!/^-?\d+$/.test(l)||!/^-?\d+$/.test(r))return null;
+    return o[1]==='>'?+l>+r:o[1]==='<'?+l<+r:o[1]==='>='?+l>=+r:+l<=+r;
+  }
+  if((q=/^(!?)\s*-([edfrwx])\s+(\S+)$/.exec(e))){
+    var n=P.find(value(q[3]));
+    var yes=!!n&&(q[2]!=='d'||n.type==='d')&&(q[2]!=='f'||n.type!=='d');
+    return q[1]?!yes:yes;
+  }
+  var w=value(e);
+  if((q=/^!\s*(-?\d+)$/.exec(w)))return +q[1]===0;
+  return /^-?\d+$/.test(w)?+w!==0:null;
+}
+builtin(['if'],function(){ /* the one-line form: if (expr) command */
+  var s=P.source(),m=/^\s*if\s*\(/.exec(s),end=m?closing(s,m[0].length):-1,cmd=end<0?'':s.slice(end+1).trim(),yes;
+  if(end<0||/^then\b/.test(cmd)){P.typeLine('if: Expression syntax.','err');return}
+  try{yes=truth(s.slice(m[0].length,end).trim())}
+  catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
+  if(yes===null){P.typeLine('if: Expression syntax.','err');return}
+  if(yes&&cmd)P.exec(cmd); /* a command like any other: exit here logs you out */
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});
