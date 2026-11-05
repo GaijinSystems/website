@@ -205,6 +205,7 @@ function Adventure(resume){
       rspeak(x);
       var l=yield;
       if(l===null){write('user closed input stream, quitting...\n');exit()}
+      if(l==='')yield; /* the C's getchar took the newline, and its FLUSHLINE then eats the next line */
       var ch=l===P.INT?'':l.charAt(0);
       if(ch==='y'){rspeak(y);return true}
       if(ch==='n'){rspeak(z);return false}
@@ -969,7 +970,7 @@ function Adventure(resume){
     }
     function v(w,t){return vocab(w,t,0)}
     keys=v('keys',1);lamp=v('lamp',1);grate=v('grate',1);cage=v('cage',1);rod=v('rod',1);rod2=rod+1;steps=v('steps',1);bird=v('bird',1);door=v('door',1);pillow=v('pillo',1);snake=v('snake',1);fissure=v('fissu',1);tablet=v('table',1);clam=v('clam',1);oyster=v('oyste',1);magazine=v('magaz',1);dwarf=v('dwarf',1);knife=v('knife',1);food=v('food',1);bottle=v('bottl',1);water=v('water',1);oil=v('oil',1);plant=v('plant',1);plant2=plant+1;axe=v('axe',1);mirror=v('mirro',1);dragon=v('drago',1);chasm=v('chasm',1);troll=v('troll',1);troll2=troll+1;bear=v('bear',1);message=v('messa',1);vend=v('vendi',1);batter=v('batte',1);
-    nugget=v('gold',1);coins=v('coins',1);chest=v('chest',1);eggs=v('eggs',1);trident=v('tride',1);vase=v('vase',1);emerald=v('emera',1);pyramid=v('pyram',1);pearl=v('pearl',1);rug=v('rug',1);chain=v('chain',1);spices=v('spice',1);
+    nugget=v('gold',1);coins=v('coins',1);chest=v('chest',1);eggs=v('eggs',1);trident=v('tride',1);vase=v('vase',1);emerald=v('emera',1);pyramid=v('pyram',1);pearl=v('pearl',1);rug=v('rug',1);chain=v('chain',1);spices=0; /* the C names spices but never looks it up */
     back=v('back',0);look=v('look',0);cave=v('cave',0);nullw=v('null',0);entrance=v('entra',0);depression=v('depre',0);
     say=v('say',2);lock=v('lock',2);throwv=v('throw',2);find=v('find',2);invent=v('inven',2);
     chloc=114;chloc2=140;
@@ -986,15 +987,15 @@ function Adventure(resume){
 
   /* ---------- suspending and resuming: everything that changes ---------- */
   var latency=45,FORMAT=1;
-  function pack(){
+  function pack(when){
     var keep=JSON.parse(JSON.stringify({
-      v:FORMAT,when:Date.now(),place:place,prop:prop,links:links,atloc:atloc,abb:abb,fixed:fixed,hinted:hinted,hintlc:hintlc,dseen:dseen,dloc:dloc,odloc:odloc,tk:tk,
+      v:FORMAT,when:when,place:place,prop:prop,links:links,atloc:atloc,fixed:fixed,hinted:hinted,dseen:dseen,dloc:dloc,odloc:odloc,tk:tk,
       n:[loc,newloc,oldloc,oldloc2,wasdark,k,verb,obj,spk,tally,tally2,chloc,chloc2,dflag,daltloc,stick,dtotal,attack,turns,lmwarn,iwest,knfloc,detail,abbnum,numdie,holding,dkill,foobar,bonus,clock1,clock2,saved,isclosing,panic,closed,scoring,limit,gaveup,maxdie]
     }));
     return keep;
   }
   function unpack(G){
-    place=G.place;prop=G.prop;links=G.links;atloc=G.atloc;abb=G.abb;fixed=G.fixed;hinted=G.hinted;hintlc=G.hintlc;dseen=G.dseen;dloc=G.dloc;odloc=G.odloc;tk=G.tk;
+    place=G.place;prop=G.prop;links=G.links;atloc=G.atloc;fixed=G.fixed;hinted=G.hinted;dseen=G.dseen;dloc=G.dloc;odloc=G.odloc;tk=G.tk;
     var n=G.n,i=0;
     loc=n[i++];newloc=n[i++];oldloc=n[i++];oldloc2=n[i++];wasdark=n[i++];k=n[i++];verb=n[i++];obj=n[i++];spk=n[i++];tally=n[i++];tally2=n[i++];chloc=n[i++];chloc2=n[i++];dflag=n[i++];daltloc=n[i++];stick=n[i++];dtotal=n[i++];attack=n[i++];turns=n[i++];lmwarn=n[i++];iwest=n[i++];knfloc=n[i++];detail=n[i++];abbnum=n[i++];numdie=n[i++];holding=n[i++];dkill=n[i++];foobar=n[i++];bonus=n[i++];clock1=n[i++];clock2=n[i++];saved=n[i++];isclosing=n[i++];panic=n[i++];closed=n[i++];scoring=n[i++];limit=n[i++];gaveup=n[i++];maxdie=n[i++];
   }
@@ -1003,6 +1004,7 @@ function Adventure(resume){
       mspeak(x);
       var l=yield;
       if(l===null){write('user closed input stream, quitting...\n');exit()}
+      if(l==='')yield;
       var ch=l===P.INT?'':l.charAt(0);
       if(ch==='y'){mspeak(y);return true}
       if(ch==='n'){mspeak(z);return false}
@@ -1013,7 +1015,7 @@ function Adventure(resume){
     var G=P.saved('adventure/'+name);
     if(!G){write("adventure: can't open file\n");exit()}
     if(G.v!==FORMAT){rspeak(202);exit()}
-    var delay=Math.floor((Date.now()-G.when)/60000);
+    var delay=Math.floor(Date.now()/60000)-Math.floor(G.when/60000); /* whole clock minutes, as datime() counts */
     if(delay<latency){
       write('This adventure was suspended a mere '+delay+' minute'+(delay===1?'':'s')+' ago.');
       if(delay<=Math.trunc(latency/3)){mspeak(2);exit()}
@@ -1282,11 +1284,12 @@ function Adventure(resume){
             spk=201;
             write('I can suspend your adventure for you so you can resume later, but\nyou will have to wait at least '+latency+' minutes before continuing.');
             if(!(yield* yes(200,54,54))){at_='l2012';break}
+            var when=Date.now();
             write('What would you like to call the saved version?\n');
             var fname=yield;
             if(fname===null||fname===P.INT||!fname.trim()){at_='l2';break}
             fname=fname.trim();
-            if(!P.save('adventure/'+fname,pack())){write("I can't find anywhere to keep it.\n");at_='l2012';break}
+            if(!P.save('adventure/'+fname,pack(when))){write("I can't find anywhere to keep it.\n");at_='l2';break}
             write('To resume, say "adventure '+fname+'".\n"With these rooms I might now have been familiarly acquainted."\n');
             exit();
             break;
