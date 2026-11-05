@@ -1,0 +1,59 @@
+/* PHOSPHOR-9 terminal: machine "v7-1979", what a ported C program needs in order to stay in the shape of the C:
+   a program is a generator function, and it reads with yield*. Nothing here is from the originals.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
+Phosphor.setup(function(P){
+'use strict';
+/* V7's rand(3): 1103515245 in a 32-bit long, the top half taken */
+P.v7rand=function(seed){
+  var x=seed&0xffff;
+  return function(){x=(Math.imul(x,1103515245)+12345)|0;return (x>>16)&0o77777};
+};
+/* run the program; body(io) is a generator. io.print writes (a line is sent when its newline comes); yield* io.getc()
+   gives one character, or null at the end of the input; yield* io.gets() a line without its newline, or null.
+   io.onint: what the interrupt does: return true to read on, false or nothing to stop. No handler stops the program. */
+P.cprog=function(body){
+  var out='',line='',pos=0,pipe=P.stdin(),np=0,gen,io={
+    onint:null,
+    print:function(s){
+      out+=s;
+      var i=out.lastIndexOf('\n');
+      if(i>=0){P.say(out.slice(0,i).split('\n'));out=out.slice(i+1)}
+    },
+    getc:function*(){
+      while(pos>=line.length){
+        var l=pipe?(np<pipe.length?pipe[np++]:null):yield;
+        if(l===null)return null;
+        line=l+'\n';pos=0;
+      }
+      return line.charAt(pos++);
+    },
+    gets:function*(){
+      var s='',c;
+      while((c=yield* io.getc())!==null&&c!=='\n')s+=c;
+      return c===null&&s===''?null:s;
+    }
+  };
+  function finish(){if(out){P.say([out]);out=''}}
+  function step(v){
+    var r=gen.next(v);
+    if(r.done){finish();return}
+    var p=out;out='';
+    P.ask(p,function(l){
+      if(l===P.INT){
+        if(io.onint&&io.onint()){step2();return}
+        finish();return;
+      }
+      step(l);
+    },true);
+  }
+  function step2(){ /* an interrupt the program survives: it is still waiting for the same line */
+    var p=out;out='';
+    P.ask(p,function(l){
+      if(l===P.INT){if(io.onint&&io.onint()){step2();return}finish();return}
+      step(l);
+    },true);
+  }
+  gen=body(io);
+  P.queue(function(){step()});
+};
+});
