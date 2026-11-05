@@ -36,7 +36,7 @@ function bre(s){
     }
     if(c==='\\'&&i+1<s.length){
       var n=s.charAt(++i);
-      o+=/[(){}]/.test(n)?n:/[1-9]/.test(n)?'\\'+n:'\\'+n;
+      o+=/[(){}]/.test(n)?n:'\\'+n;
       continue;
     }
     o+=/[()+?|{}]/.test(c)?'\\'+c:c;
@@ -60,6 +60,7 @@ var PH=window.Phosphor={
   command:function(def){def.from=me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
   setup:function(fn){me();PH.hooks.push(fn)},     /* machine hook: runs after the file tree exists */
   machines:function(m){me();Object.assign(PH.catalog,m)}, /* machines/machines.js: what can be plugged in */
+  stubs:function(names,say,o){names.forEach(function(n){PH.command(Object.assign({names:[n],run:function(){say(n)}},o))})}, /* programs that are there and won't run */
   start:start
 };
 
@@ -391,9 +392,10 @@ function typeLine(text,cls,cb,opt){
         else host.insertBefore(t,at);
         step();return;
       }
-      t.data+=ch;scrollBottom();
-      if(BAUD){ /* a real line speed: ten bits a character, drawn a few at a time */
-        if(--burst>0){step();return}
+      t.data+=ch;
+      if(BAUD&&burst>1){burst--;step();return} /* a real line speed: no need to scroll for what nobody will see */
+      scrollBottom();
+      if(BAUD){ /* ten bits a character, drawn a few at a time */
         burst=Math.max(1,Math.round(BAUD/500));
         if(ch!==' ')click(.194);
         setTimeout(step,burst*10000/BAUD);
@@ -408,10 +410,14 @@ function typeLine(text,cls,cb,opt){
 function say(lines){
   lines.forEach(function(l){var x=lineOf(l);typeLine(x[0],x[1],null,x[2])});
 }
-function cols(){ /* how many characters fit on one line of the glass right now */
+function charBox(host){ /* the size of ten characters in this element */
   var p=document.createElement('span');p.textContent='0000000000';
   p.style.cssText='position:absolute;visibility:hidden;white-space:pre';
-  out.appendChild(p);var cw=p.getBoundingClientRect().width/10;p.remove();
+  host.appendChild(p);var r=p.getBoundingClientRect();p.remove();
+  return r;
+}
+function cols(){ /* how many characters fit on one line of the glass right now */
+  var cw=charBox(out).width/10;
   var cs=getComputedStyle(out),w=out.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   return cw>0?Math.floor(w/cw+.01):999;
 }
@@ -450,7 +456,7 @@ function readKey(p){ /* one keypress, no return needed. Call it from inside a qu
       KEYS=null;
       var at=cursor.parentNode;
       if(at&&k.length===1)at.insertBefore(document.createTextNode(k),cursor);
-      bufNode=null;setBuf('');term.classList.remove('idle');
+      leavePrompt();
       res(k);
     };
   });
@@ -459,6 +465,11 @@ var HIDE=false,READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a 
 function readLine(p,trap,hidden){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step.
                               trap: the program deals with ^C itself, and gets INT */
   return new Promise(function(res){READ=res;TRAP=!!trap;HIDE=!!hidden;showPrompt(p==null?'':p,'read')});
+}
+function ask(p,then,trap,hidden){ /* readLine, then carry on with what was typed */
+  var l;
+  queue(function(){return readLine(p,trap,hidden).then(function(x){l=x})});
+  queue(function(){return then(l)});
 }
 /* The glass as a screen: a program draws whole lines, and every key comes to it. Used by vi. */
 var KEYS=null;
@@ -469,8 +480,10 @@ function fullscreen(keys,onResize){
   var said='',S={
     rows:24,cols:80,
     draw:function(lines,r,c){
-      var i,f=document.createDocumentFragment();
+      var i;
       for(i=0;i<lines.length;i++){
+        var was=el.children[i];
+        if(was&&i!==r&&sameRow(was,lines[i]))continue;
         var d=document.createElement('div');d.className='line';
         if(i===r){
           var t=lines[i],cu=document.createElement('span');cu.className='fcur';
@@ -480,10 +493,16 @@ function fullscreen(keys,onResize){
           d.appendChild(document.createTextNode(t.slice(c+1)));
         }
         else d.textContent=lines[i];
-        f.appendChild(d);
+        if(was)el.replaceChild(d,was);else el.appendChild(d);
       }
-      el.textContent='';el.appendChild(f);
+      while(el.children.length>lines.length)el.lastChild.remove();
     },
+    grid:function(){ /* a blank screen, to write characters into */
+      var C=[];
+      for(var i=0;i<S.rows;i++)C.push(new Array(S.cols).fill(' '));
+      return C;
+    },
+    drawGrid:function(C,r,c){S.draw(C.map(function(row){return row.join('').trimEnd()}),r,c)},
     say:function(m){if(m!==said){said=m;announce(m)}},
     close:function(){
       KEYS=null;window.removeEventListener('resize',size);
@@ -492,22 +511,31 @@ function fullscreen(keys,onResize){
       term.scrollTop=term.scrollHeight;
     }
   };
-  function size(){
-    var p=document.createElement('span');p.textContent='0000000000';
-    p.style.cssText='position:absolute;visibility:hidden;white-space:pre';
-    el.appendChild(p);
-    var r=p.getBoundingClientRect(),cs=getComputedStyle(el);p.remove();
+  function sameRow(d,t){ /* against the row itself: a program may have marked it up since */
+    var k=d.firstChild;
+    return k?d.childNodes.length===1&&k.nodeType===3&&k.data===t:!t;
+  }
+  function measure(){
+    var r=charBox(el),cs=getComputedStyle(el);
     var cw=r.width/10,lh=parseFloat(cs.lineHeight)||r.height||16;
     var w=el.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
     var h=term.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
     S.cols=Math.max(20,cw>0?Math.floor(w/cw+.01):80);
     S.rows=Math.max(5,Math.floor(h/lh+.01));
-    if(onResize&&KEYS)onResize();
   }
-  var keep=onResize;onResize=null;size();onResize=keep;
+  function size(){measure();if(onResize&&KEYS)onResize()}
+  measure();
   window.addEventListener('resize',size);
   if(window.visualViewport)visualViewport.addEventListener('resize',size); /* a phone keyboard opening or changing height */
   return S;
+}
+function program(make){ /* a full-screen program: make(S,done) returns its {feed,draw}, and resize if that differs from draw */
+  queue(function(){
+    return new Promise(function(res){
+      var V,S=fullscreen(function(k){V.feed(k)},function(){if(V.resize)V.resize();else V.draw()});
+      V=make(S,res);
+    });
+  });
 }
 function input(names,done){ /* the lines a command works on: named files, else its pipe or <, else the keyboard */
   if(names.length){
@@ -602,6 +630,16 @@ function find(p,exact){ /* node or null; nobody gets through a locked folder.
 function textOf(n){return (body(n)||[]).map(function(l){return plain(lineOf(l)[0])})}
 function isScript(n){return n.type==='f'&&/x/.test(n.mode||'')&&n.body}
 function dirOf(abs){return abs.slice(0,abs.lastIndexOf('/'))||'/'}
+function sys(p,type,o){return put(p,type,Object.assign({owner:'root',date:SD},o))} /* a file of the system's own */
+function hash(s,mod){var h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))%mod;return h}
+function programs(of){ /* a program file for each command that has a path: of(dir,hash) gives its owner and size */
+  Object.keys(PATHS).sort().forEach(function(b){
+    var dir=PATHS[b];
+    sys(dir+'/'+b,'f',of(dir,hash(b,7919)));
+  });
+}
+function chunk(a,n){var o=[];for(var i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o} /* into rows of n */
+function globRe(p,flags){return new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$',flags)}
 function canWrite(abs){ /* your home folder, or a folder anyone may write in; nothing else, and nothing locked */
   var dir=find(dirOf(abs));
   if(!dir||dir.type!=='d'||dir.prot)return false;
@@ -753,7 +791,9 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
     window.dispatchEvent(new Event('resize')); /* the glass changed size: everything re-fits */
     return on;
   },
-  columns:function(){return cols()},fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
+  columns:function(){return cols()},fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,programs:programs,chunk:chunk,dirOf:dirOf,
+  envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
+  piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
@@ -847,7 +887,7 @@ function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; n
       return;
     }
     var re;
-    try{re=new RegExp('^'+seg.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$',PROFILE.caseless?'i':'')}catch(e){found=[];return}
+    try{re=globRe(seg,PROFILE.caseless?'i':'')}catch(e){found=[];return}
     found.forEach(function(p){
       var d=find(p||'.');
       if(!d||d.type!=='d'||d.prot)return;
@@ -1094,7 +1134,7 @@ function runStmt(st){
       queue(function(){
         if(LOOP||(STATUS===0)!==(st.k==='while'))return;
         runBlock(st.body);
-        queue(function(){var was=afterLoop();if(was==='break'||was==='exit')return;return sleep(0).then(function(){})});
+        queue(function(){var was=afterLoop();if(was==='break'||was==='exit')return;return sleep(0)});
         queue(function(){if(!LOOP)again()});
       });
     })();
@@ -1110,7 +1150,7 @@ function runStmt(st){
       var L=parseList('x '+text),v=L[0]&&L[0].stages[0].words[1]||'';
       for(var i=0;i<st.arms.length;i++){
         var hit=st.arms[i].pats.some(function(p){
-          try{return new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$').test(v)}catch(e){return p===v}
+          try{return globRe(p).test(v)}catch(e){return p===v}
         });
         if(hit){runBlock(st.arms[i].body);return}
       }
@@ -1138,9 +1178,7 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   try{tree=parseTree(lines)}
   catch(e){
     if(e!==MORE){typeLine(e.message,'err');return}
-    var l;
-    queue(function(){return readLine(PROFILE.csh?'? ':'> ').then(function(x){l=x})});
-    queue(function(){if(l===null)return;runCompound(lines.concat(l))});
+    ask(PROFILE.csh?'? ':'> ',function(l){if(l===null)return;runCompound(lines.concat(l))});
     return;
   }
   runBlock(tree);
@@ -1158,15 +1196,18 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
 function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of these */
   return s.replace(/^(\s*)([a-z0-9]+)(?=[\\\/.])/i,function(m,sp,c){return has(CMDS,c.toLowerCase())?sp+c+' ':m});
 }
+function nextPrompt(pre){
+  queue(function(){if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+}
 function run(raw){
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
-    queue(function(){if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+    nextPrompt();
     return;
   }
   if(compound(raw)){
     queue(function(){runCompound([raw])});
-    queue(function(){LOOP=null;if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+    nextPrompt(function(){LOOP=null});
     return;
   }
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
@@ -1174,7 +1215,7 @@ function run(raw){
   splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
   if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)})){ /* needs the shell's parser */
     segs.forEach(function(x){if(x.trim())execSeg(x)});
-    queue(function(){if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+    nextPrompt();
     return;
   }
   for(var i=0;i<segs.length&&!LOGOUT;i++)runOne(segs[i]);
@@ -1189,8 +1230,7 @@ function login(name){
   var usr=find(PROFILE.homes);
   if(PROFILE.backdoor&&n===PROFILE.backdoor){setRoot(false);ST.login=now();welcome();prompt();return}
   PENDROOT=n===PROFILE.rootName&&PROFILE.rootPassword?{name:n,word:PROFILE.rootPassword}:n===PROFILE.alsoRoot?{name:n,word:PROFILE.alsoRootWord}:null;
-  if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)){prompt('Password:','password');return}
-  if(n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
+  if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)||n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
   var h=usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
   if(h&&n!==ST.user){delete usr.kids[ST.user];h.name=n;usr.kids[n]=h}
   ST.user=n;ST.home=PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
@@ -1204,6 +1244,9 @@ function setBuf(v){
   if(kb.value!==buf)kb.value=buf;
   renderBuf();
 }
+function leavePrompt(){bufNode=null;setBuf('');term.classList.remove('idle')}
+function finishRead(v){var r=READ;READ=null;leavePrompt();r(v)}
+function resumeHeld(){if(held){var h=held;held=null;h()}}
 function submit(){
   click(1,700);
   if(!bufNode)return; /* no prompt up yet: output is still typing */
@@ -1254,24 +1297,20 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var there=cursor.parentNode;
   if(there)there.insertBefore(document.createTextNode('^C'),cursor);
-  if(READ&&TRAP){var t=READ;READ=null;bufNode=null;setBuf('');term.classList.remove('idle');t(INT);return}
+  if(READ&&TRAP){finishRead(INT);return}
   if(bufNode&&!READ){ /* at a prompt: give up on this line */
     if(MODE!=='shell')return;
-    bufNode=null;setBuf('');term.classList.remove('idle');
+    leavePrompt();
     prompt();
     return;
   }
   GEN++;HOLD=false;SINK=null;STDIN=null;STATUS=130;
   wakers.slice().forEach(function(w){w()});
-  if(held){var h=held;held=null;h()}
-  if(READ){var r=READ;READ=null;bufNode=null;setBuf('');term.classList.remove('idle');r(null)}
+  resumeHeld();
+  if(READ)finishRead(null);
 }
 function eof(){ /* ^D: end of input, or logout at an empty prompt */
-  if(READ){
-    var r=READ,left=buf;READ=null;bufNode=null;setBuf('');term.classList.remove('idle');
-    r(left||null);
-    return;
-  }
+  if(READ){finishRead(buf||null);return}
   if(bufNode&&MODE==='shell'&&!buf&&!PROFILE.dos){bufNode=null;term.classList.remove('idle');run('exit')}
 }
 function ctrlKey(e){
@@ -1280,7 +1319,7 @@ function ctrlKey(e){
   else if(k==='d')eof();
   else if(k==='z'&&PROFILE.dos)eof();
   else if(k==='s')HOLD=true;
-  else if(k==='q'){HOLD=false;if(held){var h=held;held=null;h()}}
+  else if(k==='q'){HOLD=false;resumeHeld()}
   else if(k==='u')setBuf('');
   else return false;
   e.preventDefault();

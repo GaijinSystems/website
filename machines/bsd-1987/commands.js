@@ -5,13 +5,12 @@
 'use strict';
 var GAMES=['adventure','backgammon','boggle','canfield','chess','cribbage','fish','fortune','hangman','mille','monop','rogue','snake','trek','wump','zork'];
 /* the rest of /usr/games: all there, and the load is always too high */
-['aardvark','arithmetic','backgammon','battlestar','bcd','boggle','btlgammon','canfield','cfscores','chess','ching','cribbage','doctor','fish','fortune','hunt','mille','monop','quiz','rain','sail','snscore','teachgammon','trek','worms','zork'].forEach(function(n){
-  P.command({names:[n],hidden:true,noHelpFlag:true,run:function(){P.typeLine(n+': load average too high. try again after hours.')}});
-});
+P.stubs(['aardvark','arithmetic','backgammon','battlestar','bcd','boggle','btlgammon','canfield','cfscores','chess','ching','cribbage','doctor','fish','fortune','hunt','mille','monop','quiz','rain','sail','snscore','teachgammon','trek','worms','zork'],function(n){
+  P.typeLine(n+': load average too high. try again after hours.');
+},{hidden:true,noHelpFlag:true});
 P.command({names:['wargames'],path:'/usr/games',noHelpFlag:true,run:function(){
-  var x;
-  P.queue(function(){return P.readLine('Would you like to play a game? ').then(function(l){x=(l||'').trim()})});
-  P.queue(function(){
+  P.ask('Would you like to play a game? ',function(l){
+    var x=(l||'').trim();
     if(GAMES.indexOf(x)<0){P.typeLine('Funny, the only way to win is not to play at all');return}
     if(P.cmds[x])P.cmds[x]([],x,[x]);
     else P.typeLine('/usr/games/'+x+': not found','err');

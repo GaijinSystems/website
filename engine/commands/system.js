@@ -158,15 +158,14 @@ P.command({names:['su'],path:'/bin',
     'asks for the root password, then makes you the super-user, until you exit.'],bugs:[
     'you do not know the root password. yet.']},
   run:function(a){
-    var word=P.profile.rootPassword,line;
+    var word=P.profile.rootPassword;
     if(a[0]&&a[0]!=='root'&&a[0]!==P.st.owner&&a[0]!==P.st.user){P.typeLine('Unknown id: '+a[0]);return}
     if(P.st.user==='root')return;
-    P.queue(function(){return P.readLine('Password:',false,true).then(function(l){line=l})});
-    P.queue(function(){
+    P.ask('Password:',function(line){
       if(word&&line===word){P.su();return}
       P.pause(900);
       P.typeLine('Sorry','err');
-    });
+    },false,true);
   }});
 
 /* the ways to stop a machine: Berkeley had halt; before that, you synced and threw the switch */

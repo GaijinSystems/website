@@ -2,9 +2,8 @@
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 Phosphor.setup(function(P){
   'use strict';
-  var SD=P.systemDate,ST=P.st,OWNER=ST.owner;
+  var ST=P.st,OWNER=ST.owner,sys=P.sys;
   P.env.PATH='.:/usr/ucb:/bin:/usr/bin:/etc:/usr/games';
-  function sys(p,type,o){return P.put(p,type,Object.assign({owner:'root',date:SD},o))}
   var UCB=['vi','head','printenv','whoami','uptime','clear','finger','w'];
   sys('/bin','d',{owner:'bin'});
   sys('/etc','d');
@@ -14,10 +13,7 @@ Phosphor.setup(function(P){
   sys('/usr/games/lib','d',{owner:'bin'});
   sys('/usr/games/lib/rogue_roll','f',{owner:'daemon',mode:'-rw-rw-rw-'});
   UCB.forEach(function(b){if(P.cmds[b])P.paths[b]='/usr/ucb'});
-  Object.keys(P.paths).sort().forEach(function(b){
-    var dir=P.paths[b],h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
-    sys(dir+'/'+b,'f',{owner:dir==='/etc'?'root':'bin',bin:true,size:8192+h*3});
-  });
+  P.programs(function(dir,h){return {owner:dir==='/etc'?'root':'bin',bin:true,size:8192+h*3}});
   var GAMES={aardvark:42,adventure:146214,arithmetic:10240,backgammon:45056,banner:19456,battlestar:195584,bcd:7168,bogdict:78710,boggle:24576,btlgammon:19456,canfield:37888,cfscores:16384,chess:7168,ching:283,cribbage:39936,doctor:26016,factor:11264,fish:12288,fortune:14336,hangman:27648,hunt:37888,mille:44032,monop:37736,number:9216,primes:11264,quiz:12288,rain:15360,robots:35840,rogue:113664,sail:83968,snake:36864,snscore:15360,teachgammon:54272,trek:60416,wargames:909,worm:23552,worms:17408,wump:13312,zork:9216};
   Object.keys(GAMES).forEach(function(g){ /* sizes and owners from the real tape */
     var d=['fortune','robots','rogue'].indexOf(g)>=0?'-rws--x--x':['sail','snake'].indexOf(g)>=0?'-rwsr-xr-x':'-rwxr-xr-x';

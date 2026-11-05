@@ -25,9 +25,7 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
         want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
     if(!want.length)want=['.'];
     function plain(name,n){ /* -i the inode, -s the size in kilobytes, -F a mark for what it is */
-      var h=0,i;
-      for(i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))%9973;
-      return (inodes?String(h+2).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/1024)).padStart(4)+' ':'')+name+
+      return (inodes?String(P.hash(name,9973)+2).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/1024)).padStart(4)+' ':'')+name+
         (!typed?'':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
     }
     function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
