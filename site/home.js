@@ -50,12 +50,6 @@ plan for this week:
   2. answer the mail.
   3. empty the trash. it can wait.
 
-== file: .adventure ==
-~ saved game - colossal cave
-you are in a maze of twisty little passages, all alike.
-score: 36 of 350.
-~ your lamp is growing dim.
-
 == file: .trash/letter.bak ==
 dear operator,
 i have been inside this terminal for some time now.

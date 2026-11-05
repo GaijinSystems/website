@@ -125,6 +125,12 @@ alias la 'ls -a'
 alias ll 'ls -l'
 alias lla 'ls -l -a'
 
+== file: .adventure ==
+~ saved game - colossal cave
+you are in a maze of twisty little passages, all alike.
+score: 36 of 350.
+~ your lamp is growing dim.
+
 == file: readme ==
 this is a phosphor-9 video terminal.
 it is plugged into a vax.
