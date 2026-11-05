@@ -10,6 +10,7 @@ Phosphor.setup(function(P){
   sys('/etc','d');
   sys('/usr','d');
   sys('/usr/ucb','d',{owner:'bin'});
+  sys('/usr/games','d',{owner:'bin'});
   UCB.forEach(function(b){if(P.cmds[b])P.paths[b]='/usr/ucb'});
   Object.keys(P.paths).sort().forEach(function(b){
     var dir=P.paths[b],h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
