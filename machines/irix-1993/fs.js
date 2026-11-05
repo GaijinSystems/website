@@ -16,6 +16,7 @@ Phosphor.setup(function(P){
   });
   ['flight','buttonfly','dog','ideas','arena','newave','insect'].forEach(function(b){sys('/usr/demos/bin/'+b,'f',{bin:true,size:262144+b.length*4099})});
   sys('/unix','f',{bin:true,size:3408012});
+  sys('/etc/rc.old','f',{body:['# old rc, kept in case the new one fails','/etc/update','# reminder: root is nedry until the auditors have gone','/etc/cron']});
   sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[3,2]});
   sys('/dev/console','c',{mode:'crw--w--w-',dev:[0,0]});
   sys('/etc/motd','f',{body:P.profile.welcome});

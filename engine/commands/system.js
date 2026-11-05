@@ -147,9 +147,33 @@ P.command({names:['connect'],terminal:true,help:'plug into another machine',
 
 P.command({names:['su'],path:'/bin',
   man:{what:'become super-user',syn:'su',desc:[
-    'asks for the root password, then makes you the super-user.'],bugs:[
-    'you do not know the root password.']},
-  run:function(){P.typeLine('Password:');P.pause(900);P.typeLine('Sorry','err')}});
+    'asks for the root password, then makes you the super-user, until you exit.'],bugs:[
+    'you do not know the root password. yet.']},
+  run:function(){
+    var word=P.profile.rootPassword,line;
+    if(P.st.user==='root')return;
+    P.queue(function(){return P.readLine('Password:',false,true).then(function(l){line=l})});
+    P.queue(function(){
+      if(word&&line===word){P.su();return}
+      P.pause(900);
+      P.typeLine('Sorry','err');
+    });
+  }});
+
+/* the ways to stop a machine: Berkeley had halt; before that, you synced and threw the switch */
+P.command({names:['halt'],path:'/etc',enabled:function(p){return p.csh},
+  man:{what:'stopping the processor',syn:'halt [ -n ] [ -q ] [ -y ]',desc:['writes out what is in memory and stops the processor. only the super-user may do it.']},
+  run:function(){
+    if(P.st.user!=='root'){P.typeLine('reboot: Not owner','err');return}
+    P.powerOff(['syncing disks... done','halting']);
+  }});
+var syncs=0;
+P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<1980},
+  man:{what:'update the super block',syn:'sync',desc:['writes out everything in memory. it is prudent to do this before stopping the processor. old hands do it three times.']},
+  run:function(){
+    if(P.st.user!=='root')return;
+    if(++syncs===3)P.powerOff(['(the disks have stopped. reach for the switch.)']);
+  }});
 
 P.command({names:['rm'],path:'/bin',
   man:{what:'remove files',syn:'rm [ -fri ] file ...',desc:[

@@ -10,6 +10,7 @@ user:      guest
 homes:     /usr/people
 hostname:  crimson
 case:      sensitive
+root password: nedry
 mail notice: You have mail.
 csh:       yes
 not found: %s: Command not found.
