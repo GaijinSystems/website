@@ -3,14 +3,14 @@
 (function(P){
 'use strict';
 
-P.command({names:['help'],core:true,
+P.command({names:['help'],core:true,terminal:true,
   man:{what:'list the commands',syn:'help',desc:[
     'lists the commands, alphabetically, with a few words about each. man name says more about any of them.']},
   run:function(){
     var H=P.help(),man=P.has(P.cmds,'man');
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
     P.say(['commands:'].concat(H.map(function(h){return ['  '+h[0].padEnd(13)+' '+h[1],'',{hang:16}]}), /* wraps under its description */
-      ['',[man?'man name for details, or name -h.':'name -h for usage.','dim']]));
+      man?['',['man name for details, or name -h.','dim']]:[]));
   }});
 
 P.command({names:['man'],core:true,help:'the manual',
@@ -26,7 +26,7 @@ P.command({names:['man'],core:true,help:'the manual',
     else P.typeLine('No manual entry for '+a[0]+'.');
   }});
 
-/* aliases (csh, 1979): from the == aliases == section, plus any set this session */
+/* aliases, on the machines whose shell had them: from the == aliases == section, plus any set this session */
 function aliasRow(a){var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
 P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted command is not a request for help */
   man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
@@ -66,10 +66,10 @@ P.command({names:['clear'],core:true,help:'clear the screen',
 
 P.command({names:['exit','logout'],help:'log out',
   man:{what:'log out',syn:'exit',desc:[
-    'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason. aliases set this session are lost.']},
+    'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason.']},
   run:function(){P.logout()}});
 
-P.command({names:['sound'],core:true,help:'keyclicks on or off',
+P.command({names:['sound'],core:true,terminal:true,help:'keyclicks on or off',
   man:{what:'keyclicks on or off',syn:'sound [ on | off ]',desc:[
     'turns the keyclicks on or off. with no argument, reports which. the browser stays silent until the first tap or keypress, whatever this says.']},
   run:function(a){

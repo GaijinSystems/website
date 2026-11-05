@@ -111,7 +111,7 @@ P.command({names:['ping'],path:'/etc',
   }});
 
 /* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */
-P.command({names:['connect'],help:'plug into another machine',
+P.command({names:['connect'],terminal:true,help:'plug into another machine',
   enabled:function(){return P.allowed.length>1},
   man:{what:'connect this terminal to another machine',syn:'connect [ name ]',desc:[
     'with no name, lists the machines on the line and marks the one you are on. with a name, plugs the terminal into that machine, which boots from cold.']},

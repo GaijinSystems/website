@@ -12,7 +12,7 @@ installed: 1979-01-01 00:01
 user:      guest
 homes:     /usr
 case:      sensitive
-commands:  -head, -printenv, -vi, -uptime, -ifconfig, -ping, -hostname, -whoami
+commands:  -head, -printenv, -vi, -uptime, -ifconfig, -ping, -hostname, -whoami, -alias, -clear, -logout
 
 # The self-test, typed at power-on and after every logout.
 # LABEL | VALUE | pause   prints a dotted row; pause is milliseconds to wait after it.

@@ -78,6 +78,22 @@ uux: no neighbours answering. try again tonight.
 == command: mesg ==
 is y
 
+== aliases ==
+cl  = clear ; ls
+cll = clear ; ls -l
+la  = ls -a
+ll  = ls -l
+lla = ls -l -a
+
+== file: .cshrc ==
+set path=(. /usr/ucb /bin /usr/bin /etc)
+set history=40
+alias cl 'clear ; ls'
+alias cll 'clear ; ls -l'
+alias la 'ls -a'
+alias ll 'ls -l'
+alias lla 'ls -l -a'
+
 == file: readme ==
 this is a phosphor-9 video terminal.
 it is plugged into a vax.
