@@ -470,6 +470,7 @@ function fullscreen(keys,onResize){
     say:function(m){if(m!==said){said=m;announce(m)}},
     close:function(){
       KEYS=null;window.removeEventListener('resize',size);
+      if(window.visualViewport)visualViewport.removeEventListener('resize',size);
       el.remove();out.style.display='';
       term.scrollTop=term.scrollHeight;
     }
@@ -488,6 +489,7 @@ function fullscreen(keys,onResize){
   }
   var keep=onResize;onResize=null;size();onResize=keep;
   window.addEventListener('resize',size);
+  if(window.visualViewport)visualViewport.addEventListener('resize',size); /* a phone keyboard opening or changing height */
   return S;
 }
 function input(names,done){ /* the lines a command works on: named files, else its pipe or <, else the keyboard */
@@ -689,7 +691,7 @@ var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
   hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,
-  fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
+  columns:function(){return cols()},fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
