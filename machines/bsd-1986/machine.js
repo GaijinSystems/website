@@ -1,0 +1,67 @@
+/* PHOSPHOR-9 terminal: machine "bsd-1986", a VAX-11/780 running 4.3BSD.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
+   Same text format as the site files; see README.md. Do not type a backtick or a dollar sign
+   followed by { between the two backticks below. */
+Phosphor.content(String.raw`
+
+badge:     PHOSPHOR-9
+year:      1986
+installed: 1986-06-06 19:55
+user:      guest
+homes:     /usr
+case:      sensitive
+prompt:    "% "
+not found: %s: Command not found.
+offline:   the arpanet is up, but your uucp neighbour is not answering.
+
+== banner ==
+PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07
+~ line 2, 9600 baud
+
+MEMORY CHECK  | 16384 BYTES OK    | 150
+HV RAIL       | 24 KV STABLE      | 200
+HORIZ. SYNC   | 15.734 KHZ LOCKED
+KEYBOARD      | DETECTED (YOURS)  | 200
+
+4.3 BSD UNIX ({hostname})
+
+== dmesg ==
+4.3 BSD UNIX #1: Fri Jun  6 19:55:00 PDT 1986
+real mem  = 8388608
+avail mem = 7077888
+using 204 buffers containing 819200 bytes of memory
+mcr0 at tr1
+mcr1 at tr2
+uba0 at tr3
+hp0 at mba0 drive 0
+hp0: eagle
+tm0 at uba0 csr 172520 vec 224, ipl 15
+te0 at tm0 slave 0
+dz0 at uba0 csr 160100 vec 300, ipl 15
+de0 at uba0 csr 174510 vec 120, ipl 15
+de0: hardware address 08:00:2b:00:00:00
+~ lp0: out of paper
+root on hp0
+
+== ps ==
+x    0  ?   7:41  swapper
+x    1  ?   0:18  /etc/init
+x    2  ?   1:02  pagedaemon
+x   61  ?   2:17  /etc/update
+x   66  ?   0:49  /etc/cron
+x   74  ?   0:31  /etc/syslogd
+x   83  ?   3:12  /usr/lib/sendmail -bd -q1h
+x   91  ?   0:44  /etc/inetd
+a  112  co  0:12  -csh
+a  140  co  0:30  rogue
+-  144  02  0:01  -csh
+
+== file: readme ==
+this is a phosphor-9 video terminal.
+it is plugged into a vax.
+the vax is in another room. it is louder than you would think.
+
+== command: sudo ==
+sudo: Command not found.
+
+`);

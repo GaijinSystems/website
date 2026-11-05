@@ -13,7 +13,7 @@ installed: 1979-01-10 16:12
 user:      guest
 homes:     /usr
 case:      sensitive
-commands:  -head, -printenv
+commands:  -head, -printenv, -vi
 offline:   the arpanet is down the hall.
 
 # The self-test, typed at power-on and after every logout.
