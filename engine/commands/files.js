@@ -18,9 +18,7 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
     '-l   long listing: mode, links, owner, size in bytes and the time of last change.',
-    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.',
-    '',
-    'the aliases ll, la and lla stand for ls -l, ls -a and ls -l -a.']},
+    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.']},
   run:function(a){
     var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),
         want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
@@ -70,7 +68,7 @@ P.command({names:['cd'],core:true,help:'change directory',
     P.st.cwd=P.pathOf(n);
   }});
 
-P.command({names:['pwd'],core:true,help:'where am i',path:'/bin',
+P.command({names:['pwd'],core:true,path:'/bin',
   man:{what:'print working directory',syn:'pwd',desc:[
     'prints the full name of the working directory.']},
   run:function(){P.typeLine(P.st.cwd)}});

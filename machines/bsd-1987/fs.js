@@ -1,15 +1,15 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1986", its system folders.
+/* PHOSPHOR-9 terminal: machine "bsd-1987", its system folders.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 Phosphor.setup(function(P){
   'use strict';
   var SD=P.systemDate,ST=P.st,OWNER=ST.owner;
   function sys(p,type,o){return P.put(p,type,Object.assign({owner:'root',date:SD},o))}
-  var UCB=['vi','head','printenv','grep'];
+  var UCB=['vi','head','printenv','whoami','uptime','clear'];
   sys('/bin','d',{owner:'bin'});
   sys('/etc','d');
   sys('/usr','d');
   sys('/usr/ucb','d',{owner:'bin'});
-  UCB.forEach(function(b){if(P.paths[b])P.paths[b]='/usr/ucb'});
+  UCB.forEach(function(b){if(P.cmds[b])P.paths[b]='/usr/ucb'});
   Object.keys(P.paths).sort().forEach(function(b){
     var dir=P.paths[b],h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
     sys(dir+'/'+b,'f',{owner:dir==='/etc'?'root':'bin',bin:true,size:8192+h*3});

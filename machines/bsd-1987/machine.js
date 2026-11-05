@@ -1,11 +1,10 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1986", a VAX-11/780 running 4.3BSD.
+/* PHOSPHOR-9 terminal: machine "bsd-1987", a VAX-11/780 running 4.3BSD (released June 1986).
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    Same text format as the site files; see README.md. Do not type a backtick or a dollar sign
    followed by { between the two backticks below. */
 Phosphor.content(String.raw`
 
 badge:     PHOSPHOR-9
-year:      1986
 installed: 1986-06-06 19:55
 user:      guest
 homes:     /usr
@@ -55,6 +54,29 @@ x   91  ?   0:44  /etc/inetd
 a  112  co  0:12  -csh
 a  140  co  0:30  rogue
 -  144  02  0:01  -csh
+
+== ifconfig ==
+de0: flags=43<UP,BROADCAST,RUNNING>
+     inet 192.5.48.20 netmask ffffff00 broadcast 192.5.48.255
+lo0: flags=49<UP,LOOPBACK,RUNNING>
+     inet 127.0.0.1 netmask ff000000
+
+== command: df ==
+Filesystem  kbytes    used   avail capacity  Mounted on
+/dev/hp0a     7421    6012     667    90%    /
+/dev/hp0g   143927  118204   11330    91%    /usr
+
+== command: cu ==
+Connect failed: dial tone not detected
+
+== command: uucp ==
+uucp: no neighbours answering. try again tonight.
+
+== command: uux ==
+uux: no neighbours answering. try again tonight.
+
+== command: mesg ==
+is y
 
 == file: readme ==
 this is a phosphor-9 video terminal.
