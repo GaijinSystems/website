@@ -1,5 +1,6 @@
-/* PHOSPHOR-9 terminal: nods to Zork for the machines that have nothing else to find. Not the game: that is on
-   a disk that will not run. Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
+/* PHOSPHOR-9 terminal: nods to Zork at the prompt, on the machines that have the game on disk, and what starts it.
+   The game itself is in zmachine.js and the story files, loaded when first run.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
    The quoted lines below are from Infocom's source for Zork I (github.com/historicalsource/zork1), under this licence:
 
@@ -51,11 +52,22 @@ var FCD3=['"\tFlood Control Dam #3','',
 '        1) You start your tour here in the Dam Lobby. You will notice',
 'on your right that...."'];
 var HELLOS=['Hello.','Good day.',"Nice weather we've been having lately.",'Goodbye.'],opened=false;
-P.zork={leaflet:LEAFLET,fcd3:FCD3};
+function play(game){ /* game: zork1 or zork2. Callers have checked it is on the disk where they are */
+  var ok=false;
+  P.queue(function(){return P.load(['../shared/zmachine.js','../shared/'+game+'-story.js']).then(function(x){ok=x})});
+  P.queue(function(){
+    if(ok)P.zmachine.play(game);
+    else P.typeLine(game.toUpperCase()+': cannot execute','err');
+  });
+}
+P.zork={leaflet:LEAFLET,fcd3:FCD3,play:play};
 function say(names,run){P.command({names:names,hidden:true,noHelpFlag:true,run:run})}
 function unknown(w,raw,a){if(!P.fallback(w[0],raw,a))P.typeLine(P.profile.notFound.replace('%s',w[0]),'err')}
 say(['xyzzy','plugh'],function(){P.typeLine('A hollow voice says "Fool."')});
-say(['zork'],function(){P.typeLine('At your service!')});
+say(['zork'],function(a,raw,w){ /* the DOS shell reads ZORK\ZORK1 as this command with an argument */
+  if(/^\\zork[12](\.com)?$/i.test(w[1]||'')&&!w[2]&&P.fallback('zork'+w[1],raw,a))return;
+  P.typeLine('At your service!');
+});
 say(['look'],function(){P.typeLine('It is pitch black. You are likely to be eaten by a grue.')});
 say(['hello'],function(){P.typeLine(HELLOS[Math.floor(Math.random()*HELLOS.length)])});
 say(['open'],function(a,raw,w){

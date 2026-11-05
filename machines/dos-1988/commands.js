@@ -342,8 +342,12 @@ P.fallback=function(word,raw){
     P.typeLine('Invalid drive specification');
     return true;
   }
-  var z=/^(?:(?:c:)?\\zork\\|)(zork[12])(?:\.com)?$/.exec(w); /* it is here, on a disk that will not run */
-  if(z&&(z[0]!==z[1]&&z[0]!==z[1]+'.com'||P.st.cwd==='/zork')&&P.find('/zork/'+z[1]+'.com')){notReady('A');return true}
+  var z=/^(?:.*[\\\/])?(zork[12])(?:\.com)?$/.exec(w),zn=z&&P.find(w.replace(/\.com$/,'')+'.com',true); /* in C:\ZORK, or by its path */
+  if(zn&&P.pathOf(zn)==='/zork/'+z[1]+'.com'){
+    if(P.find('/zork/'+z[1]+'.dat',true))P.zork.play(z[1]);
+    else P.typeLine('File not found');
+    return true;
+  }
   var base=w.replace(/\.(bat|com|exe)$/,''),n;
   if(/[\\\/]/.test(w)||/\.bat$/.test(w)||P.find(base+'.bat',true)){
     n=P.find(base+'.bat',true);

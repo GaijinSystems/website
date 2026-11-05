@@ -7,7 +7,7 @@ Phosphor.setup(function(P){
    ['pip.com',7424],['stat.com',5248],['submit.com',1280],['sysgen.com',1408],['xsub.com',768]].forEach(function(f){
     P.put('/'+f[0],'f',{owner:'root',date:SD,bin:true,size:f[1]});
   });
-  [['zork1.com',8704,0],['zork1.dat',84480,0],['zork2.com',8704,3],['zork2.dat',88320,3]].forEach(function(f){
+  [['zork1.com',8704,0],['zork1.dat',86912,0],['zork2.com',8704,3],['zork2.dat',92544,3]].forEach(function(f){
     P.put('/'+f[0],'f',{owner:'root',date:SD,bin:true,size:f[1],user:f[2]}); /* user: the CP/M user area it lives in */
   });
 });

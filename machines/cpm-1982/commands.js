@@ -136,7 +136,12 @@ P.fallback=function(word){
   var w=word.toLowerCase();
   if(w==='a:')return true;
   if(/^[b-p]:$/.test(w)){bdos(w.charAt(0).toUpperCase());return true}
-  if(/^zork[12]$/.test(w)&&get(w+'.com')){bdos('B','BAD SECTOR');return true}
+  var z=/^(?:a:)?(zork[12])$/.exec(w);
+  if(z&&get(z[1]+'.com')){
+    if(get(z[1]+'.dat'))P.zork.play(z[1]);
+    else P.typeLine('NO FILE');
+    return true;
+  }
   P.typeLine(word.toUpperCase()+'?');
   return true;
 };
