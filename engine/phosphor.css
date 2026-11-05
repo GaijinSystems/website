@@ -16,6 +16,7 @@
 @supports (height:100dvh){:root{--sw:min(calc(80vw / 1.079),calc(var(--app-h,100dvh) * .8 / .842))}}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:#040504}
+html{height:var(--app-h,100%)} /* nothing taller than what shows, so a phone has nothing to scroll the monitor out of view with */
 body{
   height:100vh;height:100dvh;height:var(--app-h,100dvh); /* --app-h = visible height, shrinks when a soft keyboard opens */
   background:radial-gradient(ellipse 70% 55% at 50% 46%,#09110b 0%,#050705 55%,#030403 100%);
@@ -134,7 +135,7 @@ body{
 
 /* ---------- hidden input (soft keyboard bridge) ---------- */
 #kb{
-  position:fixed;left:0;bottom:0;width:1px;height:16px;
+  position:fixed;left:0;top:0;width:1px;height:16px; /* at the top: a phone scrolls a focused field into view, and up here it already is */
   font-size:16px;opacity:0;border:0;padding:0;margin:0;outline:none;
   background:transparent;color:transparent;caret-color:transparent;
 }
