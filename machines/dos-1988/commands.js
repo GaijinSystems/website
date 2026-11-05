@@ -249,6 +249,7 @@ cmd(['find'],null,function(a,raw,w){
     F.forEach(function(x){
       var n=P.find(x,true);
       if(!n||n.type==='d'){P.typeLine('FIND: File not found '+x);return}
+      if(n.prot){P.typeLine('Access denied - '+x.toUpperCase());return}
       run(P.text(n),x);
     });
     return;
@@ -306,7 +307,7 @@ cmd(['edlin'],null,function(a,raw,w){
     });
   }
   function exec(s){
-    var m=s.trim().match(/^(\d+|\.|#)?(?:,(\d+|\.|#)?)?\s*([a-zA-Z])?(.*)$/),v=function(x,d){return !x?d:x==='.'?at:x==='#'?B.length+1:+x};
+    var m=s.trim().match(/^(\d+|\.|#)?(?:,(\d+|\.|#)?)?\s*([a-zA-Z])?(.*)$/),v=function(x,d){return !x?d:x==='.'?at:x==='#'?B.length+1:Math.max(1,+x)};
     if(!m){P.typeLine('Entry error');return loop()}
     var c=(m[3]||'').toUpperCase(),a1=v(m[1],at),b1=v(m[2],a1);
     if(c==='I')return insert(Math.min(a1,B.length+1));
@@ -341,7 +342,7 @@ P.fallback=function(word,raw){
     P.typeLine('Invalid drive specification');
     return true;
   }
-  var z=/^(?:(?:c:)?\\zork\\|)(zork[123])(?:\.com)?$/.exec(w); /* the program is here; its story disk is not */
+  var z=/^(?:(?:c:)?\\zork\\|)(zork[12])(?:\.com)?$/.exec(w); /* it is here, on a disk that will not run */
   if(z&&(z[0]!==z[1]&&z[0]!==z[1]+'.com'||P.st.cwd==='/zork')&&P.find('/zork/'+z[1]+'.com')){notReady('A');return true}
   var base=w.replace(/\.(bat|com|exe)$/,''),n;
   if(/[\\\/]/.test(w)||/\.bat$/.test(w)||P.find(base+'.bat',true)){

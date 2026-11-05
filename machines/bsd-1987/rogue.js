@@ -30,6 +30,36 @@ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
+
+Portions of this software (state.c, mdport.c) are based on the work
+of Nicholas J. Kisseberth. Used under license:
+
+Copyright (C) 1999, 2000, 2005 Nicholas J. Kisseberth
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the name(s) of the author(s) nor the names of other contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR(S) OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
 */
 (function(P){
 'use strict';
@@ -383,7 +413,7 @@ function initscr(){
 function* main(){
   if(argv.length===1&&argv[0]==='-d'){
     dnum=rnd(100);	/* throw away some rnd()s to break patterns */
-    while(--dnum)rnd(100);
+    while(--dnum>0)rnd(100);	/* a first roll of 0 would never count down here: the C's int wraps */
     purse=rnd(100)+1;
     level=rnd(100)+1;
     initscr();
@@ -3845,7 +3875,9 @@ var reason=['killed','quit','A total winner','killed with Amulet'];
 /* the top ten lives in the browser, under rogue/scores; sc_uid is the login name */
 function read_scores(){
   var t=P.saved('rogue/scores');
-  return Array.isArray(t)?t:[];
+  return Array.isArray(t)?t.filter(function(s){ /* whatever is in the browser, as long as it is scores */
+    return s&&typeof s.sc_score==='number'&&typeof s.sc_name==='string'&&typeof s.sc_uid==='string'&&reason[s.sc_flags]!==undefined&&typeof s.sc_monster==='number'&&typeof s.sc_level==='number';
+  }).slice(0,NUMSCORES):[];
 }
 function score(amount,flags,monst){
   var top=read_scores(),sc,i,scp,sc2=-1,uid=P.st.user,L=[];
@@ -5374,7 +5406,7 @@ function* save_game(){
           else yield* msg('Please answer Y or N');
         }
         yield* msg('file name: '+buf);
-        md_unlink(file_name);
+        md_unlink(buf);	/* the C unlinks file_name, the old name, here: the file it just asked about is the one to go */
       }
       file_name=buf;
       if((err=save_file(file_name))!==null)yield* msg(err);
@@ -5390,13 +5422,19 @@ function file_exists(name){
 function md_unlink(name){
   var abs=P.norm(name),n=P.find(abs,true);
   P.save('rogue/'+abs,null);
-  if(n&&n.parent&&n.type!=='d')delete n.parent.kids[n.name];
+  if(n&&n.parent&&n.type!=='d'&&cant_save(name)===null)delete n.parent.kids[n.name];
+}
+function cant_save(name){ /* null, or what strerror would say of opening it to write */
+  var abs=P.norm(name),ex=P.find(abs,true);
+  if(ex&&ex.type==='d')return 'Is a directory';
+  if(ex&&(ex.prot||(ex.parent&&ex.parent.prot)))return 'Permission denied';
+  return P.canWrite&&!P.canWrite(abs)?'Permission denied':null;
 }
 /* fopen and rs_save_file: null, or what strerror would say. It also shows in the file system,
    for as long as the file system lasts; the game itself is in the browser under rogue/name */
 function save_file(name){
   var abs=P.norm(name),data;
-  if(P.canWrite&&!P.canWrite(abs))return 'Permission denied';
+  if((data=cant_save(name))!==null)return data;
   data=encode(snapshot());
   if(!P.save('rogue/'+abs,data))return 'No space left on device';
   if(P.put)P.put(abs,'f',{owner:P.st.user,date:P.now(),bin:true,mode:'-r--------',size:JSON.stringify(data).length});
@@ -5462,7 +5500,12 @@ function decode(data){
   var shells=data.objs.map(function(o){return Array.isArray(o)?[]:{}});
   function dec(v){
     if(v===null||typeof v!=='object')return v;
-    if('f' in v)return DAEMONS[v.f];
+    if('f' in v){
+      if(!P.has(DAEMONS,v.f))throw new Error('bad daemon');
+      return DAEMONS[v.f];
+    }
+    if(v.r===undefined)return undefined; /* what a routine with no name saves as */
+    if(!Number.isInteger(v.r)||v.r<0||v.r>=shells.length)throw new Error('bad index');
     return shells[v.r];
   }
   data.objs.forEach(function(o,i){

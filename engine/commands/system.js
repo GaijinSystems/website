@@ -198,7 +198,8 @@ P.command({names:['rm'],path:'/bin',
         P.typeLine('rm: '+x+' not removed','err');
         return;
       }
-      delete n.parent.kids[n.name];
+      var abs=P.norm(x);
+      delete P.find(P.dirOf(abs),true).kids[abs.split('/').pop()]; /* by the name given: a link has its own */
     });
     if(denied)P.typeLine('nice try.','dim');
   }});

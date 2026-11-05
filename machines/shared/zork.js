@@ -1,5 +1,5 @@
-/* PHOSPHOR-9 terminal: nods to Zork for the machines that have nothing else to find. Not the game: that needs
-   a disk nobody has. Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
+/* PHOSPHOR-9 terminal: nods to Zork for the machines that have nothing else to find. Not the game: that is on
+   a disk that will not run. Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
    The quoted lines below are from Infocom's source for Zork I (github.com/historicalsource/zork1), under this licence:
 

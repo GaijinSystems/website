@@ -353,13 +353,17 @@ function isPrime(n){
 }
 game('primes','generate primes','primes [ start [ stop ] ]','prints the primes from start up to stop, or for as long as you let it: ctrl-c stops it.',function(a){
   function go(start,stop){
-    var n=Math.max(start,2);
+    var n=Math.max(start,2),made=0;
+    if(n>Number.MAX_SAFE_INTEGER||stop!==Infinity&&stop>Number.MAX_SAFE_INTEGER){P.typeLine('primes: ouch.','err');return}
     (function batch(){
       P.queue(function(){
         var L=[];
         while(L.length<24&&n<stop){if(isPrime(n))L.push(String(n));n++}
         P.say(L);
-        if(n<stop)batch();
+        made+=L.length;
+        if(n>=stop||(P.piped()&&made>=10000))return; /* nothing here can tell it the reader has had enough */
+        P.queue(function(){return P.sleep(0)}); /* so that ctrl-c can reach it */
+        batch();
       });
     })();
   }
@@ -687,7 +691,7 @@ function Robots(S,done,argv,last){
     if(field[me.y][me.x]>0&&!dead)dead=true;
   }
   function record(){ /* the score file: ten best, kept in this browser */
-    var T=P.saved('robots/scores')||[],me2=P.st.user;
+    var T=robotScores(),me2=P.st.user;
     T.push({n:me2,s:score});
     T.sort(function(a,b){return b.s-a.s});
     T=T.slice(0,10);
@@ -793,9 +797,13 @@ function Robots(S,done,argv,last){
     go();
   }};
 }
+function robotScores(){ /* whatever is in the browser, as long as it is scores */
+  var T=P.saved('robots/scores');
+  return Array.isArray(T)?T.filter(function(t){return t&&typeof t.s==='number'&&typeof t.n==='string'}):[];
+}
 game('robots','fight off villainous robots','robots [ -atns ]','they all move one step towards you each time you move. when two meet, they become a junk heap, and so does anything that hits it. y k u h l b j n move, capitals keep going, w waits for the end, t teleports. -a starts harder, -t teleports you when you must, and -s shows the best scores, kept in this browser.',function(a,raw,w){
   if(a.join('').indexOf('s')>=0&&a.every(function(x){return x.charAt(0)==='-'})){
-    var T=P.saved('robots/scores')||[];
+    var T=robotScores();
     P.say(T.length?T.map(function(t,i){return String(i+1).padStart(2)+' '+String(t.s).padStart(5)+' '+t.n}):['No scores']);
     return;
   }
@@ -858,8 +866,9 @@ function Snake(S,done,argv,last){
       S.drawGrid(C,you.line+1,you.col+1);
       return;
     }
-    for(y=1;y<=ccnt;y++){C[0][y]='-';C[lcnt+1][y]='-'}
-    for(y=0;y<=lcnt+1;y++){C[y][0]='|';C[y][ccnt+1]='|'}
+    function edge(r,x,c){if(r<S.rows&&x<S.cols)C[r][x]=c} /* the glass may have shrunk since the game began */
+    for(y=1;y<=ccnt;y++){edge(0,y,'-');edge(lcnt+1,y,'-')}
+    for(y=0;y<=lcnt+1;y++){edge(y,0,'|');edge(y,ccnt+1,'|')}
     pc(finish,'#');pc(money,'$');
     for(y=5;y>=1;y--)pc(snake[y],'s');
     pc(snake[0],'S');
@@ -870,7 +879,9 @@ function Snake(S,done,argv,last){
     S.say('you $'+cash());
   }
   function post(){ /* best for each visitor name and the record, kept in this browser */
-    var R=P.saved('snake/scores')||{best:{},who:'',high:0},u=P.st.user,was=R.best[u]||0,sc=cash();
+    var R=P.saved('snake/scores'),u=P.st.user,sc=cash();
+    if(!R||!R.best||typeof R.best!=='object'||typeof R.high!=='number')R={best:{},who:'',high:0};
+    var was=P.has(R.best,u)&&typeof R.best[u]==='number'?R.best[u]:0;
     if(sc>was){R.best[u]=sc;last.push('You bettered your previous best of $'+was)}
     else last.push('Your best to date is $'+was);
     if(sc>R.high||!R.who){
@@ -897,6 +908,7 @@ function Snake(S,done,argv,last){
     overlay=[{col:you.col,line:you.line,c:'@'}];
     draw();
     setTimeout(function(){
+      if(over)return;
       overlay=[];
       var i=cash()%10,b=ran(10);
       if(b===i){warp(true);return}
@@ -924,6 +936,7 @@ function Snake(S,done,argv,last){
     }
     overlay=O;draw();
     setTimeout(function(){
+      if(over)return;
       last.push('You have won with $'+cash()+'.');
       post();
       quit();
@@ -970,8 +983,9 @@ function Snake(S,done,argv,last){
   for(i=1;i<6;i++)snake.push(chase(snake[i-1]));
   draw();
   return {draw:draw,feed:function(k){
-    if(over||busy)return;
+    if(over)return;
     if(k==='C-c'){quit();return}
+    if(busy)return;
     if(/^[0-9]$/.test(k)){pending+=k;return}
     var c=k;
     if(pending){repeat=+pending;pending=''}

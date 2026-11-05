@@ -10,7 +10,7 @@ function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n
 function get(k){var n=P.root.kids[k];return n&&(n.user||0)===user?n:undefined}
 function write(k,L){P.writeFile(k,L,false);var n=P.root.kids[k];if(n)n.user=user}
 function matcher(pat){return P.fcb.matcher(pat.toLowerCase().replace(/^a:/,''))}
-function bdos(d,why){ /* the classic: a drive that is not there, and only ctrl-c gets you out */
+function bdos(d,why){ /* the classic: a drive that is not there, and a key, ctrl-c or any other, gets you out */
   P.typeLine('BDOS ERR ON '+d+': '+(why||'SELECT'));
   P.queue(function(){return P.readKey('')});
 }
@@ -96,7 +96,9 @@ cmd(['dump'],null,function(a,raw,w){
 cmd(['ed'],null,function(a,raw,w){ /* a small ED: I to type (ctrl-z ends), #T to print, #A, #D, nL, E, Q */
   var name=arg(w,1);
   if(!name){P.typeLine('FILE NAME ERROR');return}
-  var n=get(name),B=n?P.text(n):[],at=0;
+  var n=get(name),at=0;
+  if(n&&n.prot){P.typeLine('NO FILE');return}
+  var B=n?P.text(n):[];
   if(!n)P.typeLine('NEW FILE');
   (function loop(){
     P.ask('     : *',function(line){
@@ -129,7 +131,7 @@ P.fallback=function(word){
   var w=word.toLowerCase();
   if(w==='a:')return true;
   if(/^[b-p]:$/.test(w)){bdos(w.charAt(0).toUpperCase());return true}
-  if(/^zork[123]$/.test(w)&&get(w+'.com')){bdos('B','BAD SECTOR');return true}
+  if(/^zork[12]$/.test(w)&&get(w+'.com')){bdos('B','BAD SECTOR');return true}
   P.typeLine(word.toUpperCase()+'?');
   return true;
 };

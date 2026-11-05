@@ -36,7 +36,7 @@ function entries(dir){ /* every version of every file: {key,name,typ,ver,node} *
     return a.name<b.name?-1:a.name>b.name?1:a.typ<b.typ?-1:a.typ>b.typ?1:b.ver-a.ver;
   });
 }
-function wild(p,t){return new RegExp('^'+p.replace(/[.+^${}()|\\\[\]]/g,'\\$&').replace(/\*/g,'.*').replace(/%/g,'.')+'$').test(t)}
+function wild(p,t){return new RegExp('^'+p.replace(/[.+?^${}()|\\\[\]]/g,'\\$&').replace(/\*/g,'.*').replace(/%/g,'.')+'$').test(t)}
 function matches(S,dir,anyType){ /* with no type given, DIR means any type; the others mean none */
   return entries(dir).filter(function(e){
     if(!wild(S.name||'*',e.name))return false;
@@ -131,6 +131,7 @@ verb('copy',2,function(a){
   if(a.length<2){P.typeLine('_From: ');return}
   var r=pick(a[0]);
   if(!r.e){err('%COPY-E-SEARCHFAIL, error searching for '+fullSpec(r.S));err('-RMS-E-FNF, file not found');return}
+  if(r.e.node.prot){err('%COPY-E-OPENIN, error opening '+fullSpec(r.S)+' as input');err('-RMS-E-PRV, insufficient privilege or file protection violation');return}
   writeNew(a[1],P.text(r.e.node));
 });
 verb('rename',3,function(a){
@@ -138,7 +139,7 @@ verb('rename',3,function(a){
   var r=pick(a[0]);
   if(!r.e){err('%RENAME-E-SEARCHFAIL, error searching for '+fullSpec(r.S));err('-RMS-E-FNF, file not found');return}
   var T=parse(a[1]),dir=folder(T.abs);
-  if(!dir||!P.canWrite(P.pathOf(r.e.node))){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
+  if(!dir||!P.canWrite(P.pathOf(r.e.node))||!P.canWrite(P.pathOf(dir).replace(/\/$/,'')+'/x')){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
   var v=nextVersion(dir,T),k=T.name+'.'+T.typ+';'+v,n=r.e.node;
   delete r.dir.kids[r.e.key];
   n.name=k;n.parent=dir;dir.kids[k]=n;
@@ -179,7 +180,9 @@ verb('create',2,function(a,q){
 });
 verb('edit',2,function(a){ /* EDT, in its line mode */
   if(!a.length){P.typeLine('_File: ');return}
-  var r=pick(a[0]),B=r.e?P.text(r.e.node):[];
+  var r=pick(a[0]);
+  if(r.e&&r.e.node.prot){P.typeLine('Input file could not be opened');err('%RMS-E-PRV, insufficient privilege or file protection violation');return}
+  var B=r.e?P.text(r.e.node):[];
   if(!r.e)P.typeLine('Input file does not exist');
   P.typeLine('[EOB]');
   (function loop(){
@@ -283,6 +286,7 @@ P.fallback=function(word,raw){
   if(W[0].charAt(0)==='@'){
     var r=pick(W[0].slice(1)+(W[0].indexOf('.')<0?'.com':''));
     if(!r.e){err('%DCL-E-OPENIN, error opening '+fullSpec(r.S)+' as input');err('-RMS-E-FNF, file not found');return true}
+    if(r.e.node.prot){err('%DCL-E-OPENIN, error opening '+fullSpec(r.S)+' as input');err('-RMS-E-PRV, insufficient privilege or file protection violation');return true}
     P.runScript(P.text(r.e.node));
     return true;
   }
