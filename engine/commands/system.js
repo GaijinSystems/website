@@ -10,7 +10,7 @@ P.command({names:['dmesg'],help:'boot messages',path:'/etc',
     'prints what the system said to itself while it was starting up.']},
   run:function(){
     P.say((P.profile.sec.dmesg||[]).map(function(l){ /* a record too long for the glass wraps indented */
-      return Array.isArray(l)?[l[0],l[1],Object.assign({hang:4},l[2]||{})]:[l,'',{hang:4}];
+      var x=P.lineOf(l);return [x[0],x[1],Object.assign({hang:4},x[2])];
     }));
   }});
 
@@ -82,32 +82,30 @@ P.command({names:['ping'],help:'is anyone out there',path:'/etc',
     var loop=['localhost','127.0.0.1',HOST].indexOf(h)>=0,
         real=!!SITE&&(h===SITE||h==='www.'+SITE||'www.'+h===SITE);
     if(!loop&&!real){P.typeLine('ping: unknown host '+h,'err');P.typeLine(P.profile.offline,'dim');return}
-    var R=[],name=loop?'localhost':h;
+    var R=[],name=loop?'localhost':h,dp=loop?3:1;
     function ok(){return R.filter(function(x){return x!=null})}
     P.typeLine('PING '+name+(loop?' (127.0.0.1)':'')+': 56 data bytes');
     for(i=0;i<c;i++)(function(seq){
       if(seq)P.pause(1000);
       P.queue(function(){
         if(loop){R[seq]=.04+Math.random()*.05;return}
-        var t=performance.now(),done=false;
-        return Promise.race([
-          fetch(location.origin+location.pathname+'?ping='+Date.now()+'-'+seq,{method:'HEAD',cache:'no-store'})
-            .then(function(){if(!done)R[seq]=performance.now()-t},function(){}),
-          P.sleep(2000)
-        ]).then(function(){done=true;if(R[seq]===undefined)R[seq]=null});
+        var t=performance.now(),ac=new AbortController(),timer=setTimeout(function(){ac.abort()},2000);
+        return fetch(location.origin+location.pathname+'?ping='+Date.now()+'-'+seq,{method:'HEAD',cache:'no-store',signal:ac.signal})
+          .then(function(){R[seq]=performance.now()-t},function(){R[seq]=null})
+          .then(function(){clearTimeout(timer)});
       });
       P.typeLine(function(){
         return R[seq]==null?'request timeout for icmp_seq '+seq
-          :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(loop?3:1)+' ms';
+          :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(dp)+' ms';
       },'',null,{hang:4});
     })(i);
     P.typeLine('');
     P.typeLine('--- '+name+' ping statistics ---');
     P.typeLine(function(){var n=ok().length;
       return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'},'',null,{hang:4});
-    P.typeLine(function(){var o=ok(),d=loop?3:1;if(!o.length)return 'no answer.';
-      return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(d)+'/'+
-        (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(d)+'/'+Math.max.apply(null,o).toFixed(d)+' ms'},'',null,{hang:4});
+    P.typeLine(function(){var o=ok();if(!o.length)return 'no answer.';
+      return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(dp)+'/'+
+        (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(dp)+'/'+Math.max.apply(null,o).toFixed(dp)+' ms'},'',null,{hang:4});
   }});
 
 P.command({names:['su'],path:'/bin',

@@ -18,8 +18,10 @@ cord straight:  7.35
 cord sway:      2.5
 
 == aliases ==
-ll  = ls -l
+cl  = clear ; ls
+cll = clear ; ls -l
 la  = ls -a
+ll  = ls -l
 lla = ls -l -a
 
 `);
