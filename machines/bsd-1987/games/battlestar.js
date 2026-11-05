@@ -2355,8 +2355,8 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
         if(!peak)show(phys,pcy,pcx);
       }
       function alarm(n){
-        if(timer!==null){clearTimeout(timer);timer=null}
-        if(n)timer=setTimeout(moveenemy,n*1000);
+        if(timer!==null){S.cancel(timer);timer=null}
+        if(n)timer=S.after(n*1000,moveenemy); /* a throw in it ends the program; close stops it */
       }
       function endfly(r){
         over=true;
@@ -2401,7 +2401,7 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
         }
         peak=null;
         show(snap,pcy,pcx);
-        setTimeout(function(){if(!over)show(phys,pcy,pcx)},120); /* the wipe, a moment later */
+        S.after(120,function(){if(!over)show(phys,pcy,pcx)}); /* the wipe, a moment later */
         alarm(1);
       }
       function moveenemy(){
@@ -2488,7 +2488,7 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
         },
         draw:function(){show(phys,pcy,pcx)}
       };
-    });
+    },{fit:[80,24]});
     P.queue(function(){resume(flew)}); /* inside this command's turn, before the shell's prompt */
   }
   /* ---------- cypher.c ---------- */

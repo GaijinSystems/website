@@ -51,13 +51,14 @@ P.command({names:['btlgammon'],run:function(){
     return s;
   }
   function* shell(cmd){
-    if(!P.runScript)return;
-    if(cmd!==''){P.runScript([cmd]);return}
+    if(!P.keep)return;
+    if(cmd!==''){P.child([cmd]);return} /* a child shell: a cd in it stays there */
     if(P.piped())return;
+    var back=P.keep();
     for(;;){
       pr('% ');
       var v=yield;
-      if(v===null||v===undefined||/^\s*(exit|logout)\s*$/.test(v))return;
+      if(v===null||v===undefined||/^\s*(exit|logout)\s*$/.test(v)){back();return}
       if(v.trim())P.runScript([v]);
     }
   }

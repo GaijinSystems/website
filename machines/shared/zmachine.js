@@ -456,6 +456,7 @@ function wrap(s,w,keep){ /* [start,end] of each row of s in w columns, breaking 
 
 /* ---------- on the screen: the status line on top, and text below, a page at a time ---------- */
 function screen(game,story,seed){
+  var said=null; /* ^C or a crash: said after the screen is gone, below the command, not after the next prompt */
   P.program(function(S,done){
     var log=[''],input='',reading=null,longest=0,seen={l:0,o:0},more=null,over=false,left='',right=[0,0,false],past=[],back=0,news=0,ending=false;
     var vm=create(story,{print:add,status:function(room,a,b,t){left=room;right=[a,b,t]}},seed);
@@ -508,7 +509,7 @@ function screen(game,story,seed){
       if(over)return;
       over=true;
       S.close();
-      if(words)P.typeLine(words,err?'err':'');
+      if(words)said=[words,err?'err':''];
       done();
     }
     var host={
@@ -554,6 +555,7 @@ function screen(game,story,seed){
     drive(vm,game,host);
     return {feed:feed,draw:draw};
   });
+  P.queue(function(){if(said)P.typeLine(said[0],said[1])});
 }
 
 /* ---------- in a pipe: plain lines, no status line, and the end of the input is the end of the game ---------- */

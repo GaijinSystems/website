@@ -205,7 +205,7 @@ verb('edit',2,function(a){ /* EDT, in its line mode */
   })();
 });
 verb('set',3,function(a,q,raw){
-  var w=(a[0]||'').toLowerCase();
+  var w=(a[0]||'').toLowerCase().split('=')[0]; /* SET PROMPT="$ " */
   if('default'.indexOf(w)===0&&w.length>=3){
     var S=parse(a[1]||'[]'),dir=folder(S.abs);
     if(dir&&dir.prot){err('%DCL-E-INVDEF, cannot set default');return} /* with no such folder, VMS takes your word for it */
@@ -263,20 +263,21 @@ verb('write',2,function(a,q,raw){
   if(!m){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
   P.typeLine(m[1].replace(/^"(.*)"$/,'$1'));
 });
+verb('exit',3,function(){if(P.inScript())P.loop('exit')}); /* the end of a command procedure; at the prompt, nothing */
 verb('logout',2,function(a,q){
   P.say(['  '+up(P.st.user)+'      logged out at '+timeStr(now())]);
   P.logout();
 });
 verb('run',2,function(a){
-  var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec+'.exe');
-  if(spec&&r.e&&r.S.abs==='/games'){
+  var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec.replace(/(;\d*)?$/,'.exe$1')); /* MORIA;1 is MORIA.EXE;1 */
+  if(spec&&r.S.name&&r.e&&r.S.abs==='/games'){
     var image=r.e.name.replace(/\..*$/,'');
     if(P.has(P.cmds,image)){P.cmds[image]([],image,[image]);return}
     err('%DCL-W-ACTIMAGE, error activating image '+dirName(r.S.abs)+up(r.e.name)+'.EXE;'+r.e.ver);
     err('-SITE-F-PRIMESHIFT, games are disabled during prime shift - see your system manager');
     return;
   }
-  err('%DCL-W-ACTIMAGE, error activating image '+dirName(P.st.cwd)+up(a[0]||'')+'.EXE;');
+  err('%DCL-W-ACTIMAGE, error activating image '+fullSpec(r.S));
   err('-RMS-E-FNF, file not found');
 });
 

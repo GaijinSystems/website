@@ -104,10 +104,10 @@ P.command({names:['worms'],run:function(a,raw,words){
     function tick(){
       if(over)return;
       round();draw();
-      setTimeout(tick,33);
+      S.after(33,tick);
     }
     draw();
-    setTimeout(tick,0);
+    S.after(0,tick);
     return {
       feed:function(k){if(k==='C-c'){over=true;S.close();done()}},
       draw:draw

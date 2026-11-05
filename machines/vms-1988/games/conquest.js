@@ -12039,7 +12039,8 @@ H.error=function(s){var m=$str(s);if(m)$out(m+'\n');$flush();throw new $Exit(m)}
 H['sys_S_exit']=function(){$flush();throw new $Exit('')};
 H.pvlock=function(){};H.pvunlock=function(){};
 /* the clock: getnow fills year, month, day, hour, minute, second, millisecond */
-function $now(){return P.now?P.now():new Date(Date.now())}
+var $real=false; /* the play hours follow the visitor's own week and day, not the machine's 1988 */
+function $now(){return $real?new Date():P.now?P.now():new Date(Date.now())}
 H.getnow=function(a){
   var d=$now(),v=[d.getFullYear(),d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds(),d.getMilliseconds()];
   for(var i=0;i<7;i++)I[(a>>2)+i]=v[i];
@@ -12104,7 +12105,9 @@ H.gamlinit=function(fdial,fprio,fcron,despri,badlist,badttylist,truename,cronfil
     if(B[cronfile])H.strcpy(cronfile,gc);else H.gamcronfile(gc);
     if(R_enopen(gc)===-3){H.eprintf($S('gamlb$gaminit: Failed to open the game cron file, %s.\n'),gc);return}
     var ok=false;
-    for(;;){if(R_engetnext($S0())===-1)break;if(R_gamcheck($S0())){ok=true;break}}
+    $real=true;
+    try{for(;;){if(R_engetnext($S0())===-1)break;if(R_gamcheck($S0())){ok=true;break}}}
+    finally{$real=false}
     R_enclose();
     if(!ok){
       H.eprintf($S('Now is not a good time to play games. For valid times,\n'));
@@ -12226,14 +12229,14 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
       S.drawGrid($scr.slice(oy,oy+r).map(function(R){return R.slice(ox,ox+c)}),cy-oy,cx-ox);
     }
     $show=show;
-    function quit(){
+    function quit(bare){ /* bare: ^Y or ^C, which leave nothing of the screen behind */
       if(over)return;
       over=true;
-      if(timer)clearTimeout(timer);if(tick)clearInterval(tick);
+      if(timer)S.cancel(timer);if(tick)S.cancel(tick);
       try{$flush();if($i('commonrev')===$STAMP)H.upchuck()}catch(e){}
       var L=$scr.slice(0,Math.min($cy,23)+1).map(function(R){return R.join('').replace(/\s+$/,'')});
       while(L.length&&L[L.length-1]==='')L.pop();
-      last=L;
+      last=bare?null:L;
       S.close();
       done();
     }
@@ -12251,8 +12254,8 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
       if(r.done){quit();return}
       $flush();
       var w=r.value;
-      if(w.sleep!==undefined){timer=setTimeout(function(){timer=null;step()},w.sleep);return}
-      if($keys.length){var k=$keys.shift();timer=setTimeout(function(){timer=null;step(k)},0);return}
+      if(w.sleep!==undefined){timer=S.after(w.sleep,function(){timer=null;step()});return}
+      if($keys.length){var k=$keys.shift();timer=S.after(0,function(){timer=null;step(k)});return}
       waiting=w;deadline=w.timeout>=0?Date.now()+w.timeout:Infinity;
     }
     /* ten times a second: the driver; the ast while the program waits for a key; a read's time limit */
@@ -12266,7 +12269,8 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
       }
       catch(e){fail(e)}
     }
-    setTimeout(function(){
+    S.after(0,function(){
+      if(over)return; /* ^C or ^Y before it started */
       try{
         /* a new image: fresh memory, then the section */
         B.fill(0);$loadinits();$hs=$HEAPSIZE;
@@ -12277,13 +12281,13 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
         G=R_conquest();
       }
       catch(e){if(e instanceof $Exit){quit();return}throw e}
-      tick=setInterval(pulse,100);
+      tick=S.every(100,pulse);
       step();
-    },0);
+    });
     return {
       feed:function(k){
         /* ^Y interrupts the image, as at DCL; ^C does the same, the program having no handler for it */
-        if(k==='C-y'||k==='C-c'){last=null;quit();return}
+        if(k==='C-y'||k==='C-c'){quit(true);return}
         var m=/^C-([a-z])$/.exec(k),c=k==='Enter'?13:k==='Backspace'?127:k==='Escape'?27:k==='Tab'?9:k.length===1?k.charCodeAt(0)&255:m?m[1].charCodeAt(0)-96:null;
         if(c===null)return;
         if(waiting){waiting=null;step(c)}else $keys.push(c);
@@ -12291,7 +12295,7 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
       draw:show,
       resize:show
     };
-  },{tty:'conquest'});
+  },{tty:'conquest',fit:[80,24]});
   P.queue(function(){
     if(last&&last.length)P.say(last);
     if(fault)P.typeLine(fault,'err');

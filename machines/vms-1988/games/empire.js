@@ -380,12 +380,15 @@ function refresh(){
   $cury=$cy;$curx=$cx;
   $show();
 }
-var $cury=0,$curx=0;
+var $cury=0,$curx=0,$oy=0,$ox=0;
 function $show(){
   if(!S0)return;
-  /* the 80-column screen on a narrower or shorter glass: what fits, from the corner */
-  var C=$cur.slice(0,S0.rows).map(function(R){return R.slice(0,S0.cols)});
-  S0.drawGrid(C,Math.min($cury,S0.rows-1),Math.min($curx,S0.cols-1));
+  /* the type is fitted to the screen where it stays readable; on a glass still smaller, the view keeps the cursor in sight */
+  var r=Math.min(S0.rows,LINES),c=Math.min(S0.cols,COLS);
+  if($cury<$oy)$oy=$cury<r?0:$cury;else if($cury>=$oy+r)$oy=$cury-r+1;
+  if($curx<$ox)$ox=$curx<c-4?0:$curx-4;else if($curx>=$ox+c)$ox=Math.min(COLS-c,$curx-c+5);
+  $oy=Math.max(0,Math.min($oy,LINES-r));$ox=Math.max(0,Math.min($ox,COLS-c));
+  S0.drawGrid($cur.slice($oy,$oy+r).map(function(R){return R.slice($ox,$ox+c)}),$cury-$oy,$curx-$ox);
 }
 function* getch(){
   var c=yield {key:true};
@@ -481,7 +484,7 @@ function save_game(){
     if(o.owner===UNOWNED&&o.hits===0&&!o.type&&!o.loc)return;
     rec.obj.push([i,o.owner,o.type,o.loc,o.func,o.hits,o.moved,o.count,o.range,o.ship?object.indexOf(o.ship):-1]);
   });
-  P.save('empire/save',rec);
+  if(!P.save('empire/save',rec)){topmsg(3,"Cannot save empsave.dat",0,0,0,0,0,0,0,0);return}
   topmsg(3,"Game saved.",0,0,0,0,0,0,0,0);
 }
 function $int(v,lo,hi){return Number.isInteger(v)&&v>=lo&&v<=hi}
@@ -527,6 +530,7 @@ function save_movie_screen(){ /* one screen of the movie per round; old rounds g
   var m=P.saved('empire/movie');
   if(!Array.isArray(m))m=[];
   m.push(b.join(''));
+  if(m.length>200)m=m.slice(-200); /* the last 200 rounds: the storage is shared with every other game */
   while(m.length&&!P.save('empire/movie',m))m.shift();
 }
 function* replay_movie(){ // Replay a movie.
@@ -5534,11 +5538,11 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
     var G,over=false,timer=null,waiting=null;
     S0=S;
     LINES=S.rows<24?24:S.rows;COLS=S.cols<80?80:S.cols;
-    $scr=$blank();$cur=$blank();$cy=$cx=$cury=$curx=0;$qk=[];$echo=false;
+    $scr=$blank();$cur=$blank();$cy=$cx=$cury=$curx=$oy=$ox=0;$qk=[];$echo=false;
     function quit(){
       if(over)return;
       over=true;
-      if(timer)clearTimeout(timer);
+      if(timer)S.cancel(timer);
       S0=null;
       S.close();
       done();
@@ -5555,7 +5559,7 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
         }
         if(r.done){quit();return}
         if(r.value.sleep!==undefined){
-          timer=setTimeout(function(){timer=null;pump()},r.value.sleep);
+          timer=S.after(r.value.sleep,function(){timer=null;pump()});
           return;
         }
         /* the keyboard; what was typed during a pause is waiting */
@@ -5565,7 +5569,7 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
       }
     }
     function start(){G=empire();pump()}
-    setTimeout(start,0);
+    S.after(0,start);
     return {
       feed:function(k){
         /* it has no handler for the interrupt, so ^C ends it where it stands */
@@ -5578,6 +5582,6 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
       draw:function(){$show()},
       resize:function(){$show()}
     };
-  });
+  },{fit:[80,24]});
 }});
 })(window.Phosphor);

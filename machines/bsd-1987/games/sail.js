@@ -34,7 +34,8 @@
    - What the C leaves open has one reading here, the same in the program compared against: MT[] with a negative
      strength gives 0 men; HDT[] at range 0 with the smallest guns gives 0, and otherwise is the row before; "No more ships left." has
      no ship. WET[] at wind 7 runs into RigTable, as the VAX's data does. A move's text is not limited; the C overruns its buffer past
-     nine characters, which spaces let one do.
+     nine characters, which spaces let one do. A ship of more than 142 guns exploding (only Star Trek's have them) reads past
+     RigTable's last row in the C; here it takes the last row.
  */
 (function(P){
 'use strict';
@@ -246,7 +247,7 @@ P.command({names:['sail'],run:function(a,raw,argv){
   /* ---------- what the two processes share: the file, the screen, the clock ---------- */
   var syncfile=[],driver=null,seed=Math.floor(Math.random()*30000)+1; /* srand(getpid()) */
   var o='',ibuf='',intr=null,G,pl,S=null,screen_done=null,over=false,LINES=24,COLS=80;
-  var phys=[],pcy=0,pcx=0,dtimer=null,atimer=null;
+  var phys=[],pcy=0,pcx=0,dtimer=null,atimer=null,startdriver=false;
 
   function line(s){
     if(s.indexOf('\t')<0)return s;
@@ -1103,7 +1104,7 @@ P.command({names:['sail'],run:function(a,raw,argv){
         if(sink!==1){
           makesignal(sp,'exploding!',0);
           ships.forEach(function(sq){
-            if(sp!==sq&&sq.file.dir&&range(sp,sq)<4)table(RIGGING,L_EXPLODE,idiv(sp.specs.guns,13),sq,sp,6);
+            if(sp!==sq&&sq.file.dir&&range(sp,sq)<4)table(RIGGING,L_EXPLODE,Math.min(idiv(sp.specs.guns,13),10),sq,sp,6); /* the C reads past RigTable here for the 450-gun ships */
           });
         }
         else makesignal(sp,'sinking!',0);
@@ -1514,8 +1515,8 @@ P.command({names:['sail'],run:function(a,raw,argv){
       if(atimer!==null){clearTimeout(atimer);atimer=null}
       if(n)atimer=setTimeout(function plalarm(){
         atimer=null;
-        try{newturn()}catch(e){if(e!==EXIT)throw e;finish();return}
-        paint();
+        if(over)return;
+        try{newturn();paint()}catch(e){if(e===EXIT){finish();return}crashed(e)}
       },n*1000);
     }
     function Signal(fmt,ship,a,b,c,d){
@@ -2351,7 +2352,7 @@ P.command({names:['sail'],run:function(a,raw,argv){
       driver=proc(MODE_DRIVER,randx);
       driver.dr_main();
       hasdriver=1;
-      dtimer=setTimeout(dstep,7000);
+      startdriver=true; /* when the name prompt is waiting: a ^C before then leaves no driver behind */
       pr('Your ship is the '+ms.shipname+', a '+mc.guns+' gun '+CLASSNAME[mc.class_]+' ('+QUALNAME[mc.qual]+' crew).\n');
       pr('Your name, Captain? ');
       captain=yield* gets();
@@ -2389,13 +2390,21 @@ P.command({names:['sail'],run:function(a,raw,argv){
   /* ---------- the clocks ---------- */
   function dstep(){
     dtimer=null;
-    if(!driver)return;
-    if(driver.dr_pass())dtimer=setTimeout(dstep,7000);
-    else{driver=null;pl.driver_gone()}
+    if(!driver||over)return;
+    try{
+      if(driver.dr_pass())dtimer=setTimeout(dstep,7000);
+      else{driver=null;pl.driver_gone()}
+    }
+    catch(e){driver=null;crashed(e)} /* a throw here ends the game, not just the clock */
   }
   function driver_last(){
     if(dtimer!==null){clearTimeout(dtimer);dtimer=null}
     if(driver){driver.dr_pass();driver=null}
+  }
+  function crashed(e){ /* both clocks stop, the screen goes, and it says core dumped */
+    var f=S&&S.onThrow;
+    finish();
+    if(f)f(e);else console.error(e);
   }
   function finish(){
     if(over)return;
@@ -2425,6 +2434,7 @@ P.command({names:['sail'],run:function(a,raw,argv){
       v=undefined;
       if(w===READ){
         var p=o;o='';
+        if(startdriver)P.queue(function(){if(startdriver&&!over){startdriver=false;dtimer=setTimeout(dstep,7000)}});
         P.ask(p,function(l){
           if(over)return;
           if(l===P.INT&&intr){

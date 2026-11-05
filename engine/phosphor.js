@@ -486,7 +486,7 @@ function fullscreen(keys,onResize){
   var el=document.createElement('div');el.id='full';
   out.style.display='none';term.classList.remove('idle');term.appendChild(el);
   KEYS=keys;
-  var said='',S={
+  var said='',T=[],S={
     rows:24,cols:80,
     draw:function(lines,r,c){
       var i;
@@ -519,13 +519,24 @@ function fullscreen(keys,onResize){
       var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/cols,b*S.rows/rows)*.995;
       if(f<b&&(o.clamp||f>=min)){el.style.fontSize=Math.max(f,min)+'px';measure()}
     },
+    after:function(ms,fn){ /* a program's own timers: a throw in one ends the program as any throw does, and close stops them all */
+      var t={};t.id=setTimeout(function(){T.splice(T.indexOf(t),1);guard(fn)},ms);T.push(t);return t;
+    },
+    every:function(ms,fn){var t={every:1};t.id=setInterval(function(){guard(fn)},ms);T.push(t);return t},
+    cancel:function(t){
+      var i=T.indexOf(t);if(i<0)return;
+      T.splice(i,1);if(t.every)clearInterval(t.id);else clearTimeout(t.id);
+    },
+    onThrow:null,
     close:function(){
+      while(T.length)S.cancel(T[0]);
       KEYS=null;window.removeEventListener('resize',size);
       if(window.visualViewport)visualViewport.removeEventListener('resize',size);
       el.remove();out.style.display='';
       term.scrollTop=term.scrollHeight;
     }
   };
+  function guard(fn){try{fn()}catch(e){if(S.onThrow)S.onThrow(e);else throw e}}
   function sameRow(d,t){ /* against the row itself: a program may have marked it up since */
     var k=d.firstChild;
     return k?d.childNodes.length===1&&k.nodeType===3&&k.data===t:!t;
@@ -552,9 +563,10 @@ function program(make,o){ /* a full-screen program: make(S,done) returns its {fe
   queue(function(){
     return new Promise(function(res){
       var V,S;
-      function crash(e){console.error(e);crashed=true;S.close();res()} /* never leave a dead screen up */
+      function crash(e){if(crashed)return;console.error(e);crashed=true;S.close();res()} /* never leave a dead screen up */
       function fit(){if(o.fit)S.fit(o.fit[0],o.fit[1],o)}
       S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{fit();if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}});
+      S.onThrow=crash;
       fit();
       try{V=make(S,res)}catch(e){crash(e)}
     });
@@ -877,7 +889,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
-  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execLine,
+  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,child:child,keep:keep,exec:execLine,
   subshell:function(){return SUB>0},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,load:load,
@@ -922,6 +934,7 @@ function runOne(s,words,src){
   SOURCE=src===undefined?s:src;
   words=words||s.split(/\s+/);
   if(!s||!words[0])return;
+  if(PROFILE.dcl&&/^\$?\s*[a-z_][\w$]*\s*:?==?/i.test(s))return; /* DCL: a symbol, NAME :== value, is taken without a word */
   PREV=STATUS;STATUS=0;
   var parts=words.map(PROFILE.fold),c=parts[0],args=parts.slice(1),word=words[0];
   if(PROFILE.csh&&/:$/.test(word)&&args.length){typeLine(word+': Too many arguments.','err');return}
@@ -1354,16 +1367,25 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
   queue(function(){
     if(SCRIPTS>=32){typeLine(PROFILE.dcl?'%SYSTEM-F-EXQUOTA, process quota exceeded':PROFILE.dos?'Insufficient memory':PROFILE.csh?'No more processes.':'sh: no more processes','err');return}
     ran=true;SCRIPTS++;keepSub=SUB;SUB=0; /* a script's exit ends the script, wherever its output is going */
-    if(PROFILE.dos){lines.forEach(function(l){queue(function(){var s=dosLine(l);if(s.trim())execSeg(s)})});return}
+    if(PROFILE.dos){lines.forEach(function(l){queue(function(){if(LOOP)return;var s=dosLine(l);if(s.trim())execSeg(s)})});return} /* DCL's EXIT ends the procedure */
     ARGS=args||['sh'];
     runBlock(tree);
   });
   queue(function(){
     if(!ran)return; /* ^C got in first, or there were too many */
-    SCRIPTS--;SUB=keepSub;
-    if(!PROFILE.dos){ARGS=keep;LOOP=null}
+    SCRIPTS--;SUB=keepSub;LOOP=null;
+    if(!PROFILE.dos)ARGS=keep;
   },true);
 }
+function keep(){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes */
+  var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV);
+  return function back(){
+    if(find(cwd,true))ST.cwd=cwd;
+    Object.keys(ENV).forEach(function(k){if(!has(env,k))delete ENV[k]});Object.assign(ENV,env);
+    Object.keys(CSHV).forEach(function(k){if(!has(vars,k))delete CSHV[k]});Object.assign(CSHV,vars);
+  };
+}
+function child(lines){var back=keep();runScript(lines);queue(back,true)} /* one command, as a child process */
 var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^foreach$/;
 function compound(line){
   if(PROFILE.dos)return false;

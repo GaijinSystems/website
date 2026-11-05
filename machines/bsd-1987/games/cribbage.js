@@ -1311,6 +1311,6 @@ P.command({names:['cribbage'],run:function(a,raw,words){
   };
   step();
   return api;
-  },{tty:'cribbage'});
+  },{tty:'cribbage',fit:[80,24]});
 }});
 })(window.Phosphor);
