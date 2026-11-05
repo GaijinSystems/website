@@ -189,13 +189,21 @@ P.command({names:['rm'],path:'/bin',
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
     if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}
+    function lockedIn(n,path,seen){ /* the first locked thing at or under n, by name */
+      if(n.prot)return path;
+      if(n.type!=='d'||!n.kids||seen.indexOf(n)>=0)return null;
+      seen.push(n);
+      var names=Object.keys(n.kids);
+      for(var i=0;i<names.length;i++){var r=lockedIn(n.kids[names[i]],path+'/'+names[i],seen);if(r)return r}
+      return null;
+    }
     f.forEach(function(x){
       var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
       if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
-      var abs=P.norm(x);
-      if(n===P.root||n.prot||!P.canWrite(abs)||cwd===at||cwd.indexOf(at+'/')===0){
-        denied=denied||!P.canWrite(abs);
+      var abs=P.norm(x),locked=lockedIn(n,abs,[]);
+      if(n===P.root||locked||!P.canWrite(abs)||cwd===at||cwd.indexOf(at+'/')===0){
+        denied=denied||!P.canWrite(locked||abs);
         P.typeLine('rm: '+x+' not removed','err');
         return;
       }
