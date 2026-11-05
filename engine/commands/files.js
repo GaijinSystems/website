@@ -18,14 +18,16 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
     '-l   long listing: mode, links, owner, size in bytes and the time of last change.',
+    '-d   for a folder, list the folder itself and not what is in it.',
     '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.']},
   run:function(a){
-    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),
+    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),
         want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
     if(!want.length)want=['.'];
     want.forEach(function(w){
       var n=P.find(w),shown;
       if(!n)L.push([w+' not found','err']);
+      else if(self&&n.type==='d')L.push(long?P.longRow(w,n):w);
       else if(n.type!=='d'){shown=w.replace(/[^\/]*(\/\.?)*$/,n.name);L.push(long?P.longRow(shown,n):shown)}
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);

@@ -15,9 +15,9 @@ Phosphor.setup(function(P){
   sys('/dev','d');
   sys('/dev/console','c',{mode:'crw--w--w-',dev:[0,0]});
   sys('/dev/tty0','c',{mode:'crw--w--w-',dev:[1,0]});
-  sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[3,2]});
-  sys('/dev/mem','c',{mode:'cr--r-----',dev:[3,0],prot:true});
-  sys('/dev/kmem','c',{mode:'cr--r-----',dev:[3,1],prot:true});
+  sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[8,2]});
+  sys('/dev/mem','c',{mode:'cr--r-----',dev:[8,0],prot:true});
+  sys('/dev/kmem','c',{mode:'cr--r-----',dev:[8,1],prot:true});
   sys('/etc/hosts','f',{body:function(){
     var L=['127.0.0.1    localhost '+ST.hostname];
     if(ST.site)L.push('             '+ST.site+'   (somewhere out there)');
