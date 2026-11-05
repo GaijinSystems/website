@@ -31,6 +31,7 @@ cmd('rmdir','remove an empty folder','rmdir dir ...','removes each folder named,
     if(!n){P.oops('rmdir',x,n,'rmdir: '+x+' non-existent');return}
     if(n.type!=='d'){P.typeLine('rmdir: '+x+' not a directory','err');return}
     if(P.st.cwd===at||P.st.cwd.indexOf(at+'/')===0){P.typeLine('rmdir: cannot remove current directory','err');return}
+    if(P.inUse(at)){P.typeLine('rmdir: '+x+' not removed','err');return} /* where su left you */
     if(Object.keys(n.kids).length){P.typeLine(P.profile.perror?'rmdir: '+x+': Directory not empty':'rmdir: '+x+' not empty','err');return}
     if(n.prot||n===P.root||!P.canWrite(at)){P.typeLine('rmdir: '+x+' not removed','err');return}
     delete n.parent.kids[n.name];
