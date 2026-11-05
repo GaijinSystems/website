@@ -16,8 +16,8 @@ cmd('touch','make a file, or update its time','touch file ...','makes each file 
   a.forEach(function(x){if(!P.writeFile(x,[],true))P.typeLine('touch: cannot touch '+x,'err')});
 });
 cmd('mkdir','make a folder','mkdir dir ...','makes each folder named.',function(a){
-  if(!a.length){P.typeLine('usage: '+P.man.mkdir.syn);return}
-  a.forEach(function(x){
+  if(!operands(a).length){P.typeLine('usage: '+P.man.mkdir.syn);return}
+  operands(a).forEach(function(x){
     var abs=P.norm(x);
     if(P.find(abs,true)||!P.canWrite(abs)){P.typeLine('mkdir: cannot make '+x,'err');return}
     P.put(abs,'d',{owner:P.st.user,date:P.now()});
