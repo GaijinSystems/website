@@ -436,8 +436,12 @@ game('banner','print large banner on printer','banner [ -w width ] [ message ...
     }
     out.forEach(function(s){P.typeLine(s,'',null,{speed:.04})});
   }
-  if(w.length)print(w.join(' '));
-  else P.input([],function(L){if(L[0])print(L[0])});
+  P.queue(function(){return P.load('banner-font.js')});
+  P.queue(function(){
+    if(!P.bannerFont){P.typeLine('banner: cannot execute','err');return}
+    if(w.length)print(w.join(' '));
+    else P.input([],function(L){if(L[0])print(L[0])});
+  });
 });
 
 /* ---------- hangman, by Ken Arnold ---------- */

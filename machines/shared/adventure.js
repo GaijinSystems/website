@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1987", the game adventure.
+/* PHOSPHOR-9 terminal: the game adventure, on 4.3BSD and VMS.
    Ported to JavaScript for this terminal from the C in NetBSD's games/adventure, with the
    labels kept. It keeps this notice, and may be used under its terms.
 
@@ -1526,11 +1526,7 @@ function Adventure(resume){
   })();
 }
 
-P.command({names:['adventure'],path:'/usr/games',
-  man:{what:'an exploration game',syn:'adventure [ savedgame ]',desc:[
-    'the object of the game is to locate and explore colossal cave, find the treasures hidden there, and bring them back to the building with you. the program is your eyes and hands. direct it with commands of one or two words. only the first five letters of each word count.',
-    '',
-    'written in fortran by will crowther and don woods, and translated to c by jim gillogly. ctrl-c quits, after asking. suspend keeps your game in this browser, under a name you choose, and adventure name resumes it, if you wait.']},
+P.command({names:['adventure'],
   run:function(a,raw,words){
     if(P.piped()){P.typeLine('adventure: needs a terminal','err');return}
     Adventure(words[1]);

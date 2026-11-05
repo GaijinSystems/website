@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1987", the game adventure, its cave: the file called glorkz, as NetBSD has it, except that the
+/* PHOSPHOR-9 terminal: the game adventure, its cave: the file called glorkz, as NetBSD has it, except that the
    credits at the end of the instructions are in the words 4.3BSD shipped.
    Ported to JavaScript for this terminal from the C in NetBSD's games/adventure, with the
    labels kept. It keeps this notice, and may be used under its terms.

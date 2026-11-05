@@ -5,7 +5,7 @@
 'use strict';
 var GAMES=['adventure','backgammon','boggle','canfield','chess','cribbage','fish','fortune','hangman','mille','monop','rogue','snake','trek','wump','zork'];
 /* the rest of /usr/games: all there, and the load is always too high */
-P.stubs(['aardvark','arithmetic','backgammon','battlestar','bcd','boggle','btlgammon','canfield','cfscores','chess','ching','cribbage','doctor','fish','fortune','hunt','mille','monop','quiz','rain','sail','snscore','teachgammon','trek','worms','zork'],function(n){
+P.stubs(['aardvark','backgammon','battlestar','boggle','btlgammon','canfield','chess','ching','cribbage','doctor','fish','fortune','hunt','mille','monop','quiz','sail','teachgammon','trek','worms','zork'],function(n){
   P.typeLine(n+': load average too high. try again after hours.');
 },{hidden:true,noHelpFlag:true});
 P.command({names:['wargames'],path:'/usr/games',noHelpFlag:true,run:function(){

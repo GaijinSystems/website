@@ -270,6 +270,8 @@ verb('logout',2,function(a,q){
 verb('run',2,function(a){
   var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec+'.exe');
   if(spec&&r.e&&r.S.abs==='/games'){
+    var image=r.e.name.replace(/\..*$/,'');
+    if(P.has(P.cmds,image)){P.cmds[image]([],image,[image]);return}
     err('%DCL-W-ACTIMAGE, error activating image '+dirName(r.S.abs)+up(r.e.name)+'.EXE;'+r.e.ver);
     err('-SITE-F-PRIMESHIFT, games are disabled during prime shift - see your system manager');
     return;
