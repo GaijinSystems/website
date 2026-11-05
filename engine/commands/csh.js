@@ -37,7 +37,7 @@ P.command({names:['w'],path:'/usr/ucb',enabled:on,
 function builtin(names,run){P.command({names:names,noHelpFlag:true,enabled:on,run:run})}
 function value(x){ /* a word as written: 'as is', "with $variables", or bare */
   x=x.trim();
-  if(/^'.*'$/.test(x))return P.plain(x.slice(1,-1));
+  if(/^'.*'$/.test(x))return P.unguard(x.slice(1,-1));
   return P.vars(P.unquote(x));
 }
 builtin(['set'],function(){
