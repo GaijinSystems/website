@@ -5796,16 +5796,7 @@ function session(argv){
     if(proc.press())P.queue(function(){return P.readLine('[Press return to continue]',true)},true);
   }
 }
-P.command({names:['rogue'],path:'/usr/games',
-  man:{what:'Exploring The Dungeons of Doom',syn:'rogue [ -r ] [ save_file ] [ -s ] [ -d ]',desc:[
-    'a computer fantasy game with a new twist. it is crt oriented, and the object of the game is to survive the attacks of various monsters and get a lot of gold, rather than the puzzle solving orientation of most computer fantasy games.',
-    'to get started you really only need to know two commands. the command ? will give you a list of the available commands and the command / will identify the things you see on the screen.',
-    'to win the game (as opposed to merely playing to beat other people\'s high scores) you must locate the amulet of yendor which is somewhere below the 20th level of the dungeon and get it out.',
-    'when the game ends, either by your death, when you quit, or if you (by some miracle) manage to win, rogue will give you a list of the top-ten scorers. the scoring is based entirely upon how much gold you get. there is a 10% penalty for getting yourself killed.',
-    'if save_file is specified, rogue will be restored from the specified saved game file. if the -r option is used, the save game file is presumed to be the default. the -s option will print out the list of scores. the -d option will kill you and try to add you to the score file.',
-    '',
-    'by michael c. toy, kenneth c. r. c. arnold and glenn wichman.'],bugs:[
-    'probably infinite (although countably infinite). however, that ice monsters sometimes transfix you permanently is not a bug. it\'s a feature.']},
+P.command({names:['rogue'],
   run:function(a,raw,w){
     var argv=(w||['rogue']).slice(1);
     if(argv.length===1&&argv[0]==='-s'){

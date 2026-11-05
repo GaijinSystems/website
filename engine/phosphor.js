@@ -60,6 +60,11 @@ var PH=window.Phosphor={
   command:function(def){def.from=me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
   setup:function(fn){me();PH.hooks.push(fn)},     /* machine hook: runs after the file tree exists */
   machines:function(m){me();Object.assign(PH.catalog,m)}, /* machines/machines.js: what can be plugged in */
+  later:function(files,def){ /* a program that is listed from the start and only loads when first run; files relative to the machine */
+    var d=Object.assign({},def);
+    d.run=function(a,raw,w){PH.runLater(files,d,a,raw,w)};
+    PH.command(d);
+  },
   stubs:function(names,say,o){names.forEach(function(n){PH.command(Object.assign({names:[n],run:function(){say(n)}},o))})}, /* programs that are there and won't run */
   start:start
 };
@@ -767,6 +772,40 @@ function dropRoot(){
   RP.prot.forEach(function(n){n.prot=true});
   RP=null;
 }
+/* ---------- programs that load when first run (Phosphor.later). Script tags, so this works from disk too. ---------- */
+var LOADED={};
+function loadOne(f){
+  var M=PH.machine&&PH.catalog[PH.machine],src=(M?M.dir+'/':'')+f;
+  if(LOADED[src])return LOADED[src];
+  return LOADED[src]=new Promise(function(res){
+    var h=PH.hooks.length,d=PH.defs.length,el=document.createElement('script');
+    function failed(){delete LOADED[src];el.remove();res(false)}
+    el.src=src;el.async=false;
+    el.onerror=failed;
+    el.onload=function(){
+      if(!PH.seen[src]){failed();return} /* a stray ` or ${ in it, so it never got as far as saying so */
+      PH.hooks.slice(h).forEach(function(fn){fn(PH)});
+      PH.defs.slice(d).forEach(function(x){ /* only what was listed: its manual page and program file are there already */
+        (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
+      });
+      res(true);
+    };
+    document.body.appendChild(el);
+  });
+}
+function load(files){ /* in order; true when all of them arrived */
+  return [].concat(files).reduce(function(p,f){return p.then(function(ok){return ok&&loadOne(f)})},Promise.resolve(true));
+}
+PH.runLater=function(files,def,a,raw,w){
+  var name=def.names[0],ok;
+  queue(function(){return load(files).then(function(x){ok=x})});
+  queue(function(){
+    var f=CMDS[name];
+    if(!ok||f===def.run){typeLine(def.failed||name+': cannot execute','err');STATUS=1;return}
+    CURRENT=name;
+    try{f(a,raw,w)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
+  });
+};
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'},CSHV=Object.create(null); /* CSHV: csh's own variables, from set */
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
@@ -805,7 +844,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execSeg,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
-  say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,
+  say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
   find:find,norm:norm,put:put,home:home,pathOf:pathOf,body:body,fsize:fsize,longRow:longRow,
   root:ROOT,fileDate:FD,systemDate:SD,
