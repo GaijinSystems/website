@@ -3,8 +3,9 @@
 Phosphor.setup(function(P){
   'use strict';
   var SD=P.systemDate,ST=P.st,OWNER=ST.owner;
+  P.env.PATH='.:/usr/ucb:/bin:/usr/bin:/etc';
   function sys(p,type,o){return P.put(p,type,Object.assign({owner:'root',date:SD},o))}
-  var UCB=['vi','head','printenv','whoami','uptime','clear'];
+  var UCB=['vi','head','printenv','whoami','uptime','clear','finger','w'];
   sys('/bin','d',{owner:'bin'});
   sys('/etc','d');
   sys('/usr','d');

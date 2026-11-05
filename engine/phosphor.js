@@ -159,6 +159,7 @@ var PROFILE=(function(){
     else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
     else if(k==='shell')P.dos=/^dos$/i.test(v);           /* backslash paths; no quotes, $ or ; */
     else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
+    else if(k==='csh')P.csh=yes(v);                       /* !! and history, finger, w */
     else if(k==='login')P.noLogin=!yes(v);                /* no login: it just boots */
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
@@ -557,7 +558,7 @@ function put(abs,type,o){ /* create a node, making any missing parent folders */
 function home(p){return p.charAt(0)==='/'?p:p.slice(0,2)==='~/'?ST.home+p.slice(1):ST.home+'/'+p}
 function norm(p){ /* absolute path; handles ~, . and .. */
   p=PROFILE.fold(p);
-  if(PROFILE.dos)p=p.replace(/^c:/,'').replace(/\\/g,'/');
+  if(PROFILE.dos)p=p.replace(/^[a-z]:/,'').replace(/\\/g,'/');
   if(p==='~'||p.slice(0,2)==='~/')p=ST.home+p.slice(1);
   var s=p.charAt(0)==='/'?[]:parts(ST.cwd);
   parts(p).forEach(function(x){if(x==='..')s.pop();else if(x!=='.')s.push(x)});
@@ -684,7 +685,7 @@ var LOGOUT=false;
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
-  setPrompt:function(f){promptFn=f},readKey:readKey,
+  hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,
   fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
@@ -937,6 +938,16 @@ function submit(){
   if(MODE==='read'){var r=READ;READ=null;r(cmd);return}
   if(MODE==='login'){login(cmd);return}
   if(MODE==='password'){pause(1400);typeLine('Login incorrect');prompt('login: ','login');return}
+  if(PROFILE.csh&&/!/.test(cmd)){ /* !! the last command, !n that one, !word the last that began so */
+    var bad=null,had=cmd;
+    cmd=cmd.replace(/!(!|\d+|[a-zA-Z]\w*)/g,function(m,x){
+      var v=x==='!'?hist[hist.length-1]:/^\d/.test(x)?hist[+x-1]:hist.slice().reverse().filter(function(h){return h.indexOf(x)===0})[0];
+      if(v===undefined){bad=x+': Event not found.';return ''}
+      return v;
+    });
+    if(bad){typeLine(bad,'err');prompt();return}
+    if(cmd!==had)typeLine(cmd);
+  }
   if(cmd.trim()){hist.push(cmd);if(hist.length>50)hist.shift()}
   hi=hist.length;
   run(cmd);

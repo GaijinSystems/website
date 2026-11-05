@@ -9,6 +9,7 @@ installed: 1986-06-06 19:55
 user:      guest
 homes:     /usr
 case:      sensitive
+csh:       yes
 prompt:    "% "
 not found: %s: Command not found.
 offline:   the arpanet is up, but your uucp neighbour is not answering.
