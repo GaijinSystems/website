@@ -32,7 +32,7 @@ PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07
 VAX/VMS Version V4.5 Major version id = 01 Minor version id = 00 @300
 SYSBOOT> CONTINUE @200
 %SET-I-INTSET, login interactive limit= 64, current interactive value = 0 @200
-SYSTEM       job terminated at  14-NOV-1986 09:12:40.00 @300
+SYSTEM       job terminated at  01-JAN-{year} 09:12:40.00 @300
 
 Welcome to VAX/VMS version V4.5 on node VAXA @200
 

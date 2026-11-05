@@ -69,6 +69,7 @@ P.command({names:['exit','logout'],help:'log out',
   man:{what:'log out',syn:'exit',desc:[
     'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason.']},
   run:function(a){
+    if(P.piped())return; /* a stage of a pipeline is its own process, and only that process exits */
     if(P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* exit in a script ends the script */
     if(P.unsu())return; /* out of su, back to who you were */
     P.logout();

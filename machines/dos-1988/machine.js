@@ -21,9 +21,7 @@ offline:   no modem detected.
 640K OK
 ~ on serial line com1, 9600 baud
 
-Starting MS-DOS...
-
-Microsoft MS-DOS Version 3.30
+Microsoft(R) MS-DOS(R) Version 3.30
 ~ (C)Copyright Microsoft Corp 1981-1987
 
 == file: readme.txt ==

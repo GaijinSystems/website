@@ -1290,7 +1290,7 @@ function Adventure(resume){
             if(fname===null||fname===P.INT||!fname.trim()){at_='l2';break}
             fname=fname.trim();
             if(!P.save('adventure/'+fname,pack(when))){write("I can't find anywhere to keep it.\n");at_='l2';break}
-            write('To resume, say "adventure '+fname+'".\n"With these rooms I might now have been familiarly acquainted."\n');
+            write('To resume, say "adventure '+(/\s/.test(fname)?"'"+fname+"'":fname)+'".\n"With these rooms I might now have been familiarly acquainted."\n');
             exit();
             break;
           case 31:
@@ -1521,8 +1521,8 @@ function Adventure(resume){
     flush();
     if(r.done)return;
     var line;
-    P.queue(function(){return P.readLine('',true).then(function(l){line=l})});
-    P.queue(function(){step(line)});
+    P.queue(function(){return P.readLine('',true).then(function(l){line=l})},true); /* ctrl-c during the text still gets asked about */
+    P.queue(function(){step(line)},true);
   })();
 }
 

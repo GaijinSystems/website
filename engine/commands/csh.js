@@ -69,7 +69,7 @@ builtin(['if'],function(a,raw){ /* the one-line form: if (expr) command */
   else if((q=/^!\s*(-?\d+)$/.exec(e)))yes=+q[1]===0;
   else if(/^-?\d+$/.test(e))yes=+e!==0;
   else{P.typeLine('if: Expression syntax.','err');return}
-  if(yes&&m[2])P.runScript([m[2]]);
+  if(yes&&m[2])P.exec(m[2]); /* a command like any other: exit here logs you out */
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});
@@ -83,7 +83,7 @@ builtin(['limit'],function(){
 });
 function perror(p){return p.csh&&p.perror} /* these came with Berkeley, not with every csh */
 function place(x){
-  var d=P.paths[x];
+  var d=P.has(P.paths,x)&&P.paths[x];
   return d?d+'/'+x:(P.env.PATH||'').split(':').map(function(o){return (o||'.')+'/'+x}).filter(function(f){return (function(n){return n&&n.type!=='d'&&n.bin})(P.find(f))})[0];
 }
 P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){

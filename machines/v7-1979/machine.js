@@ -1,7 +1,7 @@
 /* PHOSPHOR-9 terminal: machine "v7-1979", a PDP-11/70 running Version 7 Unix in 1979.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
-   This is the imaginary computer behind the glass: its year, its self-test, its boot log.
+   This is the imaginary computer behind the glass: its self-test, its boot log.
    Anything here can be overridden from site/ (the site always wins over the machine).
    Same text format as the site files; see README.md. Do not type a backtick or a dollar
    sign followed by { between the two backticks below. */

@@ -452,7 +452,7 @@ function readKey(p){ /* one keypress, no return needed. Call it from inside a qu
   return new Promise(function(res){
     showPrompt(p==null?'':p,'read');
     KEYS=function(k){
-      if(k.length!==1&&k!=='Enter')return;
+      if(k.length!==1&&k!=='Enter'&&k!=='C-c')return;
       KEYS=null;
       var at=cursor.parentNode;
       if(at&&k.length===1)at.insertBefore(document.createTextNode(k),cursor);
@@ -486,7 +486,7 @@ function fullscreen(keys,onResize){
         if(was&&i!==r&&sameRow(was,lines[i]))continue;
         var d=document.createElement('div');d.className='line';
         if(i===r){
-          var t=lines[i],cu=document.createElement('span');cu.className='fcur';
+          var t=lines[i].padEnd(c),cu=document.createElement('span');cu.className='fcur';
           d.appendChild(document.createTextNode(t.slice(0,c)));
           cu.textContent=t.charAt(c)||' ';
           d.appendChild(cu);
@@ -530,12 +530,16 @@ function fullscreen(keys,onResize){
   return S;
 }
 function program(make){ /* a full-screen program: make(S,done) returns its {feed,draw}, and resize if that differs from draw */
+  var who=CURRENT,crashed=false;
   queue(function(){
     return new Promise(function(res){
-      var V,S=fullscreen(function(k){V.feed(k)},function(){if(V.resize)V.resize();else V.draw()});
-      V=make(S,res);
+      var V,S;
+      function crash(e){console.error(e);crashed=true;S.close();res()} /* never leave a dead screen up */
+      S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}});
+      try{V=make(S,res)}catch(e){crash(e)}
     });
   });
+  queue(function(){if(crashed)typeLine(who+': core dumped','err')});
 }
 function input(names,done){ /* the lines a command works on: named files, else its pipe or <, else the keyboard */
   if(names.length){
@@ -620,8 +624,10 @@ function find(p,exact){ /* node or null; nobody gets through a locked folder.
   for(var i=0;i<s.length;i++){
     if(n.type!=='d'||(n.prot&&!exact))return null;
     var k=has(n.kids,s[i])?n.kids[s[i]]:null;
-    if(!k&&!exact&&i===s.length-1) /* cat photo01 finds photo01.pic */
-      k=n.kids[Object.keys(n.kids).sort().filter(function(x){return x.charAt(0)!=='.'&&x.split('.')[0]===s[i]})[0]];
+    if(!k&&!exact&&i===s.length-1){ /* cat photo01 finds photo01.pic */
+      var like=Object.keys(n.kids).sort().filter(function(x){return x.charAt(0)!=='.'&&x.split('.')[0]===s[i]})[0];
+      if(like!==undefined)k=n.kids[like];
+    }
     if(!k)return null;
     n=k;
   }
@@ -641,9 +647,10 @@ function programs(of){ /* a program file for each command that has a path: of(di
 function chunk(a,n){var o=[];for(var i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o} /* into rows of n */
 function globRe(p,flags){return new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$',flags)}
 function canWrite(abs){ /* your home folder, or a folder anyone may write in; nothing else, and nothing locked */
-  var dir=find(dirOf(abs));
+  var up=dirOf(abs),dir=find(up);
   if(!dir||dir.type!=='d'||dir.prot)return false;
   var at=pathOf(dir);
+  if(at!==up)return false; /* find's cat photo01 finds photo01.pic is not for making files */
   return dir.mode==='drwxrwxrwx'||ST.home==='/'||at===ST.home||at.indexOf(ST.home+'/')===0;
 }
 function writeFile(p,lines,append){ /* false if it cannot be written */
@@ -796,7 +803,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
-  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
+  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execSeg,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
@@ -870,8 +877,8 @@ function envOf(k){
   if(has(ENV,k))return ENV[k];
   if(PROFILE.csh){
     if(k in CSHV)return CSHV[k];
-    var v={status:String(STATUS),home:ST.home,user:ST.user,cwd:ST.cwd,path:(ENV.PATH||'').replace(/:/g,' '),term:ENV.TERM,shell:'/bin/csh',prompt:'% '}[k];
-    if(v!==undefined)return v;
+    var V={status:String(STATUS),home:ST.home,user:ST.user,cwd:ST.cwd,path:(ENV.PATH||'').replace(/:/g,' '),term:ENV.TERM,shell:'/bin/csh',prompt:'% '};
+    if(has(V,k)&&V[k]!==undefined)return V[k];
     if(!SCRIPTS)throw {undefinedVar:k}; /* sh scripts still get the empty string */
   }
   return '';
@@ -903,11 +910,11 @@ function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; n
 var NOMATCH={};
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
   var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0;
-  function fresh(){return {words:[],raw:'',in:null,out:null,app:false}}
+  function fresh(){return {words:[],raw:'',in:null,out:null,app:false,err:null}}
   var st=fresh();
   function endWord(){
     if(w===null)return;
-    if(redir){if(redir==='<')st.in=w;else{st.out=w;st.app=redir==='>>'}redir=null}
+    if(redir){if(redir==='<')st.in=w;else if(redir==='2>')st.err=w;else{st.out=w;st.app=redir==='>>'}redir=null}
     else if(quoted||PROFILE.dos)st.words.push(w);
     else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){
       var g=glob(x);
@@ -933,11 +940,15 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(two==='&&'||two==='||'){endList(two);i+=2;continue}
     if(ch==='|'){endStage();i++;continue}
     if(ch==='&'){i++;continue} /* no background here: it just runs */
-    if(two==='>&'){endWord();i+=3;continue} /* 2>&1: errors are on the glass either way */
     if(ch==='>'||ch==='<'){
+      var fd=w!==null&&!quoted&&!fromVar&&/^[0-2]$/.test(w)?w:null; /* 2> names a file descriptor, not an argument */
+      if(fd!==null){w=null;st.raw=st.raw.slice(0,-1)}
       endWord();
+      if(two==='>&'&&/\d/.test(s.charAt(i+2))){i+=3;continue} /* 2>&1: errors are on the glass either way */
+      if(two==='>&'){redir='>';i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file */
       redir=two==='>>'?'>>':ch;
       i+=redir.length;
+      if(fd==='2')redir='2>'; /* made, and left empty: errors stay on the glass */
       continue;
     }
     if(!redir)st.raw+=ch;
@@ -948,15 +959,17 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     }
     if((ch==="'"||ch==='"')&&(w===null||/=$/.test(w))&&(close=s.indexOf(ch,i+1))>=0){
       var inside=s.slice(i+1,close);
-      w=(w||'')+(ch==='"'?vars(inside):inside);quoted=true;
-      if(!redir)st.raw+=s.slice(i+1,close+1);
+      if(ch==='"')inside=vars(inside);
+      w=(w||'')+inside;quoted=true;
+      if(!redir)st.raw+=inside+ch;
       i=close+1;continue;
     }
     if(ch==='$'){
       var m=s.slice(i).match(/^\$(\w+|\?|\$|#|\*)/);
       if(m){
-        w=(w||'')+envOf(m[1]);fromVar=true;
-        if(!redir)st.raw+=m[0].slice(1);
+        var val=envOf(m[1]);
+        w=(w||'')+val;fromVar=true;
+        if(!redir)st.raw=st.raw.slice(0,-1)+val;
         i+=m[0].length;continue;
       }
     }
@@ -976,6 +989,7 @@ function runPipeline(stages){
         if(!n||n.type==='d'||n.prot){typeLine(st.in+(PROFILE.csh?': No such file or directory':': cannot open'),'err');pipe=[];ok=false;return}
         pipe=textOf(n);
       }
+      if(st.err!==null)writeFile(st.err,[],true);
       if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
       if(!last||st.out!==null)sink=[];
@@ -1005,25 +1019,32 @@ function backtick(s){ /* the first `command` outside single quotes */
   }
   return null;
 }
-function substitute(s,then){ /* run every `command`, put what it printed in its place, then carry on */
+function substitute(s,then,done){ /* run every `command`, left to right, put what it printed in its place, then carry on.
+                                     done: the text so far, which is not looked at again */
+  done=done||'';
   var m=PROFILE.dos?null:backtick(s);
-  if(!m){then(s);return}
+  if(!m){then(done+s);return}
   var sink=[],keepSink,keepIn;
   queue(function(){keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;execSeg(m.cmd)});
   queue(function(){SINK=keepSink;STDIN=keepIn},true);
-  queue(function(){substitute(s.slice(0,m.a)+sink.join(' ')+s.slice(m.b+1),then)});
+  queue(function(){substitute(s.slice(m.b+1),then,done+s.slice(0,m.a)+sink.join(' '))});
 }
 function execSeg(seg){
   queue(function(){substitute(seg,function(text){execText(text)})});
 }
+function parsed(seg){ /* parseList, or null once it has said what was wrong */
+  try{return parseList(seg)}
+  catch(e){
+    if(e&&e.undefinedVar)typeLine(e.undefinedVar+': Undefined variable.','err');
+    else if(e===NOMATCH)typeLine('No match.','err');
+    else throw e;
+    return null;
+  }
+}
 function execText(seg){
   queue(function(){
-    var L;
-    try{L=parseList(seg)}
-    catch(e){
-      if(e&&e.undefinedVar){typeLine(e.undefinedVar+': Undefined variable.','err');return}
-      if(e!==NOMATCH)throw e;typeLine('No match.','err');return
-    }
+    var L=parsed(seg);
+    if(!L)return;
     L.forEach(function(item){
       queue(function(){
         if(LOGOUT)return;
@@ -1082,7 +1103,7 @@ function parseTree(lines){
         var b2=block(['done']);expect('done');
         out.push({k:w,cond:cond,body:b2});
       }
-      else if(w==='if'){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())}
+      else if(w==='if'&&!PROFILE.csh){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())} /* csh's one-line if is a command */
       else if(w==='case'){
         m=t.match(/^case\s+(\S+)\s+in(?:\s+(.*))?$/);
         if(!m)throw new Error('syntax error');
@@ -1119,7 +1140,9 @@ function runStmt(st){
   if(st.k==='cmd'){execSeg(expand(st.t));return}
   if(st.k==='for'){
     substitute(st.words,function(text){
-      var L=parseList('x '+text),W=L[0]?L[0].stages[0].words.slice(1):[];
+      var L=parsed('x '+text);
+      if(!L)return;
+      var W=L[0]?L[0].stages[0].words.slice(1):[];
       (function next(i){
         if(i>=W.length)return;
         queue(function(){ENV[st.v]=W[i];runBlock(st.body)});
@@ -1134,8 +1157,9 @@ function runStmt(st){
       queue(function(){
         if(LOOP||(STATUS===0)!==(st.k==='while'))return;
         runBlock(st.body);
-        queue(function(){var was=afterLoop();if(was==='break'||was==='exit')return;return sleep(0)});
-        queue(function(){if(!LOOP)again()});
+        var stop;
+        queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
+        queue(function(){if(!stop&&!LOOP)again()});
       });
     })();
     return;
@@ -1147,7 +1171,9 @@ function runStmt(st){
   }
   if(st.k==='case'){
     substitute(st.word,function(text){
-      var L=parseList('x '+text),v=L[0]&&L[0].stages[0].words[1]||'';
+      var L=parsed('x '+text);
+      if(!L)return;
+      var v=L[0]&&L[0].stages[0].words[1]||'';
       for(var i=0;i<st.arms.length;i++){
         var hit=st.arms[i].pats.some(function(p){
           try{return globRe(p).test(v)}catch(e){return p===v}
@@ -1158,15 +1184,24 @@ function runStmt(st){
   }
 }
 function runScript(lines,args){ /* a script: a tree of statements, inside the current step */
-  if(PROFILE.dos){
-    lines.forEach(function(l){queue(function(){var s=dosLine(l);if(s.trim())execSeg(s)})});
-    return;
+  var keep=ARGS,tree,ran=false;
+  if(!PROFILE.dos){
+    try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
+    catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
   }
-  var keep=ARGS,tree;
-  try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
-  catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
-  queue(function(){ARGS=args||['sh'];SCRIPTS++;runBlock(tree)});
-  queue(function(){ARGS=keep;SCRIPTS--;LOOP=null},true);
+  queue(function(){return sleep(0)}); /* so that ^C can reach a script that keeps running itself */
+  queue(function(){
+    if(SCRIPTS>=32){typeLine(PROFILE.dcl?'%SYSTEM-F-EXQUOTA, process quota exceeded':PROFILE.dos?'Insufficient memory':PROFILE.csh?'No more processes.':'sh: no more processes','err');return}
+    ran=true;SCRIPTS++;
+    if(PROFILE.dos){lines.forEach(function(l){queue(function(){var s=dosLine(l);if(s.trim())execSeg(s)})});return}
+    ARGS=args||['sh'];
+    runBlock(tree);
+  });
+  queue(function(){
+    if(!ran)return; /* ^C got in first, or there were too many */
+    SCRIPTS--;
+    if(!PROFILE.dos){ARGS=keep;LOOP=null}
+  },true);
 }
 var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^foreach$/;
 function compound(line){
@@ -1200,6 +1235,7 @@ function nextPrompt(pre){
   queue(function(){if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
 }
 function run(raw){
+  LOOP=null; /* a break typed at the prompt has no loop to end */
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
     nextPrompt();
@@ -1218,9 +1254,8 @@ function run(raw){
     nextPrompt();
     return;
   }
-  for(var i=0;i<segs.length&&!LOGOUT;i++)runOne(segs[i]);
-  if(LOGOUT){LOGOUT=false;return} /* exit already queued the login: prompt */
-  prompt();
+  segs.forEach(function(x){queue(function(){if(!LOGOUT)runOne(x)})});
+  nextPrompt();
 }
 
 /* ---------- login (after exit/logout) ---------- */
@@ -1231,9 +1266,9 @@ function login(name){
   if(PROFILE.backdoor&&n===PROFILE.backdoor){setRoot(false);ST.login=now();welcome();prompt();return}
   PENDROOT=n===PROFILE.rootName&&PROFILE.rootPassword?{name:n,word:PROFILE.rootPassword}:n===PROFILE.alsoRoot?{name:n,word:PROFILE.alsoRootWord}:null;
   if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)||n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
-  var h=usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
+  var h=!PROFILE.home&&usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
   if(h&&n!==ST.user){delete usr.kids[ST.user];h.name=n;usr.kids[n]=h}
-  ST.user=n;ST.home=PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
+  ST.user=n;ST.home=PROFILE.home||PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
   welcome();prompt();
 }
 

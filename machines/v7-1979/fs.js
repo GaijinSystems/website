@@ -14,11 +14,6 @@ Phosphor.setup(function(P){
   sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[8,2]});
   sys('/dev/mem','c',{mode:'cr--r-----',dev:[8,0],prot:true});
   sys('/dev/kmem','c',{mode:'cr--r-----',dev:[8,1],prot:true});
-  sys('/etc/hosts','f',{body:function(){
-    var L=['127.0.0.1    localhost '+ST.hostname];
-    if(ST.site)L.push('             '+ST.site+'   (somewhere out there)');
-    return L;
-  }});
   sys('/etc/motd','f',{body:P.profile.welcome});
   sys('/etc/passwd','f',{body:function(){
     var L=['root:VwL97VCAx1Qhs:0:1:the super-user:/:','daemon:x:1:1::/:','bin:x:3:3::/bin:'];

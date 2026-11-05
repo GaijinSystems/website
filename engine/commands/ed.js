@@ -135,7 +135,7 @@ function Ed(name){
         var args=arguments;
         return rep.replace(/\\(.)|&/g,function(m,e){
           if(m==='&')return all;
-          if(/[1-9]/.test(e))return args[+e]===undefined?'':args[+e];
+          if(/[1-9]/.test(e))return +e>args.length-3||args[+e]===undefined?'':args[+e];
           return e==='n'?'\n':e;
         });
       });

@@ -53,8 +53,10 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
-  delete n.parent.kids[n.name];
+  var from=P.norm(a[0]),was=P.pathOf(n),cwd=P.st.cwd;
+  delete P.find(P.dirOf(from),true).kids[from.split('/').pop()]; /* by the name given: a link has its own */
   n.name=name;n.parent=parent;parent.kids[name]=n;
+  if(cwd===was||cwd.indexOf(was+'/')===0)P.st.cwd=to+cwd.slice(was.length); /* you stay in a folder that moves */
 });
 cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
@@ -168,6 +170,7 @@ cmd('cal','print a calendar','cal [ month ] year','prints a month, or a whole ye
     while(d.length)L.push(d.splice(0,7).join(' '));
     return L;
   }
+  if(a.some(function(x){return !/^\d+$/.test(x)})){P.typeLine('Bad argument');return}
   var yr=+a[a.length-1],mo=a.length>1?+a[0]:0;
   if(!a.length){
     if(P.profile.year<1990){P.typeLine('usage: cal [month] year');return} /* a plain cal arrived with System V */
@@ -276,8 +279,9 @@ cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % 
   for(var i=1;i<w.length;i+=2){
     var o=w[i],x=w[i+1],n=parseInt(v,10),m=parseInt(x,10);
     if(x===undefined||(/^[-+*\/%]$/.test(o)&&(isNaN(n)||isNaN(m)))){P.typeLine('expr: syntax error','err');return}
-    v={'+':n+m,'-':n-m,'*':n*m,'/':m?Math.trunc(n/m):0,'%':m?n%m:0, /* the old machines just said 0 */
-'=':v===x?1:0,'!=':v!==x?1:0,'<':n<m?1:0,'>':n>m?1:0,'<=':n<=m?1:0,'>=':n>=m?1:0}[o];
+    var ops={'+':n+m,'-':n-m,'*':n*m,'/':m?Math.trunc(n/m):0,'%':m?n%m:0, /* the old machines just said 0 */
+'=':v===x?1:0,'!=':v!==x?1:0,'<':n<m?1:0,'>':n>m?1:0,'<=':n<=m?1:0,'>=':n>=m?1:0};
+    v=P.has(ops,o)?ops[o]:undefined;
     if(v===undefined){P.typeLine('expr: syntax error','err');return}
   }
   P.typeLine(String(v));

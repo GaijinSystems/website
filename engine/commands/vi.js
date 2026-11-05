@@ -8,6 +8,7 @@
 
 function Vi(name,S){
   var L=[''],r=0,c=0,top=0,mode='cmd',msg='',file=name||'',dirty=false,done;
+  var MAXCOUNT=100000; /* a count no one means: enough to do its work, not enough to hang the tab */
   var count=0,op=null,opCount=0,pending=null,reg='"',regs={},exLine='',exKind=':',marks={};
   var undo=null,snapped=false,uline=null,lastF=null,search=null,last=null,cur=[],changed=false,noRec=false,replaying=false;
   var nu=false,typed=[],insCount=1,insKeys=true,lastSub=null;
@@ -145,7 +146,7 @@ function Vi(name,S){
   }
   function para(dir,n){
     var y=r;
-    while(n-->0){
+    while(n-->0&&y>=0&&y<L.length){
       y+=dir;
       while(y>0&&y<L.length-1&&L[y].trim())y+=dir;
     }
@@ -294,11 +295,12 @@ function Vi(name,S){
   /* ---------- typing text in ---------- */
   function insertKey(k){
     if(k==='Escape'||k==='C-['){
+      mode='cmd';
       if(insCount>1&&insKeys&&typed.length){
         var more=typed.join('').repeat(insCount-1),t=line();
         L[r]=t.slice(0,c)+more+t.slice(c);c+=more.length;
       }
-      mode='cmd';c=Math.max(0,c-1);
+      c=Math.max(0,c-1);
       return;
     }
     if(k==='Enter'||k==='C-m'||k==='C-j'){
@@ -355,7 +357,7 @@ function Vi(name,S){
       var ok=false,nt=L[y].replace(re,function(all){
         ok=true;
         var args=arguments;
-        return rep.replace(/\\(.)|&/g,function(m,e){return m==='&'?all:/[1-9]/.test(e)?(args[+e]===undefined?'':args[+e]):e});
+        return rep.replace(/\\(.)|&/g,function(m,e){return m==='&'?all:/[1-9]/.test(e)?(+e>args.length-3||args[+e]===undefined?'':args[+e]):e});
       });
       if(ok){L[y]=nt;hit=y}
     }
@@ -483,7 +485,7 @@ function Vi(name,S){
     reg='"';
     if(!e){bell('Nothing in register');return}
     snap();
-    while(n-->0){
+    while(n-->0&&L.length<MAXCOUNT){
       if(e.lw){
         var at=after?r+1:r;
         Array.prototype.splice.apply(L,[at,0].concat(e.t));
@@ -509,8 +511,8 @@ function Vi(name,S){
   function cmdKey(k){
     if(pending){var f=pending;pending=null;f(k);return}
     if(k==='Escape'||k==='C-['){if(!op&&!count)bell();op=null;count=0;return}
-    if(/^[1-9]$/.test(k)||(k==='0'&&count)){count=count*10+ +k;return}
-    var n=(count||1)*(op?opCount||1:1),given=count>0||(op&&opCount>1);
+    if(/^[1-9]$/.test(k)||(k==='0'&&count)){count=Math.min(count*10+ +k,MAXCOUNT);return}
+    var n=Math.min((count||1)*(op?opCount||1:1),MAXCOUNT),given=count>0||(op&&opCount>1);
     if(k==='"'){pending=function(x){reg=x};return}
     if(op&&k===op){ /* dd, cc, yy, << and >> */
       var last2=r+n-1;
@@ -591,7 +593,7 @@ function Vi(name,S){
         L=undo.L;r=undo.r;c=undo.c;undo=was;dirty=true;
         return;
       case 'U':
-        if(!uline){bell();return}
+        if(!uline||uline.r>=L.length){bell();return} /* its line has gone */
         var ut=L[uline.r];
         L[uline.r]=uline.t;uline.t=ut;r=uline.r;c=first(r);dirty=true;
         return;
