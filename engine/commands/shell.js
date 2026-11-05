@@ -67,7 +67,10 @@ P.command({names:['clear'],core:true,help:'clear the screen',
 P.command({names:['exit','logout'],help:'log out',
   man:{what:'log out',syn:'exit',desc:[
     'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason.']},
-  run:function(){P.logout()}});
+  run:function(a){
+    if(P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* exit in a script ends the script */
+    P.logout();
+  }});
 
 P.command({names:['sound'],core:true,terminal:true,help:'keyclicks on or off',
   man:{what:'keyclicks on or off',syn:'sound [ on | off ]',desc:[

@@ -182,7 +182,70 @@ cmd('sh','run a shell script','sh file','runs the commands in a file, one line a
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
   var n=P.find(a[0]);
   if(!n||n.type==='d'||n.prot){P.typeLine(a[0]+': cannot open','err');return}
-  P.runScript(P.text(n));
+  P.runScript(P.text(n),a.slice());
+});
+/* the shell's own: read, shift, break, continue and : */
+function builtin(names,run){P.command({names:names,noHelpFlag:true,run:run})}
+builtin([':'],function(){P.status(0)});
+builtin(['break'],function(){P.loop('break')});
+builtin(['continue'],function(){P.loop('continue')});
+builtin(['shift'],function(){var A=P.args();if(A.length>1)A.splice(1,1)});
+builtin(['read'],function(a,raw,words){
+  var line,N=words.slice(1);
+  P.queue(function(){return P.readLine().then(function(l){line=l})});
+  P.queue(function(){
+    if(line===null){P.status(1);return}
+    var parts=line.trim().split(/\s+/);
+    N.forEach(function(k,i){P.env[k]=i===N.length-1?parts.slice(i).join(' '):parts[i]||''});
+    P.status(0);
+  });
+});
+function testExpr(w){
+  function one(i){
+    var t=w[i];
+    if(t==='!'){var r=one(i+1);return {v:!r.v,i:r.i}}
+    if(/^-[frwdszn]$/.test(t)){
+      var x=w[i+1],n=x===undefined?null:P.find(x,true);
+      if(t==='-z')return {v:!x,i:i+2};
+      if(t==='-n')return {v:!!x,i:i+2};
+      if(t==='-d')return {v:!!n&&n.type==='d',i:i+2};
+      if(t==='-f')return {v:!!n&&n.type!=='d',i:i+2};
+      if(t==='-s')return {v:!!n&&P.fsize(n)>0,i:i+2};
+      return {v:!!n&&!n.prot,i:i+2};
+    }
+    var op=w[i+1],y=w[i+2];
+    if(op==='='||op==='!=')return {v:(t===y)===(op==='='),i:i+3};
+    if(/^-(eq|ne|lt|le|gt|ge)$/.test(op||'')){
+      var a=parseInt(t,10),b=parseInt(y,10);
+      return {v:{'-eq':a===b,'-ne':a!==b,'-lt':a<b,'-le':a<=b,'-gt':a>b,'-ge':a>=b}[op],i:i+3};
+    }
+    return {v:!!t,i:i+1};
+  }
+  if(!w.length)return false;
+  var r=one(0);
+  while(r.i<w.length){
+    var c=w[r.i],q=one(r.i+1);
+    r={v:c==='-o'?r.v||q.v:r.v&&q.v,i:q.i};
+  }
+  return r.v;
+}
+cmd('test','check a condition','test expr','succeeds or fails, and says nothing. -f file, -d folder, -r readable, -w writable, -s not empty, -z or -n a string, = and != strings, -eq -ne -lt -le -gt -ge numbers, ! not, -a and, -o or.',function(a,raw,words){P.status(testExpr(words.slice(1))?0:1)},true);
+builtin(['['],function(a,raw,words){
+  var w=words.slice(1);
+  if(w[w.length-1]!==']'){P.typeLine('[: missing ]','err');return}
+  P.status(testExpr(w.slice(0,-1))?0:1);
+});
+cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % and comparisons, spaces between everything.',function(a,raw,words){
+  var w=words.slice(1),v=w[0];
+  for(var i=1;i<w.length;i+=2){
+    var o=w[i],x=w[i+1],n=parseInt(v,10),m=parseInt(x,10);
+    if(x===undefined||(/^[-+*\/%]$/.test(o)&&(isNaN(n)||isNaN(m)))){P.typeLine('expr: syntax error','err');return}
+    if(o==='/'&&!m){P.typeLine('expr: division by zero','err');return}
+    v={'+':n+m,'-':n-m,'*':n*m,'/':Math.trunc(n/m),'%':n%m,'=':v===x?1:0,'!=':v!==x?1:0,'<':n<m?1:0,'>':n>m?1:0,'<=':n<=m?1:0,'>=':n>=m?1:0}[o];
+    if(v===undefined){P.typeLine('expr: syntax error','err');return}
+  }
+  P.typeLine(String(v));
+  P.status(String(v)==='0'||v===''?1:0);
 });
 function showEnv(){
   P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));

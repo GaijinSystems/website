@@ -26,6 +26,12 @@ HV RAIL       | 24 KV STABLE      | 380
 HORIZ. SYNC   | 15.734 KHZ LOCKED
 KEYBOARD      | DETECTED (YOURS)  | 300
 
+== boot ==
+Boot @300
+: rp(0,0)unix @500
+mem = 1032192 @400
+~ (going multi-user) @400
+
 == dmesg ==
 unix/v7 (pdp-11/70)
 mem = 1032192
