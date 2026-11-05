@@ -838,7 +838,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
       return true;
     }catch(e){return false}
   },
-  inUse:function(p){return [ST.cwd].concat(RP&&RP.su?[RP.cwd,RP.home]:[]).some(function(x){return x===p||x.indexOf(p+'/')===0})},
+  inUse:function(p){return [ST.cwd].concat(RP?(RP.su?[RP.cwd,RP.home]:[RP.home]):[]).some(function(x){return x===p||x.indexOf(p+'/')===0})},
   su:function(){setRoot(true)},unsu:function(){if(RP&&RP.su){dropRoot();return true}return false},
   powerOff:function(lines){ /* the end: the picture collapses to a dot, and any key starts it again */
     say(lines||[]);
@@ -991,7 +991,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(w===null)return;
     if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='n<'){}else if(redir==='n>'||redir==='n>>')st.mk.push({f:w,app:redir==='n>>'});else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>'}else{st.out=w;st.app=redir==='>>';st.glass=false}redir=null}
     else if(quoted||PROFILE.dos)st.words.push(unguard(w));
-    else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){
+    else w.split(fromVar?/\s+/:/\0/).filter(function(x){return (x||!fromVar)&&!(x.indexOf('\uE010')>=0&&unguard(x)==='')}).forEach(function(x){ /* empty backtick output is no word at all */
       x=unguard(x);
       var g=glob(x);
       if(PROFILE.csh&&g.length===1&&g[0]===x&&/[*?\[]/.test(x))throw NOMATCH; /* csh says so; sh passes the word along */
@@ -1147,7 +1147,7 @@ function execSeg(seg){
   if(!parts||parts.length<2){queue(function(){substitute(seg,function(text){execText(text)})});return}
   parts.forEach(function(p){ /* cd /tmp && echo `pwd`: the pwd runs in /tmp */
     queue(function(){
-      if(dead||LOGOUT||p.op==='&&'&&STATUS!==0||p.op==='||'&&STATUS===0)return;
+      if(dead||LOGOUT||LOOP||p.op==='&&'&&STATUS!==0||p.op==='||'&&STATUS===0)return;
       substitute(p.text,function(text){execText(text,function(){dead=true})});
     });
   });
@@ -1193,7 +1193,7 @@ function execText(seg,failed){ /* failed: told when the line could not be read, 
     if(!L){if(failed)failed();return}
     L.forEach(function(item){
       queue(function(){
-        if(LOGOUT)return;
+        if(LOGOUT||LOOP)return;
         if(item.op==='&&'&&STATUS!==0)return;
         if(item.op==='||'&&STATUS===0)return;
         runPipeline(item.stages);
