@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "vms-1987", a VAX-11/785 running VAX/VMS V4.5.
+/* PHOSPHOR-9 terminal: machine "vms-1988", a VAX-11/785 running VAX/VMS V4.5.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    Same text format as the site files; see README.md. Do not type a backtick or a dollar sign
    followed by { between the two backticks below. */

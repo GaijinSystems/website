@@ -8,7 +8,7 @@ Phosphor.machines({
   v7:{name:'pdp-11/70, version 7 unix',year:1979,dir:'machines/v7-1979',files:['machine.js','commands.js','fs.js']},
   bsd:{name:'vax-11/780, 4.3bsd',year:1987,dir:'machines/bsd-1987',files:['glorkz.js','adventure.js','games.js','banner-font.js','commands.js','machine.js','fs.js']},
   dos:{name:'ibm pc/at, ms-dos 3.30',year:1988,dir:'machines/dos-1988',files:['machine.js','../shared/zork.js','fs.js','commands.js']},
-  vms:{name:'vax-11/785, vax/vms v4.5',year:1987,dir:'machines/vms-1987',files:['machine.js','fs.js','commands.js']},
+  vms:{name:'vax-11/785, vax/vms v4.5',year:1988,dir:'machines/vms-1988',files:['machine.js','fs.js','commands.js']},
   irix:{name:'silicon graphics crimson, irix 4.0.5',year:1993,dir:'machines/irix-1993',files:['machine.js','commands.js','fs.js']},
   cpm:{name:'s-100 z80, cp/m 2.2',year:1982,dir:'machines/cpm-1982',files:['machine.js','../shared/zork.js','fs.js','commands.js']}
 });

@@ -54,7 +54,7 @@ P.command({names:['source'],core:true,terminal:true,help:'where to get this term
   run:function(){
     var url=P.profile.source||P.upstream;
     P.say([
-      'this terminal is free software (gnu agpl v3).',
+      'this terminal is free software (gnu agpl v3 or later).',
       'the source is at:',
       [url,'',{href:url}],
       ['you will need a modem from the future.','dim']
