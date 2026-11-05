@@ -2,7 +2,7 @@
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
-P.stubs(['chess'],function(n){
+P.stubs([],function(n){
   P.typeLine(n+': games are off while payroll runs. see the operator.');
 },{hidden:true,noHelpFlag:true});
 })(window.Phosphor);
