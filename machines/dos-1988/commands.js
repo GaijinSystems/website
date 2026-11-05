@@ -73,7 +73,7 @@ cmd(['dir'],'list files',function(a,raw,w){
   if(isFloppy(N[0])){notReady(N[0].charAt(0).toUpperCase());return}
   var R=resolve(N[0]);
   if(!R.dir){P.typeLine('Path not found');return}
-  var E=entries(R),L=['',' Volume in drive C has no label',' Directory of  '+dosPath(R.at),''],size=0;
+  var E=entries(R),L=['',' Volume in drive C is FROBOZZ',' Directory of  '+dosPath(R.at),''],size=0;
   if(R.at!=='/')E=['.','..'].concat(E);
   if(!E.length){L.push('File not found');P.say(L);return}
   var row=[];
@@ -181,7 +181,7 @@ cmd(['copy'],null,function(a,raw,w){
 });
 cmd(['cls'],'clear the screen',function(){P.clear()});
 cmd(['ver'],null,function(){P.say(['','Microsoft MS-DOS Version 3.30',''])});
-cmd(['vol'],null,function(){P.say(['',' Volume in drive C has no label',''])});
+cmd(['vol'],null,function(){P.say(['',' Volume in drive C is FROBOZZ',''])});
 cmd(['date'],null,function(){
   var n=P.now(),line;
   P.typeLine('Current date is '+DAYS[n.getDay()]+' '+p2(n.getMonth()+1)+'-'+p2(n.getDate())+'-'+n.getFullYear());
@@ -232,7 +232,7 @@ cmd(['ctty'],null,function(){P.typeLine('Invalid device')});
 cmd(['chkdsk'],null,function(a,raw,w){
   var N=names(args(w));
   if(isFloppy(N[0])){notReady(N[0].charAt(0).toUpperCase());return}
-  P.say(['','Volume has no label','',
+  P.say(['','Volume FROBOZZ','',
     '  21309440 bytes total disk space','     53248 bytes in 3 hidden files','     20480 bytes in 5 directories',
     '    192512 bytes in 24 user files',FREE.toString().padStart(10)+' bytes available on disk'.padStart(0),'',
     '    655360 bytes total memory','    590656 bytes free','']);
@@ -299,7 +299,7 @@ cmd(['tree'],null,function(){
   })(P.root,'');
   P.say(L);
 });
-cmd(['label'],null,function(){P.say(['Volume in drive C has no label','','Volume label (11 characters, ENTER for none)? '])});
+cmd(['label'],null,function(){P.say(['Volume in drive C is FROBOZZ','','Volume label (11 characters, ENTER for none)? '])});
 cmd(['attrib'],null,function(a,raw,w){
   var N=names(args(w)),R=resolve(N[0]||'*.*');
   if(!R.dir){P.typeLine('Path not found');return}
@@ -368,6 +368,8 @@ P.fallback=function(word,raw){
     P.typeLine('Invalid drive specification');
     return true;
   }
+  var z=/^(?:(?:c:)?\\zork\\|)(zork[123])(?:\.com)?$/.exec(w); /* the program is here; its story disk is not */
+  if(z&&(z[0]!==z[1]&&z[0]!==z[1]+'.com'||P.st.cwd==='/zork')&&P.find('/zork/'+z[1]+'.com')){notReady('A');return true}
   var base=w.replace(/\.(bat|com|exe)$/,''),n;
   if(/[\\\/]/.test(w)||/\.bat$/.test(w)||P.find(base+'.bat',true)){
     n=P.find(base+'.bat',true);

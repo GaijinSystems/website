@@ -13,5 +13,9 @@ Phosphor.setup(function(P){
   [['attrib.exe',8234],['chkdsk.com',9819],['diskcopy.com',6264],['edlin.com',7526],['fdisk.com',48216],
    ['find.exe',6434],['format.com',11671],['label.com',2377],['more.com',313],['sort.exe',1946],
    ['sys.com',4766],['tree.com',3276],['xcopy.exe',11247]].forEach(function(f){sys('/dos/'+f[0],{bin:true,size:f[1]})});
+  P.put('/zork','d',{owner:'root',date:SD});
+  [['zork1.com',8704],['zork1.dat',84480],['zork2.com',8704],['zork2.dat',88320],['zork3.com',8704],['zork3.dat',82432]].forEach(function(f){sys('/zork/'+f[0],{bin:true,size:f[1]})});
+  sys('/zork/leaflet.txt',{body:P.zork.leaflet});
+  sys('/zork/fcd3.txt',{body:P.zork.fcd3});
   ['nul','con','prn','aux'].forEach(function(d){sys('/'+d,{dev:[0,0],hidden:true})});
 });
