@@ -8,4 +8,5 @@ image('games/startrek.js','startrek');
 image('games/empire.js','empire');
 image('games/monster.js','monster');
 image('games/moria.js','moria');
+image('games/conquest.js','conquest');
 })(window.Phosphor);
