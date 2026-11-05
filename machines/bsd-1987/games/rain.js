@@ -8,7 +8,6 @@
 (function(P){
 'use strict';
 P.command({names:['rain'],run:function(){
-  if(P.piped()){P.typeLine('rain: needs a terminal','err');return}
   P.program(function(S,done){
     var randx=1,C,cols,lines,x,y,j=0,xpos=[0,0,0,0,0],ypos=[0,0,0,0,0],cx=0,cy=0,over=false;
     function ranf(){ /* it never seeds, so it is the same storm every time, as it was */
@@ -67,6 +66,6 @@ P.command({names:['rain'],run:function(){
       draw:draw,
       resize:function(){size();draw()}
     };
-  });
+  },{tty:'rain'});
 }});
 })(window.Phosphor);

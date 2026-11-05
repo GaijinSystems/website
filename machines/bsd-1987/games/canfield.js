@@ -71,153 +71,10 @@ var bettinginstructions=[
   "at a rate of $1 per minute.\n\n",
   "push any key when you are finished: "];
 P.command({names:['canfield'],run:function(){
-  if(P.piped()){P.typeLine('canfield: needs a terminal','err');return}
   P.program(function(S,finish_){
-  /* --- what this game needs of 4.3BSD's curses, on a vt100, 24 by 80 or a little shorter: windows are written, and only wrefresh changes the screen --- */
-  var LINES=S.rows>=21&&S.rows<24?S.rows:24,COLS=80,NOCHANGE=-1,stdscr,curscr; /* as curses would see a shorter terminal */
-  function blank(n){var a=[];while(n--)a.push(' ');return a}
-  function mkwin(nl,nc,by,bx,orig){
-    var w={maxy:nl,maxx:nc,begy:by,begx:bx,cury:0,curx:0,clear:false,leave:false,lines:[],first:[],last:[],j:0,k:0,scrollwin:false,fullwin:false},i;
-    if(orig){
-      w.lines=orig.lines;w.first=orig.first;w.last=orig.last;
-      w.j=by-orig.begy;w.k=bx-orig.begx;
-    }
-    else for(i=0;i<nl;i++){w.lines.push(blank(nc));w.first.push(NOCHANGE);w.last.push(NOCHANGE)}
-    if(bx+nc===COLS){
-      if(bx===0&&nl===LINES&&by===0)w.fullwin=true;
-      if(by+nl===LINES)w.scrollwin=true;
-    }
-    return w;
-  }
-  function touchline(w,y,sx,ex){
-    var Y=y+w.j;
-    sx+=w.k;ex+=w.k;
-    if(w.first[Y]===NOCHANGE){w.first[Y]=sx;w.last[Y]=ex}
-    else{
-      if(w.first[Y]>sx)w.first[Y]=sx;
-      if(w.last[Y]<ex)w.last[Y]=ex;
-    }
-  }
-  function touchwin(w){for(var y=0;y<w.maxy;y++)touchline(w,y,0,w.maxx-1)}
-  function wmove(w,y,x){
-    if(x<0||y<0||x>=w.maxx||y>=w.maxy)return false;
-    w.curx=x;w.cury=y;
-    return true;
-  }
-  function wclrtoeol(w){
-    var y=w.cury,L=w.lines[y+w.j];
-    for(var x=w.curx;x<w.maxx;x++)L[x+w.k]=' ';
-    touchline(w,y,w.curx,w.maxx-1);
-  }
-  function waddch(w,c){
-    var x=w.curx,y=w.cury,nl=false;
-    switch(c){
-    case '\t':
-      for(var nx=x+(8-(x&7));x<nx;x++)if(!waddch(w,' '))return false;
-      return true;
-    case '\n':
-      wclrtoeol(w);
-      x=0;nl=true;
-      break;
-    case '\r':x=0;break;
-    case '\b':if(--x<0)x=0;break;
-    default:
-      if(w.lines[y+w.j][x+w.k]!==c){
-        var X=x+w.k,Y=y+w.j;
-        if(w.first[Y]===NOCHANGE)w.first[Y]=w.last[Y]=X;
-        else if(X<w.first[Y])w.first[Y]=X;
-        else if(X>w.last[Y])w.last[Y]=X;
-      }
-      w.lines[y+w.j][x+w.k]=c;
-      x++;
-      if(x>=w.maxx){x=0;nl=true}
-    }
-    if(nl&&++y>=w.maxy)return false;
-    w.curx=x;w.cury=y;
-    return true;
-  }
-  function waddstr(w,s){
-    for(var i=0;i<s.length;i++)if(!waddch(w,s.charAt(i)))return false;
-    return true;
-  }
-  function mvwaddstr(w,y,x,s){if(wmove(w,y,x))waddstr(w,s)}
-  function mvwaddch(w,y,x,c){if(wmove(w,y,x))waddch(w,c)}
-  function werase(w){
-    for(var y=0;y<w.maxy;y++){
-      var L=w.lines[y+w.j],lo=-1,hi=-1;
-      for(var x=0;x<w.maxx;x++)if(L[x+w.k]!==' '){hi=x;if(lo<0)lo=x;L[x+w.k]=' '}
-      if(lo>=0)touchline(w,y,lo,hi);
-    }
-    w.curx=w.cury=0;
-  }
-  function wclear(w){werase(w);w.clear=true}
-  var ly=0,lx=0;
-  function makech(w,wy){
-    var Y=wy+w.j,wx=w.first[Y]-w.k,lch,y=wy+w.begy;
-    if(wx>=w.maxx)return true;
-    if(wx<0)wx=0;
-    lch=w.last[Y]-w.k;
-    if(lch<0)return true;
-    if(lch>=w.maxx)lch=w.maxx-1;
-    var N=w.lines[Y],C=curscr.lines[y],bx=w.begx,k=w.k;
-    while(wx<=lch){
-      if(N[wx+k]!==C[wx+bx]){
-        ly=y;lx=wx+bx;
-        while(N[wx+k]!==C[wx+bx]&&wx<=lch){
-          var at=wx;
-          wx++;
-          if(wx>=w.maxx&&wy===w.maxy-1&&w.scrollwin){lx=--wx;return false}
-          C[at+bx]=N[at+k];
-        }
-        if(lx===wx+bx)break;
-        lx=wx+bx;
-        if(lx>=COLS){lx=0;ly++}
-      }
-      else while(wx<=lch&&N[wx+k]===C[wx+bx])++wx;
-    }
-    return true;
-  }
-  function wrefresh(w){
-    ly=curscr.cury;lx=curscr.curx;
-    if(w.clear||curscr.clear){
-      if(w.fullwin||curscr.clear){
-        ly=lx=0;
-        curscr.clear=false;
-        curscr.cury=curscr.curx=0;
-        werase(curscr);
-        touchwin(w);
-      }
-      w.clear=false;
-    }
-    for(var wy=0;wy<w.maxy;wy++){
-      var Y=wy+w.j;
-      if(w.first[Y]!==NOCHANGE){
-        if(!makech(w,wy))return;
-        if(w.first[Y]>=w.k)w.first[Y]=w.maxx+w.k;
-        if(w.last[Y]<w.maxx+w.k)w.last[Y]=w.k;
-        if(w.last[Y]<w.first[Y])w.first[Y]=NOCHANGE;
-      }
-    }
-    if(w.leave){
-      curscr.cury=ly;curscr.curx=lx;
-      ly-=w.begy;lx-=w.begx;
-      if(ly>=0&&ly<w.maxy&&lx>=0&&lx<w.maxx){w.cury=ly;w.curx=lx}
-      else w.cury=w.curx=0;
-    }
-    else{
-      curscr.cury=w.cury+w.begy;
-      curscr.curx=w.curx+w.begx;
-    }
-  }
-  function initscr(){
-    curscr=mkwin(LINES,COLS,0,0);
-    curscr.clear=true;
-    stdscr=mkwin(LINES,COLS,0,0);
-  }
-  /* the glass: what curses has sent, cut to fit */
-  function view(S){
-    S.draw(curscr.lines.slice(0,S.rows).map(function(L){return L.slice(0,S.cols).join('').trimEnd()}),Math.min(curscr.cury,S.rows-1),Math.min(curscr.curx,S.cols-1));
-  }
+  /* --- 4.3BSD's curses, as this game needs it (curses43.js) --- */
+  var K=P.curses43(S),LINES=K.LINES,COLS=K.COLS,NOCHANGE=K.NOCHANGE,stdscr,curscr,blank=K.blank,mkwin=K.mkwin,touchline=K.touchline,touchwin=K.touchwin,wmove=K.wmove,wclrtoeol=K.wclrtoeol,waddch=K.waddch,waddstr=K.waddstr,mvwaddstr=K.mvwaddstr,mvwaddch=K.mvwaddch,werase=K.werase,wclear=K.wclear,makech=K.makech,wrefresh=K.wrefresh,view=K.view;
+  function initscr(){K.initscr();stdscr=K.stdscr;curscr=K.curscr}
   /* random(3) as 4.3BSD has it: x**31 + x**3 + 1 */
   var rs=new Int32Array(31),fptr=3,rptr=0;
   function random(){
@@ -909,6 +766,6 @@ P.command({names:['canfield'],run:function(){
   };
   step();
   return api;
-  });
+  },{tty:'canfield'});
 }});
 })(window.Phosphor);

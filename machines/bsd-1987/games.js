@@ -51,9 +51,7 @@ function run(gen){
   })();
 }
 run.EXIT={};
-function game(name,what,syn,desc,fn,by){
-  P.command({names:[name],path:'/usr/games',man:{what:what,syn:syn,desc:[desc].concat(by?['',by]:[])},run:fn});
-}
+function game(name,fn){P.command({names:[name],run:fn})} /* loaded on first run: the names, paths and manual pages are in later.js */
 function ran(n){return Math.floor(Math.random()*n)}
 function atoi(s){return parseInt(s,10)||0}
 function say(s){P.say(s.split('\n'))}
@@ -264,10 +262,10 @@ function* wump(argv){
     if(!(yield* getans('In the same cave? (y-n) ')))cave_init();
   }
 }
-game('wump','the game of hunt the wumpus','wump [ -h ] [ -a arrows ] [ -b bats ] [ -p pits ] [ -r rooms ] [ -t tunnels ]','hunt the wumpus through a cave of rooms and tunnels. move into a room, or shoot a crooked arrow through several. -h is the hard way.',function(a,raw,w){
+game('wump',function(a,raw,w){
   if(P.piped()){P.typeLine('wump: needs a terminal','err');return}
   run(wump(w.slice(1)));
-},'by dave taylor, of intuitive systems.');
+});
 
 /* ---------- number: spell it out ---------- */
 var N1=['','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
@@ -331,7 +329,7 @@ function convert(line,lflag){
   if(lflag)o+='\n';
   return o;
 }
-game('number','convert numbers to words','number [ -l ] [ # ... ]','prints each number in words, one piece to a line. -l keeps it on one line.',function(a){
+game('number',function(a){
   var l=a.indexOf('-l')>=0,N=a.filter(function(x){return x!=='-l'});
   function all(L){
     L.forEach(function(x,i){
@@ -351,7 +349,7 @@ function isPrime(n){
   for(var d=3;d*d<=n;d+=2)if(n%d===0)return false;
   return true;
 }
-game('primes','generate primes','primes [ start [ stop ] ]','prints the primes from start up to stop, or for as long as you let it: ctrl-c stops it.',function(a){
+game('primes',function(a){
   function go(start,stop){
     var n=Math.max(start,2),made=0;
     if(n>Number.MAX_SAFE_INTEGER||stop!==Infinity&&stop>Number.MAX_SAFE_INTEGER){P.typeLine('primes: ouch.','err');return}
@@ -373,7 +371,7 @@ game('primes','generate primes','primes [ start [ stop ] ]','prints the primes f
   if(a.length){go(+a[0],a[1]===undefined?Infinity:+a[1]);return}
   P.input([],function(L){if(L[0])go(atoi(L[0]),Infinity)});
 });
-game('factor','factor a number','factor [ number ... ]','prints each number followed by its prime factors.',function(a){
+game('factor',function(a){
   function one(x){
     if(!/^\d+$/.test(x)){P.typeLine('factor: '+x+': illegal numeric format.','err');return}
     var n=+x;
@@ -393,7 +391,7 @@ game('factor','factor a number','factor [ number ... ]','prints each number foll
 });
 
 /* ---------- banner: the big letters, sideways, as it always was ---------- */
-game('banner','print large banner on printer','banner [ -w width ] [ message ... ]','prints the message down the page in large letters. -w sets how wide; the glass is narrower than a line printer.',function(a,raw,words){
+game('banner',function(a,raw,words){
   var w=words.slice(1),width=Math.min(132,P.columns()),DW=132;
   if(w[0]==='-w'){
     width=atoi(w[1]);
@@ -515,7 +513,7 @@ function fullProgram(name,make){
     P.queue(function(){P.say(last)}); /* its parting words, once the glass is back */
   };
 }
-game('hangman','computer version of the game hangman','hangman','guess the word a letter at a time, before the man is hanged. ctrl-d or ctrl-c to stop.',fullProgram('hangman',Hangman),'by ken arnold.');
+game('hangman',fullProgram('hangman',Hangman));
 
 /* ---------- worm, by Michael Toy ---------- */
 function Worm(S,done,argv,last){
@@ -610,7 +608,7 @@ function Worm(S,done,argv,last){
   arm();
   return {draw:draw,feed:process};
 }
-game('worm','play the growing worm game','worm [ size ]','steer the worm to the numbers, and it grows by that much. h j k l or the arrow keys steer; capitals run. do not hit the wall, or yourself.',fullProgram('worm',Worm),'by michael toy.');
+game('worm',fullProgram('worm',Worm));
 
 /* ---------- robots: run from them, and make them hit each other ---------- */
 function Robots(S,done,argv,last){
@@ -805,7 +803,7 @@ function robotScores(){ /* whatever is in the browser, as long as it is scores *
   var T=P.saved('robots/scores');
   return Array.isArray(T)?T.filter(function(t){return t&&typeof t.s==='number'&&typeof t.n==='string'}):[];
 }
-game('robots','fight off villainous robots','robots [ -atns ]','they all move one step towards you each time you move. when two meet, they become a junk heap, and so does anything that hits it. y k u h l b j n move, capitals keep going, w waits for the end, t teleports. -a starts harder, -t teleports you when you must, and -s shows the best scores, kept in this browser.',function(a,raw,w){
+game('robots',function(a,raw,w){
   if(a.join('').indexOf('s')>=0&&a.every(function(x){return x.charAt(0)==='-'})){
     var T=robotScores();
     P.say(T.length?T.map(function(t,i){return String(i+1).padStart(2)+' '+String(t.s).padStart(5)+' '+t.n}):['No scores']);
@@ -1013,6 +1011,6 @@ function Snake(S,done,argv,last){
     step(c,repeat);
   }};
 }
-game('snake','display chase game','snake [ -w width ] [ -l length ] [ -t ]','you are I, the snake is S and its tail, the money is $, and the way out is #. every move you make, it makes one too. h j k l or the arrows move, capitals line you up with the money, w warps you away at a price, d looks for what is near. x quits.',fullProgram('snake',Snake));
+game('snake',fullProgram('snake',Snake));
 
 })(window.Phosphor);

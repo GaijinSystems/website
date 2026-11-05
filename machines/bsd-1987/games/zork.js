@@ -3156,7 +3156,7 @@ function IOPEN(name,status){
   return true;
 }
 function ICLOSE(){
-  if(writing&&save){P.save('zork/dsave',JSON.stringify(save));writing=false}
+  if(writing&&save){P.save('zork/dsave',save);writing=false}
 }
 function SAVEPUT(v){save.push(v)}
 function SAVEGET(){return save[saveat++]}

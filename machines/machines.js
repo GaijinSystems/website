@@ -6,7 +6,7 @@
    load, in order (.js and .css). A site chooses with "machine:" and "machines:". */
 Phosphor.machines({
   v7:{name:'pdp-11/70, version 7 unix',year:1979,dir:'machines/v7-1979',files:['later.js','machine.js','fs.js']},
-  bsd:{name:'vax-11/780, 4.3bsd',year:1987,dir:'machines/bsd-1987',files:['later.js','games.js','commands.js','machine.js','fs.js']},
+  bsd:{name:'vax-11/780, 4.3bsd',year:1987,dir:'machines/bsd-1987',files:['later.js','commands.js','machine.js','fs.js']},
   dos:{name:'ibm pc/at, ms-dos 3.30',year:1988,dir:'machines/dos-1988',files:['machine.js','../shared/zork.js','../shared/fcb.js','fs.js','commands.js']},
   vms:{name:'vax-11/785, vax/vms v4.5',year:1988,dir:'machines/vms-1988',files:['later.js','machine.js','fs.js','commands.js']},
   irix:{name:'silicon graphics crimson, irix 4.0.5',year:1993,dir:'machines/irix-1993',files:['machine.js','commands.js','fs.js']},

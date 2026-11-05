@@ -74,8 +74,6 @@ root		= 'USERC:[ISP00475.CRA01453.DSYS]';
 (function(P){
 'use strict';
 /* ---------- what VAX Pascal gives the source ---------- */
-function $arr(lo,hi,f){var a=new Array(hi+1);for(var i=lo;i<=hi;i++)a[i]=f();return a}
-function $zeros(hi){return new Array(hi+1).fill(0)}
 function $fill(items,hi,f){for(var i=items.length;i<=hi;i++)items[i]=f();return items}
 function $heap(o){if(o&&typeof o==='object')Object.defineProperty(o,'$heap',{value:true,enumerable:false});return o}
 function $clone(x){
@@ -127,17 +125,6 @@ function $readv(s){var m=/^\s*[-+]?\d+/.exec(s);if(!m)throw new $Fault('%PAS-F-I
 function $set(a){return new Set(a)}
 function $rng(a,b){var r=[],x=$ord(a),y=$ord(b),st=typeof a==='string';for(var i=x;i<=y;i++)r.push(st?$chr(i):i);return r}
 function $in(x,s){return s.has(x)}
-function $setop(a,b,op){
-  var r=new Set();
-  if(op==='+'){a.forEach(function(x){r.add(x)});b.forEach(function(x){r.add(x)})}
-  else if(op==='-')a.forEach(function(x){if(!b.has(x))r.add(x)});
-  else a.forEach(function(x){if(b.has(x))r.add(x)});
-  return r;
-}
-function $seteq(a,b){return a.size===b.size&&$setle(a,b)}
-function $setle(a,b){var ok=true;a.forEach(function(x){if(!b.has(x))ok=false});return ok}
-function $succ(x){return typeof x==='string'?$chr(x.charCodeAt(0)+1):x+1}
-function $pred(x){return typeof x==='string'?$chr(x.charCodeAt(0)-1):x-1}
 function $Fault(m){this.message=m}
 function $Halt(){}
 function $halt(){throw new $Halt()}
@@ -158,6 +145,9 @@ function $time(){
   return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())+'.'+p2(Math.floor(d.getMilliseconds()/10));
 }
 function $clock(){return Date.now()%2147483647}
+/* ---------- line-mode programs (Monster): arrays as VAX Pascal lays them out, and lines in and out ---------- */
+function $arr(lo,hi,f){var a=new Array(hi+1);for(var i=lo;i<=hi;i++)a[i]=f();return a}
+function $zeros(hi){return new Array(hi+1).fill(0)}
 /* output: full lines go to the terminal, a part line waits to become the prompt */
 var $o='';
 function $write(s){
@@ -166,7 +156,7 @@ function $write(s){
   if(i>=0){P.say($o.slice(0,i).split('\n'));$o=$o.slice(i+1)}
 }
 function $writeln(s){$write(s+'\n')}
-var $ASK={ask:true},$line=null,$hidden=false;
+var $line=null;
 function* $askline(prompt,hidden){
   /* the part line and the prompt go up together; a line, or P.INT at ^C, or null at ^D */
   var p=$o+prompt;$o='';
@@ -178,22 +168,19 @@ function $drive(G,onend){
   function step(v){
     var r;
     $line=v;
-    for(;;){
-      try{r=G.next()}
-      catch(e){
-        if($o){P.say([$o]);$o=''}
-        if(e instanceof $Halt){onend();return}
-        if(e instanceof $Fault){P.typeLine(e.message,'err');onend();return}
-        console.error(e);
-        P.typeLine('%SYSTEM-F-ACCVIO, access violation','err');
-        onend();
-        return;
-      }
-      if(r.done){if($o){P.say([$o]);$o=''}onend();return}
-      if(r.value&&r.value.sleep!==undefined){P.pause(r.value.sleep);P.queue(function(){step(null)});return}
-      P.ask(r.value.ask,step,true,r.value.hidden);
+    try{r=G.next()}
+    catch(e){
+      if($o){P.say([$o]);$o=''}
+      if(e instanceof $Halt){onend();return}
+      if(e instanceof $Fault){P.typeLine(e.message,'err');onend();return}
+      console.error(e);
+      P.typeLine('%SYSTEM-F-ACCVIO, access violation','err');
+      onend();
       return;
     }
+    if(r.done){if($o){P.say([$o]);$o=''}onend();return}
+    if(r.value&&r.value.sleep!==undefined){P.pause(r.value.sleep);P.queue(function(){step(null)});return}
+    P.ask(r.value.ask,step,true,r.value.hidden);
   }
   step(null);
 }
@@ -208,7 +195,7 @@ function get_userid(){return String(P.st.user||'guest').toLowerCase().slice(0,12
 function trim(s){return s.replace(/[ \t]+$/,'')}
 function putchars(s){} /* only used to put the prompt back after an event; here events come between prompts */
 function* wait(seconds){yield {sleep:seconds*1000}}
-function* doawait(t){yield {sleep:t*1000}}
+var doawait=wait;
 function* $readln(){
   $flush();
   var l=yield* $askline('');
@@ -307,7 +294,6 @@ function $locate(f,n){f.pos=n;f.st=0}
 function $put(f){f.recs[f.pos]=$clone(f.buf);$dirty[f.key]=true;f.pos++;f.st=0}
 function $update(f){f.recs[f.pos]=$clone(f.buf);$dirty[f.key]=true;f.st=0}
 function $unlock(f){}
-function $status(f){return f.st}
 function $rewrite(f){if(f.text)f.text=[]}
 function $fwrite(f,s,nl){if(f.text===null)f.text=[];var L=f.text;if(!L.length||L.$nl)L.push('');L[L.length-1]+=s;L.$nl=!!nl}
 function $close(f){
@@ -324,6 +310,7 @@ function* prestart(){
   if(s.length>0)yield* $y(special(lowcase(s)));
 }
 /* ---------- mon.pas ---------- */
+var $S1=$set([...$rng("A","Z")]),$S2=$set([...$rng("0","9")]),$S3=$set([...$rng(0,40)]),$S4=$set([...$rng(41,60)]),$S5=$set([2,3,6,7,8,11,12]),$S6=$set([4,9,10]),$S7=$set(["a","A","e","E","i","I","o","O","u","U"]),$S8=$set(["1","3","5","7","9"]),$S9=$set([...$rng("a","z")]),$S10=$set([...$rng("a","z"),...$rng("A","Z")]),$S11=$set([...$rng(0,100)]),$S12=$set([...$rng(0,4)]),$S13=$set([...$rng(0,2)]),$S14=$set([...$rng(0,4),...$rng(6,7)]),$S15=$set([2,6]),$S16=$set([...$rng(1,20)]),$S17=$set([...$rng(21,40)]),$S18=$set([...$rng(0,3),...$rng(100,103)]);
 /* This is Monster, a multiuser adventure game system
    	where the players create the universe.
    
@@ -1636,7 +1623,7 @@ function lowcase(s){
     sprime=s;
     for(var $e1=s.length,$ie1=1;$ie1<=$e1;$ie1++){
       i=$ie1;
-      if($in($ch(sprime,i),$set([...$rng("A","Z")]))){
+      if($in($ch(sprime,i),$S1)){
         sprime=$setch(sprime,i,$chr(($ord("a")+(($ord($ch(sprime,i))-$ord("A"))))));
       }
     }
@@ -2419,7 +2406,7 @@ function isnum(s){
   }else{
     i=1;
     while((i<=s.length)){
-      if(!($in($ch(s,i),$set([...$rng("0","9")])))){
+      if(!($in($ch(s,i),$S2))){
         $ret=false;
       }
       i=(i+1);
@@ -2430,7 +2417,7 @@ function isnum(s){
 function number(s){
   var $ret=0;
   var i=0;
-  if((((s.length<1))||!($in($ch(s,1),$set([...$rng("0","9")]))))){
+  if((((s.length<1))||!($in($ch(s,1),$S2)))){
     $ret=0;
   }else{
     i=$readv(s);
@@ -2710,9 +2697,9 @@ function* time_noises(){
   var n=0;
   if((rnd100()<=2)){
     n=rnd100();
-    if($in(n,$set([...$rng(0,40)]))){
+    if($in(n,$S3)){
       (yield* log_event(0,e_noises,rnd100(),0));
-    }else if($in(n,$set([...$rng(41,60)]))){
+    }else if($in(n,$S4)){
       (yield* log_event(0,e_altnoise,rnd100(),0));
     }
   }
@@ -2896,10 +2883,10 @@ function* take_hit(p){
 function punch_force(sock){
   var $ret=0;
   var p=0;
-  if($in(sock,$set([2,3,6,7,8,11,12]))){
+  if($in(sock,$S5)){
     /* no punch or a graze */
     p=0;
-  }else if($in(sock,$set([4,9,10]))){
+  }else if($in(sock,$S6)){
     /* hard punches */
     p=2;
   }else{
@@ -5785,7 +5772,7 @@ function* do_makeobj(s){
             obj.usealias="";
             obj.reqalias=false;
             obj.reqverb=false;
-            if($in($ch(s,1),$set(["a","A","e","E","i","I","o","O","u","U"]))){
+            if($in($ch(s,1),$S7)){
               obj.particle=2;
             }else{
               /* an */
@@ -6262,7 +6249,7 @@ function cycle_open(){
   var s="";
   s=systime();
   ch=$ch(s,5);
-  if($in(ch,$set(["1","3","5","7","9"]))){
+  if($in(ch,$S8)){
     $ret=true;
   }else{
     $ret=false;
@@ -6416,12 +6403,12 @@ function* do_go(s,verb=true){
 }
 function nice_say(s){
   /* capitalize the first letter of their sentence */
-  if($in($ch(s.v,1),$set([...$rng("a","z")]))){
+  if($in($ch(s.v,1),$S9)){
     s.v=$setch(s.v,1,$chr(($ord("A")+(($ord($ch(s.v,1))-$ord("a"))))));
   }
   /* put a period on the end of their sentence if
      			  they don't use any punctuation. */
-  if($in($ch(s.v,s.v.length),$set([...$rng("a","z"),...$rng("A","Z")]))){
+  if($in($ch(s.v,s.v.length),$S10)){
     s.v=(s.v+".");
   }
 }
@@ -7216,7 +7203,7 @@ function* custom_room(){
         (yield* grab_line("? ",{get v(){return s},set v($x){s=$x}}));
         if(isnum(s)){
           n=number(s);
-          if($in(n,$set([...$rng(0,100)]))){
+          if($in(n,$S11)){
             (yield* getroom());
             here.trapchance=n;
             putroom();
@@ -7362,7 +7349,7 @@ function* custom_room(){
         (yield* grab_line("? ",{get v(){return s},set v($x){s=$x}}));
         if(isnum(s)){
           n=number(s);
-          if($in(n,$set([...$rng(0,4)]))){
+          if($in(n,$S12)){
             (yield* getroom());
             here.which=n;
             putroom();
@@ -7385,7 +7372,7 @@ function* custom_room(){
         (yield* grab_line("? ",{get v(){return s},set v($x){s=$x}}));
         if(isnum(s)){
           n=number(s);
-          if($in(n,$set([...$rng(0,2)]))){
+          if($in(n,$S13)){
             (yield* getroom());
             here.nameprint=n;
             putroom();
@@ -7695,13 +7682,13 @@ function* do_custom(dirnam){
               (yield* grab_line("Which type? ",{get v(){return s},set v($x){s=$x}}));
               if(isnum(s)){
                 n=number(s);
-                if($in(n,$set([...$rng(0,4),...$rng(6,7)]))){
+                if($in(n,$S14)){
                   (yield* getroom());
                   here.exits[dir].kind=n;
                   putroom();
                   $writeln($ws("Exit type updated.",0));
                   $writeln("");
-                  if($in(n,$set([2,6]))){
+                  if($in(n,$S15)){
                     (yield* get_key(dir));
                   }
                 }else{
@@ -7872,11 +7859,11 @@ function* do_search(s){
     chance=rnd100();
     found=false;
     dummy=false;
-    if($in(chance,$set([...$rng(1,20)]))){
+    if($in(chance,$S16)){
       (yield* reveal_objects({get v(){return found},set v($x){found=$x}}));
-    }else if($in(chance,$set([...$rng(21,40)]))){
+    }else if($in(chance,$S17)){
       (yield* reveal_exits({get v(){return found},set v($x){found=$x}}));
-    }else if($in(chance,$set([...$rng(41,60)]))){
+    }else if($in(chance,$S4)){
       (yield* reveal_people({get v(){return dummy},set v($x){dummy=$x}}));
     }
     if(found){
@@ -8037,7 +8024,7 @@ function* prog_kind(objnum){
     n=number(s);
     if((((n>100))&&(privd))){
       $writeln($ws("Out of range.",0));
-    }else if($in(n,$set([...$rng(0,3),...$rng(100,103)]))){
+    }else if($in(n,$S18)){
       (yield* getobj(objnum));
       obj.kind=n;
       putobj();
@@ -8263,7 +8250,7 @@ function* do_program(objnam){
               (yield* grab_line("? ",{get v(){return s},set v($x){s=$x}}));
               if(isnum(s)){
                 n=number(s);
-                if($in(n,$set([...$rng(0,4)]))){
+                if($in(n,$S12)){
                   (yield* getobj(objnum));
                   obj.particle=n;
                   putobj();

@@ -124,7 +124,6 @@ P.command({names:['teachgammon'],run:function(a,raw,words){
     }
     if(s<argv.length&&!recover(argv[s]))return;
   }
-  if(P.piped()){P.typeLine('teachgammon: needs a terminal','err');return}
   P.program(function(S,finish_){
     /* the terminal */
     LI=S.rows>=21&&S.rows<24?S.rows:24;
@@ -1009,6 +1008,6 @@ P.command({names:['teachgammon'],run:function(a,raw,words){
     };
     step();
     return api;
-  });
+  },{tty:'teachgammon'});
 }});
 })(window.Phosphor);

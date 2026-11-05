@@ -47,7 +47,7 @@ var MAXPL=9,MAXMON=1,NAMELEN=20,WIDTH=59,WIDTH2=64,HEIGHT=23,UBOUND=1,DBOUND=22,
   DIRS=[[0,1,2,3],[3,0,1,2],[0,2,3,1],[0,3,2,1],[1,0,2,3],[2,3,0,1],[0,2,1,3],[2,3,1,0],[1,0,3,2],[1,2,0,3],[3,1,2,0],[2,0,3,1],
         [1,3,0,2],[0,3,1,2],[1,3,2,0],[2,0,1,3],[0,1,3,2],[3,1,0,2],[2,1,0,3],[1,2,3,0],[2,1,3,0],[3,0,2,1],[3,2,0,1],[3,2,1,0]],
   INCR=[[0,1],[1,0],[0,-1],[-1,0]],
-  TICK=250,RESPAWN=8,ROBOTS=3,SMALLEST=9;
+  TICK=250,RESPAWN=8,ROBOTS=3;
 function Abort(msg){this.msg=msg}
 function Over(){}
 function pad(s,w){return String(s).padStart(w,' ')}
@@ -1496,7 +1496,7 @@ P.command({names:['hunt'],run:function(a,raw,words){
   function start(){
     P.program(function(S,done){
       var D=null,bots=[],me=null,timer=null,finished=false,Last_player=false,
-        screen=[],cur_row=0,cur_col=0,hold=null,sawEnd=false,want='',resumeY=0,resumeX=0,explain=false,arg=[],mode=0,sleeper=null,fitting=false;
+        screen=[],cur_row=0,cur_col=0,hold=null,sawEnd=false,want='',resumeY=0,resumeX=0,explain=false,arg=[],mode=0,sleeper=null;
       function blank(){var r=[];for(var i=0;i<24;i++)r.push(new Array(80).fill(' '));return r}
       screen=blank();
       /* ---- playit(): what comes from the driver */
@@ -1528,17 +1528,7 @@ P.command({names:['hunt'],run:function(a,raw,words){
         default:put_ch(b);
         }
       }
-      /* smaller type for the whole 80x24 where it stays readable; where it would not, the view follows the cursor */
-      function fit(){
-        var el=typeof document==='undefined'?null:document.getElementById('full');
-        if(!el)return;
-        fitting=true;
-        el.style.fontSize='';
-        window.dispatchEvent(new Event('resize'));
-        var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/80,b*S.rows/24)*.995;
-        if(f<b&&f>=SMALLEST){el.style.fontSize=f+'px';window.dispatchEvent(new Event('resize'))}
-        fitting=false;
-      }
+      /* the program fits the type to the whole 80x24 where it stays readable; where it would not, the view follows the cursor */
       function draw(){
         if(finished)return;
         var rows=S.rows,cols=S.cols,top=rows<24?Math.max(0,Math.min(24-rows,cur_row-(rows>>1))):0,lft=cols<80?Math.max(0,Math.min(80-cols,cur_col-(cols>>1))):0,L=[];
@@ -1655,9 +1645,9 @@ P.command({names:['hunt'],run:function(a,raw,words){
         turn();
         timer=setTimeout(tick,TICK);
       },600);
-      setTimeout(function(){if(!finished){fit();draw()}},0);
-      return {feed:feed,draw:draw,resize:function(){if(!fitting){fit();draw()}}};
-    });
+      if(!finished)draw();
+      return {feed:feed,draw:draw};
+    },{fit:[80,24]});
   }
 }});
 })(window.Phosphor);

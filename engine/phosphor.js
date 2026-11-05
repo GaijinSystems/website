@@ -513,6 +513,12 @@ function fullscreen(keys,onResize){
     },
     drawGrid:function(C,r,c){S.draw(C.map(function(row){return row.join('').trimEnd()}),r,c)},
     say:function(m){if(m!==said){said=m;announce(m)}},
+    fit:function(cols,rows,o){ /* smaller type for the whole cols x rows where it stays readable (o.min, 9px); o.clamp shrinks to o.min regardless */
+      o=o||{};var min=o.min||9;
+      el.style.fontSize='';measure();
+      var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/cols,b*S.rows/rows)*.995;
+      if(f<b&&(o.clamp||f>=min)){el.style.fontSize=Math.max(f,min)+'px';measure()}
+    },
     close:function(){
       KEYS=null;window.removeEventListener('resize',size);
       if(window.visualViewport)visualViewport.removeEventListener('resize',size);
@@ -538,13 +544,18 @@ function fullscreen(keys,onResize){
   if(window.visualViewport)visualViewport.addEventListener('resize',size); /* a phone keyboard opening or changing height */
   return S;
 }
-function program(make){ /* a full-screen program: make(S,done) returns its {feed,draw}, and resize if that differs from draw */
+function program(make,o){ /* a full-screen program: make(S,done) returns its {feed,draw}, and resize if that differs from draw.
+   o.tty: its name, and it refuses a pipe; o.fit: [cols,rows] it is fitted to before make and at each resize (o.min, o.clamp as S.fit) */
+  o=o||{};
+  if(o.tty&&SINK){typeLine(o.tty+': needs a terminal','err');return}
   var who=CURRENT,crashed=false;
   queue(function(){
     return new Promise(function(res){
       var V,S;
       function crash(e){console.error(e);crashed=true;S.close();res()} /* never leave a dead screen up */
-      S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}});
+      function fit(){if(o.fit)S.fit(o.fit[0],o.fit[1],o)}
+      S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{fit();if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}});
+      fit();
       try{V=make(S,res)}catch(e){crash(e)}
     });
   });
@@ -784,35 +795,39 @@ function dropRoot(){
 }
 /* ---------- programs that load when first run (Phosphor.later). Script tags, so this works from disk too. ---------- */
 var LOADED={},RANH=0,RAND=0; /* hooks and programs already taken up: loads can overlap */
-function loadOne(f){
+function loadOne(f){ /* a promise of the programs the file defines, or false */
   var M=PH.machine&&PH.catalog[PH.machine],src=(M?M.dir+'/':'')+f;
   if(LOADED[src])return LOADED[src];
   return LOADED[src]=new Promise(function(res){
     var h=PH.hooks.length,d=PH.defs.length,el=document.createElement('script');
     function failed(){delete LOADED[src];el.remove();res(false)}
-    el.src=src;el.async=false;
+    el.src=src;el.async=false; /* not async: the files of one program run in the order they were asked for */
     el.onerror=failed;
-    el.onload=function(){
+    el.onload=function(){ /* straight after the file has run, before the next one does */
       if(!PH.seen[src]){failed();return} /* a stray ` or ${ in it, so it never got as far as saying so */
       try{
         var hs=PH.hooks.slice(Math.max(h,RANH)),ds=PH.defs.slice(Math.max(d,RAND));
         RANH=PH.hooks.length;RAND=PH.defs.length;
         hs.forEach(function(fn){fn(PH)});
-        ds.forEach(function(x){ /* only what was listed: its manual page and program file are there already */
-          (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
-        });
       }catch(e){failed();return}
-      res(true);
+      res(ds);
     };
     document.body.appendChild(el);
   });
 }
-function load(files){ /* in order; true when all of them arrived. ^C stops the wait, not the loading: it arrives for next time */
+function load(files){ /* all at once, run in order; true when every one arrived, and only then are its programs taken up.
+   ^C stops the wait, not the loading: it arrives for next time */
   return new Promise(function(r){
     function done(ok){var i=wakers.indexOf(wake);if(i>=0)wakers.splice(i,1);r(ok)}
     function wake(){done(false)}
     wakers.push(wake);
-    [].concat(files).reduce(function(p,f){return p.then(function(ok){return ok&&loadOne(f)})},Promise.resolve(true)).then(done);
+    Promise.all([].concat(files).map(loadOne)).then(function(got){
+      if(got.some(function(ds){return !ds})){done(false);return}
+      got.forEach(function(ds){ds.forEach(function(x){ /* only what was listed: its manual page and program file are there already */
+        (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
+      })});
+      done(true);
+    });
   });
 }
 PH.runLater=function(files,def,a,raw,w){

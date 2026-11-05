@@ -91,7 +91,6 @@ function run(words){
     if(!goodSave(rest)){P.say([av[0]+': not a saved game']);P.status(1);return}
     Fromfile=av[0];
   }
-  if(P.piped()){P.typeLine('mille: needs a terminal','err');return}
   P.program(function(S,done){
     /* ---------- curses, as 4.3BSD's ---------- */
     var phys=[],pcy=0,pcx=0,y,x,row;
@@ -149,17 +148,7 @@ function run(words){
     function clrtoeol(){wclrtoeol(stdscr)}
     function refresh(){wrefresh(stdscr)}
     /* ---------- the glass ---------- */
-    var pan_y=0,pan_x=0,fitting=false,SMALLEST=9;
-    function fit(){
-      var el=typeof document==='undefined'?null:document.getElementById('full');
-      if(!el)return;
-      fitting=true;
-      el.style.fontSize='';
-      window.dispatchEvent(new Event('resize'));
-      var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/COLS,b*S.rows/LINES)*.995;
-      if(f<b&&f>=SMALLEST){el.style.fontSize=f+'px';window.dispatchEvent(new Event('resize'))}
-      fitting=false;
-    }
+    var pan_y=0,pan_x=0;
     function layout(){ /* which piece of the screen each row of the glass shows */
       var m=[],j;
       if(S.cols>=COLS){for(j=0;j<LINES;j++)m.push({y:j,x:0,n:COLS});return m}
@@ -1359,12 +1348,12 @@ function run(words){
         if(c>=0)step(c);
       },
       draw:function(){if(!ended)render()},
-      resize:function(){if(!fitting&&!ended){fit();render()}}
+      resize:function(){if(!ended)render()}
     };
     step();
-    setTimeout(function(){if(!ended){fit();render()}},0);
+    if(!ended)render();
     return V;
-  });
+  },{tty:'mille',fit:[COLS,LINES]});
 }
 P.command({names:['mille'],run:function(a,raw,words){run(words||['mille'].concat(a))}});
 })(window.Phosphor);
