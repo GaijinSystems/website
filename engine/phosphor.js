@@ -792,10 +792,12 @@ function loadOne(f){
     el.onerror=failed;
     el.onload=function(){
       if(!PH.seen[src]){failed();return} /* a stray ` or ${ in it, so it never got as far as saying so */
-      PH.hooks.slice(h).forEach(function(fn){fn(PH)});
-      PH.defs.slice(d).forEach(function(x){ /* only what was listed: its manual page and program file are there already */
-        (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
-      });
+      try{
+        PH.hooks.slice(h).forEach(function(fn){fn(PH)});
+        PH.defs.slice(d).forEach(function(x){ /* only what was listed: its manual page and program file are there already */
+          (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
+        });
+      }catch(e){failed();return}
       res(true);
     };
     document.body.appendChild(el);
@@ -851,7 +853,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execLine,
-  subshell:function(){return SUB>0},source:function(){return SOURCE},vars:function(t){return plain(varsIn(t))},plain:plain,moved:moved,
+  subshell:function(){return SUB>0},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
@@ -968,7 +970,7 @@ var META='|&<>$`"\'\\# ';
 function guard(t,spaces){
   return t.replace(spaces?/[|&<>$`"'\\# ]/g:/[|&<>$`"'\\#]/g,function(c){return String.fromCharCode(0xE000+META.indexOf(c))});
 }
-function plain(t){return t.replace(/[\uE000-\uE00A]/g,function(c){return META.charAt(c.charCodeAt(0)-0xE000)})}
+function unguard(t){return t.replace(/[\uE000-\uE00A]/g,function(c){return META.charAt(c.charCodeAt(0)-0xE000)})}
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
   var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0;
   function fresh(){return {words:[],raw:'',src:'',in:null,out:null,app:false,err:null}}
@@ -976,17 +978,17 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
   function endWord(){
     if(w===null)return;
-    if(redir){w=plain(w);if(redir==='<')st.in=w;else if(redir==='2>')st.err=w;else{st.out=w;st.app=redir==='>>'}redir=null}
-    else if(quoted||PROFILE.dos)st.words.push(plain(w));
+    if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>'}else{st.out=w;st.app=redir==='>>'}redir=null}
+    else if(quoted||PROFILE.dos)st.words.push(unguard(w));
     else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){
-      x=plain(x);
+      x=unguard(x);
       var g=glob(x);
       if(PROFILE.csh&&g.length===1&&g[0]===x&&/[*?\[]/.test(x))throw NOMATCH; /* csh says so; sh passes the word along */
       st.words=st.words.concat(g);
     });
     w=null;quoted=false;fromVar=false;
   }
-  function endStage(){endWord();st.raw=plain(st.raw);if(st.words.length||st.in||st.out||st.err)stages.push(st);st=fresh()}
+  function endStage(){endWord();st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err)stages.push(st);st=fresh()}
   function endList(nextOp){endStage();if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp}
   while(i<s.length){
     var ch=s.charAt(i),two=s.substr(i,2),close;
@@ -1010,7 +1012,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       if(two==='>&'){redir='>';i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file */
       redir=two==='>>'?'>>':ch;
       i+=redir.length;
-      if(fd==='2')redir='2>'; /* made, and left empty: errors stay on the glass */
+      if(fd==='2')redir=redir==='>>'?'2>>':'2>'; /* made, and left empty: errors stay on the glass */
       continue;
     }
     if(!redir)add(ch);
@@ -1051,7 +1053,7 @@ function runPipeline(stages){
         if(!n||n.type==='d'||n.prot){typeLine(st.in+(PROFILE.csh?': No such file or directory':': cannot open'),'err');pipe=[];ok=false;return}
         pipe=textOf(n);
       }
-      if(st.err!==null&&!writeFile(st.err,[],false)){oopsW('',st.err,st.err+': cannot create');pipe=[];ok=false;return}
+      if(st.err!==null&&!writeFile(st.err,[],!!st.errApp)){oopsW('',st.err,st.err+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
       if(!last||st.out!==null)sink=[];

@@ -51,6 +51,7 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   var n=P.find(a[0],true),to=target(a[1],a[0]),there=P.find(to,true);
   if(!n||n.prot||n===P.root||!P.canWrite(P.norm(a[0]))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
+  if(there&&there!==n&&(there.prot||there.dev)){P.typeLine('mv: cannot unlink '+a[1],'err');return}
   if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
   var from=P.norm(a[0]),was=P.pathOf(n);
