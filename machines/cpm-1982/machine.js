@@ -1,11 +1,11 @@
-/* PHOSPHOR-9 terminal: machine "cpm-1979", an S-100 Z80 machine running CP/M 2.2.
+/* PHOSPHOR-9 terminal: machine "cpm-1982", an S-100 Z80 machine running CP/M 2.2.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    Same text format as the site files; see README.md. Do not type a backtick or a dollar sign
    followed by { between the two backticks below. */
 Phosphor.content(String.raw`
 
 badge:     PHOSPHOR-9
-installed: 1979-01-01 00:01
+installed: 1982-01-01 00:01
 user:      guest
 home:      /
 case:      ignore

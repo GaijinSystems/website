@@ -1219,7 +1219,7 @@ function histNav(d){
   setBuf(hist[hi]||'');
 }
 kb.addEventListener('input',function(){
-  if(KEYS){var v=kb.value;kb.value='';for(var i=0;i<v.length;i++)KEYS(v.charAt(i));return}
+  if(KEYS){var v=kb.value;kb.value='';for(var i=0;KEYS&&i<v.length;i++)KEYS(v.charAt(i));return}
   var grew=kb.value.length>buf.length;setBuf(kb.value);if(grew)click(.667);
 });
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
