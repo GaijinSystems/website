@@ -171,7 +171,7 @@ var PROFILE=(function(){
     else if(k==='root prompt')P.rootPrompt=v.replace(/^"(.*)"$/,'$1');
     else if(k==='login failed')P.loginFailed=v;
     else if(k==='closed door')P.closedDoor=yes(v);        /* only the accounts it knows may log in */
-    else if(k==='shell'){P.dos=/^(dos|dcl)$/i.test(v);P.dcl=/^dcl$/i.test(v)}           /* backslash paths; no quotes, $ or ; */
+    else if(k==='shell'){P.dos=/^(dos|dcl)$/i.test(v);P.dcl=/^dcl$/i.test(v);P.bash=/^bash$/i.test(v)} /* dos, dcl: backslash paths; no quotes, $ or ;. bash: tab, !!, $( ) and --help */
     else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
     else if(k==='root password')P.rootPassword=v;
     else if(k==='backdoor')P.backdoor=v.toLowerCase();    /* a login name that needs no password, and is root */
@@ -683,7 +683,7 @@ function canWrite(abs){ /* your home folder, or a folder anyone may write in; no
   if(!dir||dir.type!=='d'||dir.prot)return false;
   var at=pathOf(dir);
   if(at!==up)return false; /* find's cat photo01 finds photo01.pic is not for making files */
-  return dir.mode==='drwxrwxrwx'||ST.home==='/'||at===ST.home||at.indexOf(ST.home+'/')===0;
+  return /^drwxrwxrw[xt]$/.test(dir.mode||'')||ST.home==='/'||at===ST.home||at.indexOf(ST.home+'/')===0;
 }
 function writeFile(p,lines,append){ /* false if it cannot be written */
   var abs=norm(p),ex=find(abs,true);
@@ -946,7 +946,7 @@ function runOne(s,words,src){
     else if(n&&isScript(n)){runScript(textOf(n),words.slice());return}
     else if(n){typeLine(word+': cannot execute','err');return}
   }
-  if(f&&!NOH[name]&&args.indexOf('-h')>=0&&has(MAN,name)){typeLine('usage: '+MAN[name].syn);return}
+  if(f&&!NOH[name]&&args.indexOf(PROFILE.bash?'--help':'-h')>=0&&has(MAN,name)){typeLine((PROFILE.bash?'Usage: ':'usage: ')+MAN[name].syn);return} /* GNU's tools take -h for other things */
   if(f){
     CURRENT=name;
     try{f(args,s,words)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
@@ -1428,8 +1428,21 @@ function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of th
 function nextPrompt(pre){
   queue(function(){if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
 }
+function dollarParen(s){ /* bash: $(command) is `command`, outside single quotes. Not nested; $(( )) is left alone */
+  var o='',sq=false,dq=false,j,c,in_;
+  for(var i=0;i<s.length;i++){
+    c=s.charAt(i);
+    if(c==='\\'&&!sq){o+=s.substr(i,2);i++;continue}
+    if(c==="'"&&!dq)sq=!sq;
+    else if(c==='"'&&!sq)dq=!dq;
+    else if(!sq&&c==='$'&&s.charAt(i+1)==='('&&s.charAt(i+2)!=='('&&(j=s.indexOf(')',i+2))>=0&&!/[(`]/.test(in_=s.slice(i+2,j))){o+='`'+in_+'`';i=j;continue}
+    o+=c;
+  }
+  return o;
+}
 function run(raw){
   LOOP=null; /* a break typed at the prompt has no loop to end */
+  if(PROFILE.bash)raw=dollarParen(raw);
   SUB=0;
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
@@ -1490,11 +1503,11 @@ function submit(){
     return;
   }
   if(MODE==='password'){PENDROOT=null;pause(1400);typeLine(PROFILE.loginFailed);prompt(PROFILE.loginPrompt,'login');return}
-  if(PROFILE.csh&&/!/.test(cmd)){ /* !! the last command, !n that one, !word the last that began so */
+  if((PROFILE.csh||PROFILE.bash)&&/!/.test(cmd)){ /* !! the last command, !n that one, !word the last that began so */
     var bad=null,had=cmd;
     cmd=cmd.replace(/!(!|\d+|[a-zA-Z]\w*)/g,function(m,x){
       var v=x==='!'?hist[hist.length-1]:/^\d/.test(x)?hist[+x-1]:hist.slice().reverse().filter(function(h){return h.indexOf(x)===0})[0];
-      if(v===undefined){bad=x+': Event not found.';return ''}
+      if(v===undefined){bad=PROFILE.bash?'bash: '+m+': event not found':x+': Event not found.';return ''}
       return v;
     });
     if(bad){typeLine(bad,'err');prompt();return}
@@ -1503,6 +1516,34 @@ function submit(){
   if(cmd.trim()){hist.push(cmd);if(hist.length>50)hist.shift()}
   hi=hist.length;
   run(cmd);
+}
+/* bash: tab completes a command name first, a file name after; a second tab lists the choices */
+var TABBED=null;
+function complete(){
+  if(!bufNode||MODE!=='shell')return;
+  var m=buf.match(/^(.*?)([^\s;|&<>]*)$/),pre=m[1],w=m[2],dir='',base=w,L=[],k=w.lastIndexOf('/'),d;
+  if((!pre.trim()||/[;|&]\s*$/.test(pre))&&k<0){ /* a command: what has a program file, what help lists, and the aliases */
+    var C={};
+    Object.keys(PATHS).concat(HELP.map(function(h){return h[0]}),PH.aliases.map(function(a){return a.from[0]})).forEach(function(n){if(has(CMDS,n)||PH.aliases.some(function(a){return a.from[0]===n}))C[n]=' '});
+    L=Object.keys(C).filter(function(n){return n.indexOf(w)===0}).sort().map(function(n){return [n,' ']});
+  }else{
+    if(k>=0){dir=w.slice(0,k+1);base=w.slice(k+1)}
+    d=find(dir||'.');
+    if(d&&d.type==='d'&&!d.prot)L=Object.keys(d.kids).filter(function(n){return n.indexOf(PROFILE.fold(base))===0&&(n.charAt(0)!=='.'||base.charAt(0)==='.')}).sort()
+      .map(function(n){return [n,d.kids[n].type==='d'?'/':' ']});
+  }
+  if(!L.length)return;
+  if(L.length===1){TABBED=null;setBuf(pre+dir+L[0][0]+L[0][1]);return}
+  var c=L[0][0];
+  L.forEach(function(x){while(x[0].indexOf(c)!==0)c=c.slice(0,-1)});
+  if(c.length>base.length){TABBED=null;setBuf(pre+dir+c);return}
+  if(TABBED!==buf){TABBED=buf;return} /* the first tab only rings the bell */
+  var keep=buf,names=L.map(function(x){return x[0]+(x[1]==='/'?'/':'')}),wd=names.reduce(function(a,x){return Math.max(a,x.length)},0)+2,
+      n=Math.max(1,Math.floor(cols()/wd)),rows=Math.ceil(names.length/n),R=[];
+  for(var r=0;r<rows;r++){var l='';for(var i=r;i<names.length;i+=rows)l+=i+rows<names.length?names[i].padEnd(wd):names[i];R.push(l)}
+  bufNode=null;term.classList.remove('idle');setBuf('');
+  say(R);
+  queue(function(){showPrompt();setBuf(keep)},true);
 }
 function histNav(d){
   if(!hist.length)return;
@@ -1518,6 +1559,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
   if(PROFILE.dos&&!PROFILE.dcl&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
   if(PROFILE.dos&&!PROFILE.dcl&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
   if(k==='Enter')submit();
+  else if(k==='Tab'&&PROFILE.bash)complete();
   else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
   else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
   else return false;
@@ -1585,6 +1627,7 @@ if(coarse){
       var named=b[1].length>1;
       if(KEYS)KEYS(named?b[1]:'C-'+b[1]);
       else if(!named)ctrlKey({key:b[1],preventDefault:function(){}});
+      else if(b[1]==='Tab'&&PROFILE.bash)complete();
       kb.focus({preventScroll:true});
     });
     soft.appendChild(t);
@@ -1602,7 +1645,9 @@ $('#stage').addEventListener('click',function(e){
 kb.addEventListener('blur',function(){
   if(!bounced&&Date.now()-lastTap<700){bounced=true;setTimeout(function(){kb.focus({preventScroll:true})},0)}
 });
-kb.addEventListener('focus',function(){setTimeout(function(){window.scrollTo(0,0)},60)});
+kb.addEventListener('focus',function(){ /* the keyboard slides in over about a third of a second, and the browser may scroll on the way */
+  [60,250,500].forEach(function(t){setTimeout(fitViewport,t)});
+});
 
 /* ---------- cable ---------- */
 var NS='http://www.w3.org/2000/svg';
@@ -1674,7 +1719,7 @@ function fitViewport(){
   redraw();
 }
 fitViewport();
-if(vv)vv.addEventListener('resize',fitViewport);
+if(vv){vv.addEventListener('resize',fitViewport);vv.addEventListener('scroll',function(){if(vv.offsetTop)fitViewport()})}
 window.addEventListener('resize',fitViewport);
 window.addEventListener('orientationchange',function(){setTimeout(fitViewport,250)});
 drawCable();
