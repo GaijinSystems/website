@@ -23,7 +23,7 @@ P.command({names:['mail','email'],core:true,help:'read your mail',path:'/bin',
     P.say(M);
   }});
 
-P.command({names:['who'],help:'who is logged in',path:'/bin',
+P.command({names:['who'],path:'/bin',
   man:{what:'who is on the system',syn:'who [ am i ]',desc:[
     'lists everyone logged in: name, terminal, and the time they arrived. who am i lists only you.']},
   run:function(a){
@@ -37,7 +37,7 @@ P.command({names:['whoami'],
     'prints the name you logged in as.']},
   run:function(){P.typeLine(P.st.user)}});
 
-P.command({names:['date'],help:'the date, more or less',path:'/bin',
+P.command({names:['date'],path:'/bin',
   man:{what:'print the date',syn:'date',desc:[
     'prints the date and time.'],bugs:[
     'the year is always {year}.']},

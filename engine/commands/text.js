@@ -1,5 +1,5 @@
 /* PHOSPHOR-9 terminal: files and text tools (touch, mkdir, rmdir, cp, mv, chmod, grep, wc, sort,
-   uniq, head, tail, tr, tee, cal, sleep, true, false, tty, stty, file, sh, env, printenv).
+   uniq, head, tail, tr, tee, cal, sleep, true, false, tty, stty, file, sh, printenv, set, du).
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    They print with P.say and read with P.input, so the shell can pipe and redirect them. */
 (function(P){
@@ -187,7 +187,22 @@ cmd('sh','run a shell script','sh file','runs the commands in a file, one line a
 function showEnv(){
   P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
 }
-cmd('env','print the environment','env','prints the environment.',showEnv);
 cmd('printenv','print the environment','printenv','prints the environment.',showEnv);
+cmd('set','print the shell variables','set','prints the variables the shell knows about.',showEnv);
+cmd('du','how much disk a folder uses','du [ -s ] [ name ... ]','prints the size of each folder under name, in 512-byte blocks.',function(a){
+  var S=/s/.test(flags(a)),F=operands(a),L=[];
+  function walk(n,at,top){
+    var t=Math.ceil(P.fsize(n)/512);
+    if(n.type==='d'&&!n.prot)Object.keys(n.kids).sort().forEach(function(k){if(k!=='.'&&k!=='..')t+=walk(n.kids[k],at+'/'+k,false)});
+    if((n.type==='d'&&!S)||top)L.push(t+'\t'+at);
+    return t;
+  }
+  (F.length?F:['.']).forEach(function(x){
+    var n=P.find(x);
+    if(!n){P.typeLine(x+' not found','err');return}
+    walk(n,x,true);
+  });
+  P.say(L);
+});
 
 })(window.Phosphor);

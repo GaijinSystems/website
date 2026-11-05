@@ -5,7 +5,7 @@
 (function(P){
 'use strict';
 
-P.command({names:['dmesg'],help:'boot messages',path:'/etc',
+P.command({names:['dmesg'],path:'/etc',
   man:{what:'print the boot messages',syn:'dmesg',desc:[
     'prints what the system said to itself while it was starting up.']},
   run:function(){
@@ -21,7 +21,7 @@ function table(){
     .filter(function(f){return f.length>=5&&/^[xa-]$/i.test(f[0])})
     .map(function(f){return {show:f[0].toLowerCase(),p:[f[1],f[2],f[3],f.slice(4).join(' ')]}});
 }
-P.command({names:['ps'],help:'what is running',path:'/bin',
+P.command({names:['ps'],path:'/bin',
   man:{what:'process status',syn:'ps [ ax ]',desc:[
     'lists your processes: process id, terminal, cpu time used, and the command.',
     '',
@@ -36,7 +36,7 @@ P.command({names:['ps'],help:'what is running',path:'/bin',
     P.say(['  PID TTY  TIME CMD'].concat(R.map(function(p){return p[0].padStart(5)+' '+p[1].padEnd(3)+' '+p[2].padStart(5)+' '+p[3]})));
   }});
 
-P.command({names:['uptime'],help:'how long the machine has been up',path:'/bin',
+P.command({names:['uptime'],path:'/bin',
   man:{what:'show how long the system has been up',syn:'uptime',desc:[
     'prints the time, how long the machine has been running, how many users are logged in, and the load average over the last 1, 5 and 15 minutes.']},
   run:function(){ /* up since the machine was installed (or three days, early in the year) */
@@ -47,7 +47,7 @@ P.command({names:['uptime'],help:'how long the machine has been up',path:'/bin',
       Math.floor(m%1440/60)+':'+P.p2(m%60)+', 2 users, load average: '+la()+', '+la()+', '+la());
   }});
 
-P.command({names:['hostname'],help:'the name of this machine',path:'/bin',
+P.command({names:['hostname'],path:'/bin',
   man:{what:'print name of current host system',syn:'hostname',desc:[
     'prints the name of this machine. only the super-user may change it.']},
   run:function(a){
@@ -55,20 +55,21 @@ P.command({names:['hostname'],help:'the name of this machine',path:'/bin',
     P.typeLine(P.st.hostname);
   }});
 
-P.command({names:['ifconfig'],help:'network interfaces',path:'/etc',
+P.command({names:['ifconfig'],path:'/etc',
   man:{what:'configure network interface',syn:'ifconfig [ interface ]',desc:[
-    'prints the state of the network interfaces, or of the one named.'],bugs:[
-    'there is only one, and it only talks to itself.']},
+    'prints the state of the network interfaces, or of the one named.']},
   run:function(a){
-    if(a[0]&&a[0]!=='lo0'){P.typeLine('ifconfig: '+a[0]+': no such interface','err');return}
-    P.say(['lo0: flags=9<UP,LOOPBACK>','     inet 127.0.0.1 netmask 0xff000000']);
-    if(!a[0])P.typeLine('no other interfaces. '+P.profile.offline,'dim');
+    var L=P.profile.sec.ifconfig||[],at=-1;
+    if(!a[0]){P.say(L);return} /* the machine's == ifconfig == section; an interface starts at the margin */
+    L.forEach(function(l,i){if(String(l).indexOf(a[0]+':')===0)at=i});
+    if(at<0){P.typeLine('ifconfig: '+a[0]+': no such interface','err');return}
+    P.say([L[at],L[at+1]||'']);
   }});
 
 /* ping: localhost answers instantly (fake). The page's own server answers for real: each "packet"
    is a HEAD request for this page, so the times are genuine round trips. Nothing else is reachable.
    Switch it off with "commands: -ping" in site/config.js if you would rather it made no requests. */
-P.command({names:['ping'],help:'is anyone out there',path:'/etc',
+P.command({names:['ping'],path:'/etc',
   man:{what:'send echo requests to a host',syn:'ping [ -c count ] host',desc:[
     'sends count echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
     '',
@@ -118,7 +119,7 @@ P.command({names:['connect'],help:'plug into another machine',
     a=a.map(function(x){return x.toLowerCase()});
     if(!a[0]){
       P.say(['machines on the line:'].concat(P.allowed.map(function(id){
-        return [(id===P.machine?'* ':'  ')+id.padEnd(8)+' '+(P.catalog[id].name||''),'',{hang:11}];
+        return [(id===P.machine?'* ':'  ')+id.padEnd(8)+' '+(P.catalog[id].name||'')+(P.catalog[id].year?' ('+P.catalog[id].year+')':''),'',{hang:11}];
       })));
       return;
     }

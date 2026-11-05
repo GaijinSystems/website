@@ -8,13 +8,11 @@
 Phosphor.content(String.raw`
 
 badge:     PHOSPHOR-9
-year:      1979
-installed: 1979-01-10 16:12
+installed: 1979-01-01 00:01
 user:      guest
 homes:     /usr
 case:      sensitive
-commands:  -head, -printenv, -vi
-offline:   the arpanet is down the hall.
+commands:  -head, -printenv, -vi, -uptime, -ifconfig, -ping, -hostname, -whoami
 
 # The self-test, typed at power-on and after every logout.
 # LABEL | VALUE | pause   prints a dotted row; pause is milliseconds to wait after it.
@@ -59,6 +57,22 @@ it is plugged into your keyboard.
 please be gentle with it.
 
 # No help text after the name, so it stays out of the help list and has no manual page.
+== command: df ==
+/dev/rp0 21866
+/dev/rp3 104522
+
+== command: cu ==
+Connect failed: dial tone not detected
+
+== command: uucp ==
+uucp: no neighbours answering. try again tonight.
+
+== command: uux ==
+uux: no neighbours answering. try again tonight.
+
+== command: mesg ==
+is y
+
 == command: sudo ==
 ! sudo: not found
 it is {year}. there is no sudo.

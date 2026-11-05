@@ -138,7 +138,7 @@ var SITE=(location.hostname||'').toLowerCase(); /* the real server this page cam
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',notFound:'%s: not found',
     cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
-    title:'',badge:'PHOSPHOR-9',year:1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
+    title:'',badge:'PHOSPHOR-9',year:PH.machine&&PH.catalog[PH.machine].year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',
     welcome:null,about:[],mail:[],commands:[],files:[],dirs:[],man:{},aliases:[],sec:{},raw:{},problems:[]};
   var secs=[];
@@ -507,7 +507,7 @@ function monDay(d){return MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,
 function short(d){return monDay(d)+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
 function ctime(d){return DAYS[d.getDay()]+' '+short(d)+':'+p2(d.getSeconds())}
 var FD=(function(){var d=new Date(ST.login.getTime()-864e5);d.setHours(21,41,0,0);return d})(); /* home files: last night */
-var SD=(function(){ /* system files: the machine's install date (installed: 1979-01-10 16:12) */
+var SD=(function(){ /* system files: the machine's install date (installed: 1979-01-01 00:01) */
   var m=PROFILE.installed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
   return m?new Date(+m[1],m[2]-1,+m[3],+(m[4]||0),+(m[5]||0)):new Date(PROFILE.year,0,1);
 })();

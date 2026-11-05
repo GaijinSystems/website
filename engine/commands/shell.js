@@ -28,7 +28,7 @@ P.command({names:['man'],core:true,help:'the manual',
 
 /* aliases (csh, 1979): from the == aliases == section, plus any set this session */
 function aliasRow(a){var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
-P.command({names:['alias'],core:true,help:'list or set aliases',noHelpFlag:true, /* -h inside a quoted command is not a request for help */
+P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted command is not a request for help */
   man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
     'with no argument, lists every alias. with a name, shows that one alias.',
     '',
