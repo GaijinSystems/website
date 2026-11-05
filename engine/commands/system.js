@@ -149,8 +149,9 @@ P.command({names:['su'],path:'/bin',
   man:{what:'become super-user',syn:'su',desc:[
     'asks for the root password, then makes you the super-user, until you exit.'],bugs:[
     'you do not know the root password. yet.']},
-  run:function(){
+  run:function(a){
     var word=P.profile.rootPassword,line;
+    if(a[0]&&a[0]!=='root'&&a[0]!==P.st.owner&&a[0]!==P.st.user){P.typeLine('Unknown id: '+a[0]);return}
     if(P.st.user==='root')return;
     P.queue(function(){return P.readLine('Password:',false,true).then(function(l){line=l})});
     P.queue(function(){
@@ -180,7 +181,7 @@ P.command({names:['rm'],path:'/bin',
     'removes each file named. -r also removes folders and everything in them. you can only remove what is in your own home folder or in /tmp, and only until the terminal is switched off: a reload puts it all back.']},
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
-    if(!f.length){P.typeLine('usage: rm [-fri] file ...');return}
+    if(!f.length)return;
     f.forEach(function(x){
       var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}

@@ -156,7 +156,7 @@ var PROFILE=(function(){
     else if(k==='uppercase')P.upper=yes(v);
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
     else if(k==='not found')P.notFound=v;
-    else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8}
+    else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8;P.lsTight=lc[2]==='tight'}
     else if(k==='mail notice')P.mailNotice=v;
     else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
     else if(k==='login prompt')P.loginPrompt=v+' ';
@@ -624,7 +624,7 @@ function links(n){return n.type!=='d'?1:2+Object.keys(n.kids).filter(function(k)
 function longRow(name,n){
   var O=PROFILE.lsOwner,Z=PROFILE.lsSize; /* widths differ by system: 6 and 7 on V7, 8 and 8 at Berkeley */
   var sz=n.dev?(String(n.dev[0]).padStart(3)+','+String(n.dev[1]).padStart(3)).padStart(Z):String(fsize(n)).padStart(Z);
-  return [modeOf(n)+' '+String(links(n)).padStart(2)+' '+n.owner.slice(0,O).padEnd(O)+sz+' '+lsdate(n.date)+' '+name,n.prot?'dim':''];
+  return [modeOf(n)+(PROFILE.lsTight?'':' ')+String(links(n)).padStart(2)+' '+n.owner.slice(0,O).padEnd(O)+sz+' '+lsdate(n.date)+' '+name,n.prot?'dim':''];
 }
 function row(l,v){var d=Math.max(2,20-l.length);return l+' \u0003'+'.'.repeat(d)+'\u0004 '+v} /* dot leader squeezes on narrow glass */
 

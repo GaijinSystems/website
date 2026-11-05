@@ -172,7 +172,7 @@ cmd('cal','print a calendar','cal [ month ] year','prints a month, or a whole ye
     if(P.profile.year<1990){P.typeLine('usage: cal [month] year');return} /* a plain cal arrived with System V */
     var now=P.now();yr=now.getFullYear();mo=now.getMonth()+1;
   }
-  if(!yr||yr<1||yr>9999||(mo&&(mo<1||mo>12))){P.typeLine('usage: '+P.man.cal.syn);return}
+  if(!yr||yr<1||yr>9999||(mo&&(mo<1||mo>12))){P.typeLine('Bad argument');return}
   if(mo){P.say(month(yr,mo,true));return}
   var O=[String(yr).padStart(12)];
   for(var q=1;q<=12;q++){O.push('');O=O.concat(month(yr,q,false))}
@@ -196,7 +196,11 @@ cmd('true','succeed','true','does nothing, successfully.',function(){P.status(0)
 cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1)});
 cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine('/dev/tty0')});
 cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.',function(a){
-  if(!a.length){P.typeLine('speed '+(P.baud()||9600)+' baud');return}
+  if(!a.length){
+    P.typeLine('speed '+(P.baud()||9600)+' baud');
+    if(P.profile.year<1980)P.say(["erase = '#'; kill = '@'",'even -nl echo -tabs cr2']);
+    return;
+  }
   if(['0','50','75','110','134','150','200','300','600','1200','1800','2400','4800','9600'].indexOf(a[0])<0){P.typeLine('unknown mode: '+a[0],'err');return}
   P.baud(+a[0]);
 });
@@ -268,8 +272,8 @@ cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % 
   for(var i=1;i<w.length;i+=2){
     var o=w[i],x=w[i+1],n=parseInt(v,10),m=parseInt(x,10);
     if(x===undefined||(/^[-+*\/%]$/.test(o)&&(isNaN(n)||isNaN(m)))){P.typeLine('expr: syntax error','err');return}
-    if(o==='/'&&!m){P.typeLine('expr: division by zero','err');return}
-    v={'+':n+m,'-':n-m,'*':n*m,'/':Math.trunc(n/m),'%':n%m,'=':v===x?1:0,'!=':v!==x?1:0,'<':n<m?1:0,'>':n>m?1:0,'<=':n<=m?1:0,'>=':n>=m?1:0}[o];
+    v={'+':n+m,'-':n-m,'*':n*m,'/':m?Math.trunc(n/m):0,'%':m?n%m:0, /* the old machines just said 0 */
+'=':v===x?1:0,'!=':v!==x?1:0,'<':n<m?1:0,'>':n>m?1:0,'<=':n<=m?1:0,'>=':n>=m?1:0}[o];
     if(v===undefined){P.typeLine('expr: syntax error','err');return}
   }
   P.typeLine(String(v));
@@ -279,7 +283,17 @@ function showEnv(){
   P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
 }
 cmd('printenv','print the environment','printenv','prints the environment.',showEnv);
-cmd('set','print the shell variables','set','prints the variables the shell knows about.',showEnv);
+cmd('set','print the shell variables','set','prints the variables the shell knows about.',function(){
+  P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1='+(P.profile.csh?'% ':'$ '),'PS2=> '].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
+});
+cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
+  if(!a.length){P.typeLine('Usage: ln target [ newname ]');return}
+  var n=P.find(a[0],true),to=P.norm(a[1]||a[0].split('/').pop());
+  if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
+  if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
+  var dir=P.find(to.slice(0,to.lastIndexOf('/'))||'/',true);
+  dir.kids[to.split('/').pop()]=n;
+});
 cmd('du','how much disk a folder uses','du [ -s ] [ name ... ]','prints the size of each folder under name, in 512-byte blocks.',function(a){
   var S=/s/.test(flags(a)),F=operands(a),L=[];
   function walk(n,at,top){
