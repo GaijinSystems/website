@@ -57,7 +57,7 @@ var PH=window.Phosphor={
   upstream:'https://github.com/GaijinSystems/phosphor', /* default for the source command */
   texts:[],defs:[],hooks:[],seen:{},catalog:{},allowed:[],machine:null,early:[],
   content:function(s){var f=me();PH.texts.push({src:String(s),site:!f||/(^|\/)site\//.test(f)})}, /* settings and == sections == */
-  command:function(def){me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
+  command:function(def){def.from=me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
   setup:function(fn){me();PH.hooks.push(fn)},     /* machine hook: runs after the file tree exists */
   machines:function(m){me();Object.assign(PH.catalog,m)}, /* machines/machines.js: what can be plugged in */
   start:start
@@ -156,6 +156,10 @@ var PROFILE=(function(){
     else if(k==='uppercase')P.upper=yes(v);
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
     else if(k==='not found')P.notFound=v;
+    else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
+    else if(k==='shell')P.dos=/^dos$/i.test(v);           /* backslash paths; no quotes, $ or ; */
+    else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
+    else if(k==='login')P.noLogin=!yes(v);                /* no login: it just boots */
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
     else if(k==='user'){if(LOGIN_NAME.test(v))P.user=v.toLowerCase()}
@@ -413,10 +417,24 @@ function showPrompt(p,mode){
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
   var d=document.createElement('div');d.className='line';
   bufNode=document.createTextNode(MODE==='password'?'':UP(buf));
-  d.appendChild(document.createTextNode(UP(p==null?PROFILE.prompt:p)));d.appendChild(bufNode);d.appendChild(cursor);
+  d.appendChild(document.createTextNode(UP(p==null?(promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
+var promptFn=null; /* a machine whose prompt changes as you go */
 function prompt(p,mode){queue(function(){showPrompt(p,mode)},true)}
+function readKey(p){ /* one keypress, no return needed. Call it from inside a queued step. */
+  return new Promise(function(res){
+    showPrompt(p==null?'':p,'read');
+    KEYS=function(k){
+      if(k.length!==1&&k!=='Enter')return;
+      KEYS=null;
+      var at=cursor.parentNode;
+      if(at&&k.length===1)at.insertBefore(document.createTextNode(k),cursor);
+      bufNode=null;setBuf('');term.classList.remove('idle');
+      res(k);
+    };
+  });
+}
 var READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a line from the keyboard */
 function readLine(p,trap){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step.
                               trap: the program deals with ^C itself, and gets INT */
@@ -490,7 +508,8 @@ function input(names,done){ /* the lines a command works on: named files, else i
 
 /* ---------- shell state ---------- */
 var OWNER=PROFILE.owner;
-var ST={owner:OWNER,user:PROFILE.user,home:PROFILE.homes+'/'+PROFILE.user,cwd:PROFILE.homes+'/'+PROFILE.user,site:SITE,hostname:PROFILE.host,login:now()};
+var HOME0=PROFILE.home||PROFILE.homes+'/'+PROFILE.user;
+var ST={owner:OWNER,user:PROFILE.user,home:HOME0,cwd:HOME0,site:SITE,hostname:PROFILE.host,login:now()};
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
 function now(){ /* the time of day, moved to the machine's year (February 29 becomes the 28th in a non-leap year) */
@@ -538,6 +557,7 @@ function put(abs,type,o){ /* create a node, making any missing parent folders */
 function home(p){return p.charAt(0)==='/'?p:p.slice(0,2)==='~/'?ST.home+p.slice(1):ST.home+'/'+p}
 function norm(p){ /* absolute path; handles ~, . and .. */
   p=PROFILE.fold(p);
+  if(PROFILE.dos)p=p.replace(/^c:/,'').replace(/\\/g,'/');
   if(p==='~'||p.slice(0,2)==='~/')p=ST.home+p.slice(1);
   var s=p.charAt(0)==='/'?[]:parts(ST.cwd);
   parts(p).forEach(function(x){if(x==='..')s.pop();else if(x!=='.')s.push(x)});
@@ -564,7 +584,7 @@ function canWrite(abs){ /* your home folder, or a folder anyone may write in; no
   var dir=find(dirOf(abs));
   if(!dir||dir.type!=='d'||dir.prot)return false;
   var at=pathOf(dir);
-  return dir.mode==='drwxrwxrwx'||at===ST.home||at.indexOf(ST.home+'/')===0;
+  return dir.mode==='drwxrwxrwx'||ST.home==='/'||at===ST.home||at.indexOf(ST.home+'/')===0;
 }
 function writeFile(p,lines,append){ /* false if it cannot be written */
   var abs=norm(p),ex=find(abs,true);
@@ -608,6 +628,7 @@ function install(n,fn,noh){ /* later definitions of the same name win */
 }
 PH.defs.forEach(function(d){
   if(typeof d.enabled==='function'&&!d.enabled(PROFILE))return; /* e.g. about, only when there is an about section */
+  if(PROFILE.noUnix&&!d.terminal&&/(^|\/)engine\//.test(d.from||''))return; /* terminal: part of the terminal, not the OS */
   var names=(d.names||[]).filter(function(n){return PROFILE.off.indexOf(n)<0});
   if(!names.length||typeof d.run!=='function')return;
   names.forEach(function(n){install(n,d.run,!!d.noHelpFlag)});
@@ -663,6 +684,7 @@ var LOGOUT=false;
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
+  setPrompt:function(f){promptFn=f},readKey:readKey,
   fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
@@ -718,7 +740,7 @@ function runOne(s,words){
   if(f){
     try{f(args,s,words)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   }
-  else typeLine(PROFILE.notFound.replace('%s',word),'err');
+  else if(!(PH.fallback&&PH.fallback(word,s,args)))typeLine(PROFILE.notFound.replace('%s',word),'err');
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 function envOf(k){
@@ -759,7 +781,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function endWord(){
     if(w===null)return;
     if(redir){if(redir==='<')st.in=w;else{st.out=w;st.app=redir==='>>'}redir=null}
-    else st.words=st.words.concat(quoted?[w]:glob(w));
+    else st.words=st.words.concat(quoted||PROFILE.dos?[w]:glob(w));
     w=null;quoted=false;
   }
   function endStage(){endWord();if(st.words.length||st.in||st.out)stages.push(st);st=fresh()}
@@ -768,6 +790,13 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   while(i<s.length){
     var ch=s.charAt(i),two=s.substr(i,2),close;
     if(/\s/.test(ch)){endWord();if(!redir)st.raw+=ch;i++;continue}
+    if(PROFILE.dos){ /* COMMAND.COM: pipes and redirection, and nothing else is special */
+      if(ch==='|'){endStage();i++;continue}
+      if(ch==='>'||ch==='<'){endWord();redir=two==='>>'?'>>':ch;i+=redir.length;continue}
+      if(!redir)st.raw+=ch;
+      w=(w||'')+ch;i++;
+      continue;
+    }
     if(ch==='#'&&w===null)break;
     if(two==='&&'||two==='||'){endList(two);i+=2;continue}
     if(ch==='|'){endStage();i++;continue}
@@ -846,7 +875,7 @@ function execSeg(seg){
 }
 function runScript(lines){ /* each line runs in turn, inside the current step */
   lines.forEach(function(l){
-    queue(function(){splitCmds(l).forEach(function(seg){if(seg.trim())execSeg(expand(seg))})});
+    queue(function(){(PROFILE.dos?[dosLine(l)]:splitCmds(l)).forEach(function(seg){if(seg.trim())execSeg(expand(seg))})});
   });
 }
 function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start of a word or after =, so don't ; won't is two commands */
@@ -859,7 +888,15 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
   L.push(s.slice(start));
   return L;
 }
+function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of these */
+  return s.replace(/^(\s*)([a-z0-9]+)(?=[\\\/.])/i,function(m,sp,c){return has(CMDS,c.toLowerCase())?sp+c+' ':m});
+}
 function run(raw){
+  if(PROFILE.dos){
+    if(raw.trim())execSeg(dosLine(raw));
+    queue(function(){showPrompt()},true);
+    return;
+  }
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
   var segs=[];
   splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
@@ -915,6 +952,8 @@ kb.addEventListener('input',function(){
 });
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
   var k=e.key,d=k==='ArrowUp'||k==='PageUp'?-1:1;
+  if(PROFILE.dos&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
+  if(PROFILE.dos&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
   if(k==='Enter')submit();
   else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
   else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
@@ -943,12 +982,13 @@ function eof(){ /* ^D: end of input, or logout at an empty prompt */
     r(left||null);
     return;
   }
-  if(bufNode&&MODE==='shell'&&!buf){bufNode=null;term.classList.remove('idle');run('exit')}
+  if(bufNode&&MODE==='shell'&&!buf&&!PROFILE.dos){bufNode=null;term.classList.remove('idle');run('exit')}
 }
 function ctrlKey(e){
   var k=(e.key||'').toLowerCase();
   if(k==='c'){if(String(window.getSelection&&getSelection()))return false;interrupt()}
   else if(k==='d')eof();
+  else if(k==='z'&&PROFILE.dos)eof();
   else if(k==='s')HOLD=true;
   else if(k==='q'){HOLD=false;if(held){var h=held;held=null;h()}}
   else if(k==='u')setBuf('');
@@ -1080,8 +1120,10 @@ function boot(){
   pause(900); /* tube warm-up */
   problems();
   banner();
-  typeLine(ST.user,'',null,{pre:'login: ',hold:700,speed:2.2}); /* first visit: auto-login as guest */
-  pause(450);
+  if(!PROFILE.noLogin){
+    typeLine(ST.user,'',null,{pre:'login: ',hold:700,speed:2.2}); /* first visit: auto-login as guest */
+    pause(450);
+  }
   welcome();
   prompt();
 }

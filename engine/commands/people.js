@@ -3,14 +3,14 @@
 (function(P){
 'use strict';
 
-P.command({names:['about'],help:'the owner of this machine',
+P.command({names:['about'],terminal:true,help:'the owner of this machine',
   enabled:function(p){return p.about.length>0}, /* no == about == section: no about command, no about file */
   man:{what:'who owns this machine',syn:'about',desc:[
     'prints the about file. same as cat about.']},
   run:function(){P.say(P.profile.about)}});
 
 /* the letter is the whole == mail == section; the engine only adds the From line */
-P.command({names:['mail','email'],core:true,help:'read your mail',path:'/bin',
+P.command({names:['mail'],core:true,terminal:true,help:'read your mail',path:'/bin',
   man:{what:'read your mail',syn:'mail',desc:[
     'prints your mail. there is usually one letter.'],bugs:[
     'there is no modem, so you cannot answer it from here.']},
@@ -48,7 +48,7 @@ P.command({names:['date'],path:'/bin',
 
 /* the GNU AGPL asks that people using a changed copy can get its source: set "source:" in
    site/config.js to wherever your copy's source lives. Unset, it points at the original. */
-P.command({names:['source'],core:true,help:'where to get this terminal',
+P.command({names:['source'],core:true,terminal:true,help:'where to get this terminal',
   man:{what:'where to get this terminal',syn:'source',desc:[
     'prints where to get the source code for this terminal. it is free software: you may study, change and share it under the gnu affero general public license, version 3 or later.']},
   run:function(){
