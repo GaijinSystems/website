@@ -80,7 +80,7 @@ body{
   scrollbar-width:none;
 }
 #term::-webkit-scrollbar{display:none}
-#out,.ghost{
+#out,.ghost,#full{
   padding:calc(var(--fs)*1.6) calc(var(--fs)*2.1) calc(var(--fs)*1.9);
   font-size:var(--fs);line-height:1.28;
 }
@@ -100,6 +100,9 @@ body{
   background:var(--phos);
   box-shadow:0 0 6px rgba(var(--phos-rgb),.9),0 0 22px rgba(var(--phos-rgb),.35);
 }
+#full .line{white-space:pre;word-break:normal;overflow:hidden}
+#full{min-height:100%}
+.fcur{background:var(--phos);color:#020603;text-shadow:none}
 #term.idle .cursor{animation:blink 1.06s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 

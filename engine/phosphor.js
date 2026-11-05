@@ -22,6 +22,28 @@ var HAS=Object.prototype.hasOwnProperty;
 function has(o,k){return HAS.call(o,k)}
 var LOGIN_NAME=/^[a-z][a-z0-9_]{0,7}$/i;
 function lineOf(l){return Array.isArray(l)?l:[l,'']} /* a line is a string or [text,class,options] */
+/* the patterns of ed and vi are basic regular expressions: \( \) group, and ( ) + ? | { are ordinary */
+function bre(s){
+  var o='',i=0,cls=false;
+  for(;i<s.length;i++){
+    var c=s.charAt(i);
+    if(cls){o+=c==='\\'?'\\\\':c;if(c===']')cls=false;continue}
+    if(c==='['){
+      cls=true;o+=c;
+      if(s.charAt(i+1)==='^'){o+='^';i++}
+      if(s.charAt(i+1)===']'){o+='\\]';i++}
+      continue;
+    }
+    if(c==='\\'&&i+1<s.length){
+      var n=s.charAt(++i);
+      o+=/[(){}]/.test(n)?n:/[1-9]/.test(n)?'\\'+n:'\\'+n;
+      continue;
+    }
+    o+=/[()+?|{}]/.test(c)?'\\'+c:c;
+  }
+  return o;
+}
+
 function unquote(s){return s.replace(/^(['"])((?:(?!\1).)*)\1$/,'$2')} /* one quoted string only: "a" ; "b" keeps its quotes */
 function setAlias(L,from,to){ /* a new alias replaces any with the same words */
   var k=from.join(' ');
@@ -114,7 +136,7 @@ function build(){
 /* ---------- content (parsed from every Phosphor.content block, in load order) ---------- */
 var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
 var PROFILE=(function(){
-  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',
+  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',notFound:'%s: not found',
     cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',
@@ -133,6 +155,7 @@ var PROFILE=(function(){
     else if(k==='sound')P.sound=yes(v);
     else if(k==='uppercase')P.upper=yes(v);
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
+    else if(k==='not found')P.notFound=v;
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
     else if(k==='user'){if(LOGIN_NAME.test(v))P.user=v.toLowerCase()}
@@ -394,9 +417,57 @@ function showPrompt(p,mode){
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
 function prompt(p,mode){queue(function(){showPrompt(p,mode)},true)}
-var READ=null; /* a program is waiting for a line from the keyboard */
-function readLine(p){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step. */
-  return new Promise(function(res){READ=res;showPrompt(p==null?'':p,'read')});
+var READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a line from the keyboard */
+function readLine(p,trap){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step.
+                              trap: the program deals with ^C itself, and gets INT */
+  return new Promise(function(res){READ=res;TRAP=!!trap;showPrompt(p==null?'':p,'read')});
+}
+/* The glass as a screen: a program draws whole lines, and every key comes to it. Used by vi. */
+var KEYS=null;
+function fullscreen(keys,onResize){
+  var el=document.createElement('div');el.id='full';
+  out.style.display='none';term.classList.remove('idle');term.appendChild(el);
+  KEYS=keys;
+  var said='',S={
+    rows:24,cols:80,
+    draw:function(lines,r,c){
+      var i,f=document.createDocumentFragment();
+      for(i=0;i<lines.length;i++){
+        var d=document.createElement('div');d.className='line';
+        if(i===r){
+          var t=lines[i],cu=document.createElement('span');cu.className='fcur';
+          d.appendChild(document.createTextNode(t.slice(0,c)));
+          cu.textContent=t.charAt(c)||' ';
+          d.appendChild(cu);
+          d.appendChild(document.createTextNode(t.slice(c+1)));
+        }
+        else d.textContent=lines[i];
+        f.appendChild(d);
+      }
+      el.textContent='';el.appendChild(f);
+    },
+    say:function(m){if(m!==said){said=m;announce(m)}},
+    close:function(){
+      KEYS=null;window.removeEventListener('resize',size);
+      el.remove();out.style.display='';
+      term.scrollTop=term.scrollHeight;
+    }
+  };
+  function size(){
+    var p=document.createElement('span');p.textContent='0000000000';
+    p.style.cssText='position:absolute;visibility:hidden;white-space:pre';
+    el.appendChild(p);
+    var r=p.getBoundingClientRect(),cs=getComputedStyle(el);p.remove();
+    var cw=r.width/10,lh=parseFloat(cs.lineHeight)||r.height||16;
+    var w=el.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+    var h=term.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
+    S.cols=Math.max(20,cw>0?Math.floor(w/cw+.01):80);
+    S.rows=Math.max(5,Math.floor(h/lh+.01));
+    if(onResize&&KEYS)onResize();
+  }
+  var keep=onResize;onResize=null;size();onResize=keep;
+  window.addEventListener('resize',size);
+  return S;
 }
 function input(names,done){ /* the lines a command works on: named files, else its pipe or <, else the keyboard */
   if(names.length){
@@ -592,6 +663,7 @@ var LOGOUT=false;
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
+  fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
@@ -646,7 +718,7 @@ function runOne(s,words){
   if(f){
     try{f(args,s,words)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   }
-  else typeLine(word+': not found','err');
+  else typeLine(PROFILE.notFound.replace('%s',word),'err');
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 function envOf(k){
@@ -816,7 +888,7 @@ function login(name){
 /* ---------- input ---------- */
 function renderBuf(){if(bufNode){bufNode.data=MODE==='password'?'':UP(buf);scrollBottom()}}
 function setBuf(v){
-  buf=v.replace(/[\r\n]/g,'').slice(0,64);
+  buf=v.replace(/[\r\n]/g,'').slice(0,255);
   if(kb.value!==buf)kb.value=buf;
   renderBuf();
 }
@@ -838,6 +910,7 @@ function histNav(d){
   setBuf(hist[hi]||'');
 }
 kb.addEventListener('input',function(){
+  if(KEYS){var v=kb.value;kb.value='';for(var i=0;i<v.length;i++)KEYS(v.charAt(i));return}
   var grew=kb.value.length>buf.length;setBuf(kb.value);if(grew)click(.667);
 });
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
@@ -852,6 +925,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var there=cursor.parentNode;
   if(there)there.insertBefore(document.createTextNode('^C'),cursor);
+  if(READ&&TRAP){var t=READ;READ=null;bufNode=null;setBuf('');term.classList.remove('idle');t(INT);return}
   if(bufNode&&!READ){ /* at a prompt: give up on this line */
     if(MODE!=='shell')return;
     bufNode=null;setBuf('');term.classList.remove('idle');
@@ -882,7 +956,14 @@ function ctrlKey(e){
   e.preventDefault();
   return true;
 }
+var NAMED=/^(Escape|Enter|Backspace|Tab|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|PageUp|PageDown)$/;
 document.addEventListener('keydown',function(e){
+  if(KEYS){ /* a full-screen program has every key */
+    if(e.metaKey||e.altKey||e.isComposing)return;
+    var name=e.ctrlKey&&e.key.length===1?'C-'+e.key.toLowerCase():e.key;
+    if(name.length===1||NAMED.test(name)||/^C-/.test(name)){e.preventDefault();KEYS(name)}
+    return;
+  }
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&ctrlKey(e))return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.target===kb){if(!e.isComposing)navKey(e);return}
