@@ -35,10 +35,11 @@ P.command({names:['w'],path:'/usr/ucb',enabled:on,
   }});
 /* the shell's own variables, and the rest of what it does for itself */
 function builtin(names,run){P.command({names:names,noHelpFlag:true,enabled:on,run:run})}
-function value(x){ /* a word as written: 'as is', "with $variables", or bare */
+function value(x){ /* a word as written: 'as is', "with $variables", or bare, where \ keeps the next character */
   x=x.trim();
   if(/^'.*'$/.test(x))return P.unguard(x.slice(1,-1));
-  return P.vars(P.unquote(x));
+  if(/^".*"$/.test(x))return P.vars(P.unquote(x));
+  return x.split(/(\\.)/).map(function(p,i){return i%2?P.unguard(p.charAt(1)):P.vars(P.unquote(p))}).join('');
 }
 builtin(['set'],function(){
   var t=P.source().replace(/^\s*set\s*/,''),m;
@@ -48,7 +49,9 @@ builtin(['set'],function(){
     P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
     return;
   }
-  while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|\S*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
+  try{
+    while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|\S*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
+  }catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
   if(t)P.typeLine('set: Syntax error.','err');
 });
 builtin(['unset'],function(a){if(!a.length){P.typeLine('unset: Too few arguments.','err');return}a.forEach(function(k){delete P.shvars[k]})});
@@ -72,19 +75,31 @@ function closing(s,from){ /* the ) that matches, outside quotes */
   }
   return -1;
 }
-function operator(e){ /* [left,op,right], looking outside quotes */
-  var q=null;
+function operator(e,ops){ /* [left,op,right] for the first of them, or by default the first comparison, outside quotes and ( ) */
+  var q=null,depth=0;
   for(var i=0;i<e.length;i++){
     var c=e.charAt(i),two=e.substr(i,2);
     if(q){if(c===q)q=null}
     else if(c==='"'||c==="'")q=c;
+    else if(c==='(')depth++;
+    else if(c===')')depth--;
+    else if(depth)continue;
+    else if(ops){if(two===ops)return [e.slice(0,i),two,e.slice(i+2)]}
     else if(/^(==|!=|>=|<=)$/.test(two))return [e.slice(0,i),two,e.slice(i+2)];
     else if(c==='>'||c==='<')return [e.slice(0,i),c,e.slice(i+1)];
   }
   return null;
 }
 function truth(e){ /* true, false, or null when it makes no sense */
-  var o=operator(e),q;
+  e=e.trim();
+  var o=operator(e,'||')||operator(e,'&&'),q;
+  if(o){ /* both sides, as csh substitutes the whole line before it evaluates any of it */
+    var x=truth(o[0]),y=truth(o[2]);
+    if(x===null||y===null)return null;
+    return o[1]==='||'?x||y:x&&y;
+  }
+  if(e.charAt(0)==='('&&closing(e,1)===e.length-1)return truth(e.slice(1,-1));
+  o=operator(e);
   if(o){
     var l=value(o[0]),r=value(o[2]);
     if(o[1]==='==')return l===r;
@@ -97,6 +112,7 @@ function truth(e){ /* true, false, or null when it makes no sense */
     var yes=!!n&&(q[2]!=='d'||n.type==='d')&&(q[2]!=='f'||n.type!=='d');
     return q[1]?!yes:yes;
   }
+  if((q=/^!\s*(.+)$/.exec(e))&&!/^-?\d+$/.test(q[1])){var inner=truth(q[1]);return inner===null?null:!inner}
   var w=value(e);
   if((q=/^!\s*(-?\d+)$/.exec(w)))return +q[1]===0;
   return /^-?\d+$/.test(w)?+w!==0:null;
