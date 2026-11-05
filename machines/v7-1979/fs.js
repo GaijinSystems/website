@@ -3,15 +3,11 @@
    Runs once at start, before the site's home files are added. */
 Phosphor.setup(function(P){
   'use strict';
-  var SD=P.systemDate,ST=P.st,OWNER=ST.owner;
-  function sys(p,type,o){return P.put(p,type,Object.assign({owner:'root',date:SD},o))}
+  var ST=P.st,OWNER=ST.owner,sys=P.sys;
 
   sys('/bin','d',{owner:'bin'});
   sys('/etc','d');
-  Object.keys(P.paths).sort().forEach(function(b){ /* a program file for each command that has a path */
-    var dir=P.paths[b],h=0;for(var i=0;i<b.length;i++)h=(h*31+b.charCodeAt(i))%7919;
-    sys(dir+'/'+b,'f',{owner:dir==='/bin'?'bin':'root',bin:true,size:2048+h});
-  });
+  P.programs(function(dir,h){return {owner:dir==='/bin'?'bin':'root',bin:true,size:2048+h}});
   sys('/dev','d');
   sys('/dev/console','c',{mode:'crw--w--w-',dev:[0,0]});
   sys('/dev/tty0','c',{mode:'crw--w--w-',dev:[1,0]});

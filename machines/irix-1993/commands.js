@@ -23,7 +23,7 @@ cmd('versions','list installed software','versions','lists the software installe
   P.say(['I = Installed, R = Removed','','   Name                 Date      Description','I  eoe1                 11/20/92  Execution Only Environment 1, 4.0.5','I  eoe2                 11/20/92  Execution Only Environment 2, 4.0.5','I  dev                  11/20/92  Development System, 4.0.5','I  demos                11/20/92  Graphics Demonstrations, 4.0.5','I  4Dwm                 11/20/92  4Dwm Window Manager, 4.0.5']);
 });
 cmd('env','print the environment','env','prints the environment.',function(){
-  P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
+  P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(P.envRows()));
 },'/bin');
 cmd('ps','process status','ps [ -ef ]','lists your processes. -e lists everyone\'s, and -f shows them in full.',function(a){
   var f=a.join(''),T=[['root',0,0,'sched'],['root',1,0,'/etc/init'],['root',112,1,'/usr/etc/routed'],['root',131,1,'/usr/etc/inetd'],['root',144,1,'/usr/lib/lpsched'],['root',188,1,'/usr/bin/X11/Xsgi -bs'],[P.st.owner,201,188,'4Dwm'],[P.st.owner,233,201,'fsn'],[P.st.user,244,1,'-csh'],[P.st.user,317,244,'ps '+a.join(' ')]];
@@ -37,9 +37,9 @@ cmd('df','disk free','df [ -k ]','shows how full each disk is.',function(){
 cmd('gr_osview','graphical system monitor','gr_osview','shows what the machine is doing, in pictures.',function(){
   P.say(['gr_osview: cannot open display: this is a serial line.']);
 });
-['flight','buttonfly','dog','ideas','arena','newave','insect'].forEach(function(n){
-  P.command({names:[n],hidden:true,run:function(){P.typeLine(n+": can't open display. you are at 9600 baud; the graphics are in the other room.")}});
-});
+P.stubs(['flight','buttonfly','dog','ideas','arena','newave','insect'],function(n){
+  P.typeLine(n+": can't open display. you are at 9600 baud; the graphics are in the other room.");
+},{hidden:true});
 
 /* a brief nod to the film; ctrl-c gets you out */
 P.command({names:['access'],noHelpFlag:true,hidden:true,run:function(a){
@@ -68,8 +68,7 @@ function Fsn(S,done){
   }
   function draw(){
     var W=S.cols,R=S.rows,cw=14,ch=9,cols=Math.max(1,Math.floor((W-2)/cw)),rows=Math.max(1,Math.floor((R-4)/ch));
-    var page=Math.floor(sel/(cols*rows)),C=[],i,y;
-    for(i=0;i<R;i++)C.push(' '.repeat(W).split(''));
+    var page=Math.floor(sel/(cols*rows)),C=S.grid(),i,y;
     function put(x,y0,s){for(var j=0;j<s.length;j++)if(y0>=0&&y0<R&&x+j>=0&&x+j<W)C[y0][x+j]=s.charAt(j)}
     put(0,0,'File System Navigator');put(Math.max(0,W-at.length-1),0,at);
     put(0,1,'-'.repeat(W-1));
@@ -87,13 +86,13 @@ function Fsn(S,done){
     put(0,R-2,'-'.repeat(W-1));
     var it2=items[sel],info=it2?(it2.up?'parent folder':it2.node.type==='d'?'folder, '+Object.keys(it2.node.kids).length+' items':P.fsize(it2.node)+' bytes'+(it2.node.prot?', locked':'')):'empty';
     put(0,R-1,(msg||(first?"this is a unix system. you know this.":(it2?it2.name+': '+info:info))+'   arrows, return, backspace, q').slice(0,W-1));
-    S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),curR,curC);
+    S.drawGrid(C,curR,curC);
     S.say(msg||(it2?it2.name+': '+info:'empty folder'));
   }
   function open(){
     var it=items[sel];
     if(!it)return;
-    if(it.up){at=at.slice(0,at.lastIndexOf('/'))||'/';sel=0;load();return}
+    if(it.up){at=P.dirOf(at);sel=0;load();return}
     if(it.node.prot){msg=it.name+': permission denied';return}
     if(it.node.type==='d'){at=(at==='/'?'':at)+'/'+it.name;sel=0;load();return}
     if(it.node.bin){msg=it.name+': a program. this is not the moment.';return}
@@ -110,7 +109,7 @@ function Fsn(S,done){
     else if(k==='ArrowDown'||k==='j')sel=Math.min(items.length-1,sel+cols);
     else if(k==='ArrowUp'||k==='k')sel=Math.max(0,sel-cols);
     else if(k==='Enter')open();
-    else if(k==='Backspace'){if(at!=='/'){at=at.slice(0,at.lastIndexOf('/'))||'/';sel=0;load()}}
+    else if(k==='Backspace'){if(at!=='/'){at=P.dirOf(at);sel=0;load()}}
     draw();
   },draw:draw};
 }
@@ -118,11 +117,6 @@ P.command({names:['fsn'],help:'browse the files in pictures',path:'/usr/sbin',
   man:{what:'file system navigator',syn:'fsn',desc:['shows the file system as a landscape: folders and files stand as blocks, taller for bigger. the arrow keys move, return goes in, backspace comes out, and q leaves.'],bugs:['the real thing flies, in 3d. this is a serial line.']},
   run:function(){
     if(P.piped()){P.typeLine("fsn: can't open display",'err');return}
-    P.queue(function(){
-      return new Promise(function(res){
-        var V,S=P.fullscreen(function(k){V.feed(k)},function(){V.draw()});
-        V=Fsn(S,res);
-      });
-    });
+    P.program(Fsn);
   }});
 })(window.Phosphor);

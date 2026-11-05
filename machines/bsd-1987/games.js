@@ -47,9 +47,7 @@ function run(gen){
     try{r=gen.next(v)}
     catch(e){if(e!==EXIT)throw e;return}
     if(r.done)return;
-    var line;
-    P.queue(function(){return P.readLine(r.value||'',true).then(function(l){line=l})});
-    P.queue(function(){step(line===P.INT?null:line)});
+    P.ask(r.value||'',function(line){step(line===P.INT?null:line)},true);
   })();
 }
 run.EXIT={};
@@ -418,7 +416,7 @@ game('banner','print large banner on printer','banner [ -w width ] [ message ...
             if(on[linen++]){
               var s='';
               for(j=0;j<=max;j++)if(on[j])s+=line[j];
-              out.push(s.replace(/\s+$/,''));
+              out.push(s.trimEnd());
             }
           }
           for(j=0;j<DW;j++)line[j]=' ';
@@ -497,16 +495,15 @@ function Hangman(S,done){
     draw();
   }};
 }
+function tooSmall(S,done,last,msg){ /* leave at once, once the program is under way */
+  setTimeout(function(){if(msg)last.push(msg);S.close();done()},0);
+  return {feed:function(){},draw:function(){}};
+}
 function fullProgram(name,make){
   return function(a,raw,w){
     if(P.piped()){P.typeLine(name+': needs a terminal','err');return}
     var last=[];
-    P.queue(function(){
-      return new Promise(function(res){
-        var V,S=P.fullscreen(function(k){V.feed(k)},function(){if(V.resize)V.resize();else V.draw()});
-        V=make(S,res,w.slice(1),last);
-      });
-    });
+    P.program(function(S,res){return make(S,res,w.slice(1),last)});
     P.queue(function(){P.say(last)}); /* its parting words, once the glass is back */
   };
 }
@@ -515,7 +512,7 @@ game('hangman','computer version of the game hangman','hangman','guess the word 
 /* ---------- worm, by Michael Toy ---------- */
 function Worm(S,done,argv,last){
   var start=atoi(argv[0]),LINES=S.rows,COLS=S.cols,HEAD='@',BODY='o',RUN=8;
-  if(COLS<18||LINES<5){setTimeout(function(){S.close();done()},0);return {feed:function(){},draw:function(){}}}
+  if(COLS<18||LINES<5)return tooSmall(S,done,last);
   if(start<=0||start>Math.trunc((LINES-3)*(COLS-2)/3))start=7;
   var tv=[],growing=0,running=0,score=0,lastch='',body=[],timer=null,over=false,visible;
   var i,y,x;
@@ -536,11 +533,10 @@ function Worm(S,done,argv,last){
     bp=np;
   }
   visible=start+1;
-  function rnd(n){return ran(n)}
   function prize(){
-    var p,v=rnd(9)+1;
+    var p,v=ran(9)+1;
     if(visible===(LINES-3)*(COLS-3)-1){finish('You won!');return}
-    do{p={y:rnd(LINES-3)+1,x:rnd(COLS-3)+1}}while(tv[p.y][p.x]!==' ');
+    do{p={y:ran(LINES-3)+1,x:ran(COLS-3)+1}}while(tv[p.y][p.x]!==' ');
     tv[p.y][p.x]=String(v);
   }
   function draw(){
@@ -612,7 +608,7 @@ game('worm','play the growing worm game','worm [ size ]','steer the worm to the 
 function Robots(S,done,argv,last){
   var flags=argv.join(''),Start=/a/.test(flags)?4:1,Tele=/t/.test(flags),games=1+(flags.match(/n/g)||[]).length;
   var YF=S.rows-1,XF=Math.min(60,S.cols-21);
-  if(XF<20||YF<12){setTimeout(function(){last.push('Need at least a 12x41 screen');S.close();done()},0);return {feed:function(){},draw:function(){}}}
+  if(XF<20||YF<12)return tooSmall(S,done,last,'Need at least a 12x41 screen');
   var DESC=['Directions:','','y k u',' \\|/','h- -l',' /|\\','b j n','','Commands:','','w:  wait for end','t:  teleport','q:  quit','^L: redraw screen','','Legend:','','+:  robot','*:  junk heap','@:  you','','Score: 0'];
   if(S.rows<24)DESC=DESC.filter(function(l){return l});
   var MAX=40,field,robots,scrap,me,level,score,dead,waiting,running,runch,count,cnt,num,wb,msg,bonus,query=null,timer=null,best=0,tele=false,over=false,bx=[];
@@ -632,8 +628,7 @@ function Robots(S,done,argv,last){
   }
   function init(){dead=false;waiting=false;score=0;level=Start;bx=[];make()}
   function draw(){
-    var C=[],y,x;
-    for(y=0;y<S.rows;y++)C.push(' '.repeat(S.cols).split(''));
+    var C=S.grid(),y,x;
     function put(r,c,t){for(var i=0;i<t.length;i++)if(r>=0&&r<S.rows&&c+i<S.cols)C[r][c+i]=t.charAt(i)}
     put(0,0,'+'+'-'.repeat(XF-1)+'+');put(YF,0,'+'+'-'.repeat(XF-1)+'+');
     for(y=1;y<YF;y++){put(y,0,'|');put(y,XF,'|')}
@@ -647,7 +642,7 @@ function Robots(S,done,argv,last){
     if(dead)put(me.y,me.x,'AARRrrgghhhh....'.slice(0,Math.max(0,XF-me.x)));
     bx.forEach(function(t,i){put(DESC.length+1+i,XF+2,t)});
     if(query)put(YF-1,XF+2,query.q);
-    S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),me.y,me.x);
+    S.drawGrid(C,me.y,me.x);
     S.say(query?query.q:num+' robots, level '+level+', score '+score);
   }
   function eaten(p){
@@ -744,7 +739,7 @@ function Robots(S,done,argv,last){
     if(Tele&&must())c='t';
     var d=DIR[c];
     if(d){
-      if(doMove(d[0],d[1])){afterMove();bx=dead?bx:bx;if(count>0)count--;return true}
+      if(doMove(d[0],d[1])){afterMove();if(count>0)count--;return true}
       return false;
     }
     if(/^[YUHJKLBN>]$/.test(c)){running=true;runch=c==='>'?' ':c.toLowerCase();return true}
@@ -816,7 +811,7 @@ function Snake(S,done,argv,last){
     else if(argv[i]==='-t')fast=false;
   }
   var mn=Math.min(lcnt,ccnt);
-  if(mn<4){setTimeout(function(){last.push('snake: screen too small for a fair game.');S.close();done()},0);return {feed:function(){},draw:function(){}}}
+  if(mn<4)return tooSmall(S,done,last,'snake: screen too small for a fair game.');
   if(mn<12)mn=12;
   mn+=2;
   var chunk=Math.trunc(675/(mn+6)+2.5);
@@ -856,12 +851,11 @@ function Snake(S,done,argv,last){
     return {col:sp.col+MX[i],line:sp.line+MY[i]};
   }
   function draw(){
-    var C=[],y;
-    for(y=0;y<S.rows;y++)C.push(' '.repeat(S.cols).split(''));
+    var C=S.grid(),y;
     function pc(p,c){var r=p.line+1,x=p.col+1;if(r>=0&&r<S.rows&&x>=0&&x<S.cols)C[r][x]=c}
     if(flash){
       flash.split('').forEach(function(c,i){C[Math.trunc(S.rows/2)][Math.max(0,Math.trunc(S.cols/2)-8)+i]=c});
-      S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),you.line+1,you.col+1);
+      S.drawGrid(C,you.line+1,you.col+1);
       return;
     }
     for(y=1;y<=ccnt;y++){C[0][y]='-';C[lcnt+1][y]='-'}
@@ -872,7 +866,7 @@ function Snake(S,done,argv,last){
     if(cash()>0)('$'+cash()).split('').forEach(function(c,i){C[1][1+i]=c});
     pc(you,'I');
     overlay.forEach(function(o){pc(o,o.c)});
-    S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),you.line+1,you.col+1);
+    S.drawGrid(C,you.line+1,you.col+1);
     S.say('you $'+cash());
   }
   function post(){ /* best for each visitor name and the record, kept in this browser */

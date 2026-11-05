@@ -48,11 +48,11 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
-  var n=P.find(a[0],true),to=target(a[1],a[0]);
+  var n=P.find(a[0],true),to=target(a[1],a[0]),there=P.find(to,true);
   if(!n||n.prot||n===P.root||!P.canWrite(P.pathOf(n))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
-  if(P.find(to,true)&&P.find(to,true)!==n&&P.find(to,true).type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
+  if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
-  var parent=P.find(to.slice(0,to.lastIndexOf('/'))||'/'),name=to.split('/').pop();
+  var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
   delete n.parent.kids[n.name];
   n.name=name;n.parent=parent;parent.kids[name]=n;
 });
@@ -84,7 +84,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
 });
 
 cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints the lines that match. -v the lines that do not, -c only how many, -n with line numbers, -i ignoring case.',function(a,raw,words){
-  var w=words.slice(1),fl=flags(w.filter(function(x){return x.charAt(0)==='-'})),rest=operands(w),re;
+  var w=words.slice(1),fl=flags(w),rest=operands(w),re;
   if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
   try{re=new RegExp(rest[0],/i/.test(fl)?'i':'')}catch(e){P.typeLine('grep: bad pattern '+rest[0],'err');return}
   P.input(rest.slice(1).map(P.fold),function(L){
@@ -227,9 +227,8 @@ builtin(['break'],function(){P.loop('break')});
 builtin(['continue'],function(){P.loop('continue')});
 builtin(['shift'],function(){var A=P.args();if(A.length>1)A.splice(1,1)});
 builtin(['read'],function(a,raw,words){
-  var line,N=words.slice(1);
-  P.queue(function(){return P.readLine().then(function(l){line=l})});
-  P.queue(function(){
+  var N=words.slice(1);
+  P.ask(null,function(line){
     if(line===null){P.status(1);return}
     var parts=line.trim().split(/\s+/);
     N.forEach(function(k,i){P.env[k]=i===N.length-1?parts.slice(i).join(' '):parts[i]||''});
@@ -285,21 +284,21 @@ cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % 
   P.status(String(v)==='0'||v===''?1:0);
 });
 function showEnv(){
-  P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
+  P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(P.envRows()));
 }
 cmd('printenv','print the environment','printenv [ name ]','prints the environment, or the one variable named.',function(a){
   if(!a[0]){showEnv();return}
   if(P.has(P.env,a[0]))P.typeLine(P.env[a[0]]);
 });
 cmd('set','print the shell variables','set','prints the variables the shell knows about.',function(){
-  P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1='+(P.profile.csh?'% ':'$ '),'PS2=> '].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
+  P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> '].concat(P.envRows()));
 });
 cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.find(a[0],true),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
   if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
-  var dir=P.find(to.slice(0,to.lastIndexOf('/'))||'/',true);
+  var dir=P.find(P.dirOf(to),true);
   dir.kids[to.split('/').pop()]=n;
 });
 cmd('du','how much disk a folder uses','du [ -s ] [ name ... ]','prints the size of each folder under name, in 512-byte blocks.',function(a){

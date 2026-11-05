@@ -2,7 +2,7 @@
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
-['arithmetic','backgammon','banner','bcd','bj','checkers','chess','ching','cubic','fortune','hangman','maze','moo','ppt','quiz','reversi','ttt','words','wump'].forEach(function(n){
-  P.command({names:[n],hidden:true,noHelpFlag:true,run:function(){P.typeLine(n+': games are off while payroll runs. see the operator.')}});
-});
+P.stubs(['arithmetic','backgammon','banner','bcd','bj','checkers','chess','ching','cubic','fortune','hangman','maze','moo','ppt','quiz','reversi','ttt','words','wump'],function(n){
+  P.typeLine(n+': games are off while payroll runs. see the operator.');
+},{hidden:true,noHelpFlag:true});
 })(window.Phosphor);

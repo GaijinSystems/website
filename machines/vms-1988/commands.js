@@ -16,11 +16,11 @@ function parse(spec){
     s=s.slice(m[0].length);
     if(d.charAt(0)==='.')abs=(abs==='/'?'':abs)+'/'+d.slice(1).replace(/\./g,'/');
     else if(d.charAt(0)==='-'){
-      while(d.charAt(0)==='-'){abs=abs.slice(0,abs.lastIndexOf('/'))||'/';d=d.slice(1)}
+      while(d.charAt(0)==='-'){abs=P.dirOf(abs);d=d.slice(1)}
       if(d)abs=(abs==='/'?'':abs)+'/'+d.replace(/^\./,'').replace(/\./g,'/');
     }
-    else if(d==='000000'||d==='')abs=d==='000000'?'/':abs;
-    else abs='/'+d.replace(/\./g,'/');
+    else if(d==='000000')abs='/';
+    else if(d)abs='/'+d.replace(/\./g,'/');
   }
   var v=s.match(/;(\d*|\*)$/),ver=v?v[1]:null;
   if(v)s=s.slice(0,v.index);
@@ -110,9 +110,8 @@ verb('directory',3,function(a,q){
         return;
       }
       row.push(name.padEnd(19));
-      if(row.length===3){out.push(row.join(' ').replace(/\s+$/,''));row=[]}
     });
-    if(row.length)out.push(row.join(' ').replace(/\s+$/,''));
+    P.chunk(row,3).forEach(function(r){out.push(r.join(' ').trimEnd())});
     out.push('','Total of '+L.length+' file'+(L.length===1?'':'s')+(size?', '+used+' block'+(used===1?'':'s'):'')+'.');
     say(out);
   });
@@ -180,12 +179,11 @@ verb('create',2,function(a,q){
 });
 verb('edit',2,function(a){ /* EDT, in its line mode */
   if(!a.length){P.typeLine('_File: ');return}
-  var r=pick(a[0]),B=r.e?P.text(r.e.node):[],line;
+  var r=pick(a[0]),B=r.e?P.text(r.e.node):[];
   if(!r.e)P.typeLine('Input file does not exist');
   P.typeLine('[EOB]');
   (function loop(){
-    P.queue(function(){return P.readLine('*').then(function(l){line=l})});
-    P.queue(function(){
+    P.ask('*',function(line){
       if(line===null)return loop();
       var c=up(line.trim());
       if(c==='EXIT'||c==='EX'){writeNew(a[0],B);return}
@@ -193,9 +191,7 @@ verb('edit',2,function(a){ /* EDT, in its line mode */
       if(c==='T WHOLE'||c==='TYPE WHOLE'||c==='T W'){P.say(B.length?B:['[EOB]']);return loop()}
       if(c==='I'||c==='INSERT'){
         (function more(){
-          var l;
-          P.queue(function(){return P.readLine('').then(function(x){l=x})});
-          P.queue(function(){if(l===null){P.typeLine('[EOB]');loop();return}B.push(l);more()});
+          P.ask('',function(l){if(l===null){P.typeLine('[EOB]');loop();return}B.push(l);more()});
         })();
         return;
       }
@@ -209,8 +205,7 @@ verb('set',3,function(a,q,raw){
   var w=(a[0]||'').toLowerCase();
   if('default'.indexOf(w)===0&&w.length>=3){
     var S=parse(a[1]||'[]'),dir=folder(S.abs);
-    if(!dir){P.st.cwd=S.abs;return} /* VMS takes your word for it */
-    if(dir.prot){err('%DCL-E-INVDEF, cannot set default');return}
+    if(dir&&dir.prot){err('%DCL-E-INVDEF, cannot set default');return} /* with no such folder, VMS takes your word for it */
     P.st.cwd=S.abs;
     return;
   }
@@ -307,24 +302,19 @@ P.fallback=function(word,raw){
 var TOPICS={DIRECTORY:'Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.',TYPE:'Prints a file. TYPE README.TXT.',COPY:'COPY from to. Makes a new version of to.',DELETE:'DELETE FILE.TXT;1. The version number is required.',PURGE:'Deletes all but the newest version of each file.',RENAME:'RENAME old new.',CREATE:'CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].',EDIT:'EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.',SET:'SET DEFAULT [.NAME] or [-] to move about.',SHOW:'SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.',LOGOUT:'Ends your session.',MAIL:'Reads your mail.',ABOUT:'Who owns this machine.',CONNECT:'Plugs the terminal into another machine.',SOUND:'Keyclicks on or off.',SOURCE:'Where to get this terminal.'};
 P.command({names:['help'],noHelpFlag:true,terminal:true,run:function(a,raw,w){
   var t=up(w[1]||'');
-  function page(k){P.say(['',k,'','  '+TOPICS[k]])}
-  if(t){
-    var k=Object.keys(TOPICS).filter(function(x){return x.indexOf(t)===0})[0];
-    if(k)page(k);else P.say(['','  Sorry, no documentation on '+t]);
-    return;
+  function topic(q){
+    var k=Object.keys(TOPICS).filter(function(x){return x.indexOf(q)===0})[0];
+    P.say(k?['',k,'','  '+TOPICS[k]]:['','  Sorry, no documentation on '+q]);
   }
-  var names=Object.keys(TOPICS).filter(function(k){return k==='CONNECT'?P.allowed.length>1:true}),L=['','  Information available:',''],row=[];
-  names.forEach(function(n){row.push(n.padEnd(12));if(row.length===5){L.push('  '+row.join(''));row=[]}});
-  if(row.length)L.push('  '+row.join(''));
+  if(t){topic(t);return}
+  var names=Object.keys(TOPICS).filter(function(k){return k==='CONNECT'?P.allowed.length>1:true}),L=['','  Information available:',''];
+  P.chunk(names.map(function(n){return n.padEnd(12)}),5).forEach(function(r){L.push('  '+r.join(''))});
   L.push('');
   P.say(L);
   (function ask(){
-    var l;
-    P.queue(function(){return P.readLine('Topic? ').then(function(x){l=x})});
-    P.queue(function(){
+    P.ask('Topic? ',function(l){
       if(!l||!l.trim())return;
-      var q=up(l.trim()),k=Object.keys(TOPICS).filter(function(x){return x.indexOf(q)===0})[0];
-      if(k)page(k);else P.say(['','  Sorry, no documentation on '+q]);
+      topic(up(l.trim()));
       ask();
     });
   })();
