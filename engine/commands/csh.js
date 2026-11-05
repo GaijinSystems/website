@@ -50,7 +50,7 @@ builtin(['set'],function(){
     return;
   }
   try{
-    while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|\S*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
+    while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
   }catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
   if(t)P.typeLine('set: Syntax error.','err');
 });
@@ -69,26 +69,40 @@ function closing(s,from){ /* the ) that matches, outside quotes */
   for(var i=from;i<s.length;i++){
     var c=s.charAt(i);
     if(q){if(c===q)q=null}
+    else if(c==='\\')i++;
     else if(c==='"'||c==="'")q=c;
     else if(c==='(')depth++;
     else if(c===')'&&!--depth)return i;
   }
   return -1;
 }
-function operator(e,ops){ /* [left,op,right] for the first of them, or by default the first comparison, outside quotes and ( ) */
-  var q=null,depth=0;
+function operator(e,ops){ /* [left,op,right] for the first of them, or by default the last comparison, == and != before the rest, outside quotes and ( ) */
+  var q=null,depth=0,eq=null,rel=null;
   for(var i=0;i<e.length;i++){
     var c=e.charAt(i),two=e.substr(i,2);
     if(q){if(c===q)q=null}
+    else if(c==='\\')i++;
     else if(c==='"'||c==="'")q=c;
     else if(c==='(')depth++;
     else if(c===')')depth--;
     else if(depth)continue;
     else if(ops){if(two===ops)return [e.slice(0,i),two,e.slice(i+2)]}
-    else if(/^(==|!=|>=|<=)$/.test(two))return [e.slice(0,i),two,e.slice(i+2)];
-    else if(c==='>'||c==='<')return [e.slice(0,i),c,e.slice(i+1)];
+    else if(two==='=='||two==='!='){eq=[e.slice(0,i),two,e.slice(i+2)];i++}
+    else if(two==='>='||two==='<='){rel=[e.slice(0,i),two,e.slice(i+2)];i++}
+    else if(c==='>'||c==='<')rel=[e.slice(0,i),c,e.slice(i+1)];
   }
-  return null;
+  return eq||rel;
+}
+function operand(x){ /* a side of a comparison, as a string; null when there is nothing there or it makes no sense */
+  x=x.trim();
+  if(!x)return null;
+  var inner=x.charAt(0)==='('&&closing(x,1)===x.length-1?x.slice(1,-1):null;
+  if(inner!==null&&!operator(inner,'||')&&!operator(inner,'&&')&&!operator(inner))return operand(inner);
+  if(inner!==null||operator(x)||x.charAt(0)==='!'||/^-[edfrwx]\s/.test(x)){
+    var t=truth(x);
+    return t===null?null:t?'1':'0';
+  }
+  return value(x);
 }
 function truth(e){ /* true, false, or null when it makes no sense */
   e=e.trim();
@@ -101,7 +115,8 @@ function truth(e){ /* true, false, or null when it makes no sense */
   if(e.charAt(0)==='('&&closing(e,1)===e.length-1)return truth(e.slice(1,-1));
   o=operator(e);
   if(o){
-    var l=value(o[0]),r=value(o[2]);
+    var l=operand(o[0]),r=operand(o[2]);
+    if(l===null||r===null)return null;
     if(o[1]==='==')return l===r;
     if(o[1]==='!=')return l!==r;
     if(!/^-?\d+$/.test(l)||!/^-?\d+$/.test(r))return null;

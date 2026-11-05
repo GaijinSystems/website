@@ -189,20 +189,20 @@ P.command({names:['rm'],path:'/bin',
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
     if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}
-    function lockedIn(n,path,seen){ /* the first locked thing at or under n, by name */
-      if(n.prot)return path;
+    function lockedIn(n,path,seen,up){ /* the first locked thing at or under n, by name. A link's lock is its target's, not this name's */
+      if(n.prot&&n.parent===up&&n.name===path.split('/').pop())return path;
       if(n.type!=='d'||!n.kids||seen.indexOf(n)>=0)return null;
       seen.push(n);
       var names=Object.keys(n.kids);
-      for(var i=0;i<names.length;i++){var r=lockedIn(n.kids[names[i]],path+'/'+names[i],seen);if(r)return r}
+      for(var i=0;i<names.length;i++){var r=lockedIn(n.kids[names[i]],path+'/'+names[i],seen,n);if(r)return r}
       return null;
     }
     f.forEach(function(x){
-      var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
+      var n=P.find(x,true),at=n&&P.pathOf(n);
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
       if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
-      var abs=P.norm(x),locked=lockedIn(n,abs,[]);
-      if(n===P.root||locked||!P.canWrite(abs)||cwd===at||cwd.indexOf(at+'/')===0){
+      var abs=P.norm(x),locked=lockedIn(n,abs,[],P.find(P.dirOf(abs),true));
+      if(n===P.root||locked||!P.canWrite(abs)||P.inUse(at)){
         denied=denied||!P.canWrite(locked||abs);
         P.typeLine('rm: '+x+' not removed','err');
         return;

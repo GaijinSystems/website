@@ -781,7 +781,7 @@ function dropRoot(){
   RP=null;
 }
 /* ---------- programs that load when first run (Phosphor.later). Script tags, so this works from disk too. ---------- */
-var LOADED={};
+var LOADED={},RANH=0,RAND=0; /* hooks and programs already taken up: loads can overlap */
 function loadOne(f){
   var M=PH.machine&&PH.catalog[PH.machine],src=(M?M.dir+'/':'')+f;
   if(LOADED[src])return LOADED[src];
@@ -793,8 +793,10 @@ function loadOne(f){
     el.onload=function(){
       if(!PH.seen[src]){failed();return} /* a stray ` or ${ in it, so it never got as far as saying so */
       try{
-        PH.hooks.slice(h).forEach(function(fn){fn(PH)});
-        PH.defs.slice(d).forEach(function(x){ /* only what was listed: its manual page and program file are there already */
+        var hs=PH.hooks.slice(Math.max(h,RANH)),ds=PH.defs.slice(Math.max(d,RAND));
+        RANH=PH.hooks.length;RAND=PH.defs.length;
+        hs.forEach(function(fn){fn(PH)});
+        ds.forEach(function(x){ /* only what was listed: its manual page and program file are there already */
           (x.names||[]).forEach(function(n){if(has(CMDS,n)&&PROFILE.off.indexOf(n)<0)CMDS[n]=x.run});
         });
       }catch(e){failed();return}
@@ -834,6 +836,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
       return true;
     }catch(e){return false}
   },
+  inUse:function(p){return [ST.cwd].concat(RP?[RP.cwd,RP.home]:[]).some(function(x){return x===p||x.indexOf(p+'/')===0})},
   su:function(){setRoot(true)},unsu:function(){if(RP&&RP.su){dropRoot();return true}return false},
   powerOff:function(lines){ /* the end: the picture collapses to a dot, and any key starts it again */
     say(lines||[]);
@@ -983,7 +986,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
   function endWord(){
     if(w===null)return;
-    if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>'}else{st.out=w;st.app=redir==='>>'}redir=null}
+    if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>'}else{st.out=w;st.app=redir==='>>';st.glass=false}redir=null}
     else if(quoted||PROFILE.dos)st.words.push(unguard(w));
     else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){
       x=unguard(x);
@@ -993,7 +996,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     });
     w=null;quoted=false;fromVar=false;
   }
-  function endStage(){endWord();st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err)stages.push(st);st=fresh()}
+  function endStage(){endWord();st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass)stages.push(st);st=fresh()}
   function endList(nextOp){endStage();if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp}
   while(i<s.length){
     var ch=s.charAt(i),two=s.substr(i,2),close;
@@ -1010,14 +1013,14 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(ch==='|'){endStage();i++;continue}
     if(ch==='&'){i++;continue} /* no background here: it just runs */
     if(ch==='>'||ch==='<'){
-      var fd=!PROFILE.csh&&w!==null&&!quoted&&!fromVar&&/^[0-2]$/.test(w)?w:null; /* sh: 2> names a file descriptor, not an argument. csh has no such thing */
+      var fd=!PROFILE.csh&&w!==null&&!quoted&&!fromVar&&/^\d$/.test(w)?w:null; /* sh: 2> names a file descriptor, not an argument. csh has no such thing */
       if(fd!==null){w=null;st.raw=st.raw.slice(0,-1);st.src=st.src.slice(0,-1)}
       endWord();
-      if(two==='>&'&&!PROFILE.csh&&/^[\d-](?=$|[\s|&<>])/.test(s.slice(i+2))){if(s.charAt(i+2)==='2'&&fd!=='2')st.glass=true;i+=3;continue} /* 2>&1, 2>&-: errors are on the glass either way. >&2 sends the output there too */
+      if(two==='>&'&&!PROFILE.csh&&/^[\d-](?=$|[\s|&<>])/.test(s.slice(i+2))){if(fd==='2'&&s.charAt(i+2)==='1')st.e2o=true;else if(s.charAt(i+2)==='2'&&(fd===null||fd==='1')&&!st.e2o)st.glass=true;i+=3;continue} /* 2>&1, 2>&-: errors are on the glass either way. >&2 sends the output there too */
       if(two==='>&'){redir='>';i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file */
       redir=two==='>>'?'>>':ch;
       i+=redir.length;
-      if(fd==='2')redir=redir==='>>'?'2>>':'2>'; /* made, and left empty: errors stay on the glass */
+      if(fd!==null&&fd>='2'&&ch==='>')redir=redir==='>>'?'2>>':'2>'; /* made, and left empty: errors stay on the glass */
       continue;
     }
     if(!redir)add(ch);
@@ -1061,7 +1064,7 @@ function runPipeline(stages){
       if(st.err!==null&&!writeFile(st.err,[],!!st.errApp)){oopsW('',st.err,st.err+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
-      var toGlass=st.glass&&st.out===null;
+      var toGlass=st.glass;
       if((!last||st.out!==null)&&!toGlass)sink=[];
       if(toGlass)SINK=null;
       else if(sink)SINK=sink;
@@ -1074,16 +1077,17 @@ function runPipeline(stages){
     queue(function(){
       if(own)SUB--;
       if(!ok)return;
-      if(st.out!==null&&sink)writeFile(st.out,sink,true);
+      if(st.out!==null&&sink&&!st.glass)writeFile(st.out,sink,true);
       pipe=st.out!==null||st.glass?[]:sink;
       SINK=keepSink;STDIN=keepIn;
     },true);
   });
 }
 function opens(s,i){return !i||/[\s=;|&<>]/.test(s.charAt(i-1))} /* a quote only opens at the start of a word or after = */
-function backtick(s,dq,more){ /* the first `command` outside single quotes, with the parser's idea of a quote.
-                                 dq: starting inside "; more: s carries straight on from a word, so a quote at its very start opens nothing */
+function backtick(s,dq,done){ /* the first `command` outside single quotes, with the parser's idea of a quote.
+                                 dq: starting inside "; done: what s carries straight on from, which decides a quote at its very start */
   var a=-1,j,inDq=dq;
+  function open(i){return i?opens(s,i):!done||/[\s=;|&<>]$/.test(done)}
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i);
     if(c==='\\'){i++;continue}
@@ -1092,22 +1096,21 @@ function backtick(s,dq,more){ /* the first `command` outside single quotes, with
       else return {a:a,b:i,cmd:s.slice(a+1,i),dq:inDq};
     }
     else if(a>=0)continue;
-    else if(c==='"'&&(dq||(i||!more)&&opens(s,i)))dq=!dq;
-    else if(c==="'"&&!dq&&(i||!more)&&opens(s,i)&&(j=s.indexOf("'",i+1))>=0)i=j;
+    else if(c==='"'&&(dq||open(i)))dq=!dq;
+    else if(c==="'"&&!dq&&open(i)&&(j=s.indexOf("'",i+1))>=0)i=j;
   }
   return null;
 }
 function substitute(s,then,done,dq){ /* run every `command`, left to right, put what it printed in its place, then carry on.
                                      done: the text so far, which is not looked at again; dq: whether that left a " open */
-  var more=done!==undefined;
   done=done||'';
-  var m=PROFILE.dos?null:backtick(s,!!dq,more);
+  var m=PROFILE.dos?null:backtick(s,!!dq,done);
   if(!m){then(done+s);return}
   var sink=[],keepSink,keepIn,own=false,before=done+s.slice(0,m.a);
   queue(function(){keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;SUB++;own=true;execLine(m.cmd)});
   queue(function(){SINK=keepSink;STDIN=keepIn;if(own)SUB--},true);
   /* x=`command`, and csh's set x = `command`, are one word whatever it prints */
-  queue(function(){substitute(s.slice(m.b+1),then,before+guard(sink.join(' '),/(^|\s)[A-Za-z_]\w*=$/.test(before)||PROFILE.csh&&/^\s*set\s.*=\s*$/.test(before)),m.dq)});
+  queue(function(){substitute(s.slice(m.b+1),then,before+guard(sink.join(' '),/(^|\s)[A-Za-z_]\w*=$/.test(before)||PROFILE.csh&&/(^|&&|\|\||\))\s*set\s[^&|]*=\s*$/.test(before)),m.dq)});
 }
 function execSeg(seg){
   queue(function(){substitute(seg,function(text){execText(text)})});
@@ -1130,16 +1133,18 @@ function ifAfter(seg){ /* where && or || is followed by csh's if ( ), outside qu
     var c=seg.charAt(i),two=seg.substr(i,2);
     if(c==='\\'){i++;continue}
     if(q){if(c===q)q=null}
-    else if(c==='"'||c==="'")q=c;
+    else if(c==='#'&&(!i||/[\s;|&<>]/.test(seg.charAt(i-1))))return null;
+    else if((c==='"'||c==="'")&&opens(seg,i)&&seg.indexOf(c,i+1)>=0)q=c;
     else if((two==='&&'||two==='||')&&/^\s*if\s*\(/.test(seg.slice(i+2)))return {at:i,op:two};
   }
   return null;
 }
 function execText(seg){
   queue(function(){
-    if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg);return} /* its ( ) comes before any < or > */
+    if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg.replace(/^\s*if\s*\(/,'if ('));return} /* its ( ) comes before any < or > */
     var k=PROFILE.csh&&ifAfter(seg);
     if(k){
+      if(!parsed(seg.slice(0,k.at)))return;
       execText(seg.slice(0,k.at));
       queue(function(){
         if(LOGOUT||(k.op==='&&'?STATUS!==0:STATUS===0))return;
@@ -1322,6 +1327,13 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   }
   runBlock(tree);
 }
+function closeDq(s,i){ /* the " that closes the one at i: a `command` inside it may hold its own */
+  for(var j=i+1,k;j<s.length;j++){
+    if(s.charAt(j)==='"')return j;
+    if(s.charAt(j)==='`'&&(k=s.indexOf('`',j+1))>=0)j=k;
+  }
+  return -1;
+}
 function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start of a word or after =, so don't ; won't is two commands */
   var L=[],start=0,ch,j;
   for(var i=0;i<s.length;i++){
@@ -1329,7 +1341,7 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
     if(ch===';'){L.push(s.slice(start,i));start=i+1}
     else if(ch==='\\')i++;
     else if(ch==='`'&&(j=s.indexOf('`',i+1))>=0)i=j;
-    else if((ch==="'"||ch==='"')&&opens(s,i)&&(j=s.indexOf(ch,i+1))>=0)i=j;
+    else if((ch==="'"||ch==='"')&&opens(s,i)&&(j=ch==='"'?closeDq(s,i):s.indexOf(ch,i+1))>=0)i=j;
   }
   L.push(s.slice(start));
   return L;
@@ -1356,7 +1368,7 @@ function run(raw){
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
   var segs=[];
   splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
-  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)})){ /* needs the shell's parser */
+  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)||PROFILE.csh&&/^\s*if\(/.test(x)})){ /* needs the shell's parser */
     segs.forEach(function(x){if(x.trim())execSeg(x)});
     nextPrompt();
     return;
