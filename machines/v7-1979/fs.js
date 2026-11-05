@@ -4,7 +4,7 @@
 Phosphor.setup(function(P){
   'use strict';
   var SD=P.systemDate,ST=P.st,OWNER=ST.owner;
-  function sys(p,type,o){var x={owner:'root',date:SD};if(o)for(var k in o)x[k]=o[k];return P.put(p,type,x)}
+  function sys(p,type,o){return P.put(p,type,Object.assign({owner:'root',date:SD},o))}
 
   sys('/bin','d',{owner:'bin'});
   sys('/etc','d');

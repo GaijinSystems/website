@@ -20,12 +20,21 @@
 
 var HAS=Object.prototype.hasOwnProperty;
 function has(o,k){return HAS.call(o,k)}
+var LOGIN_NAME=/^[a-z][a-z0-9_]{0,7}$/i;
+function lineOf(l){return Array.isArray(l)?l:[l,'']} /* a line is a string or [text,class,options] */
+function unquote(s){return s.replace(/^(['"])((?:(?!\1).)*)\1$/,'$2')} /* one quoted string only: "a" ; "b" keeps its quotes */
+function setAlias(L,from,to){ /* a new alias replaces any with the same words */
+  var k=from.join(' ');
+  L=L.filter(function(x){return x.from.join(' ')!==k});
+  L.push({from:from,to:to});
+  return L;
+}
 
 var PH=window.Phosphor={
   version:'1.0.0',
   upstream:'https://github.com/GaijinSystems/phosphor', /* default for the source command */
-  texts:[],fromSite:[],defs:[],hooks:[],seen:{},
-  content:function(s){var f=me();PH.texts.push(String(s));PH.fromSite.push(!f||/(^|\/)site\//.test(f))}, /* settings and == sections == */
+  texts:[],defs:[],hooks:[],seen:{},
+  content:function(s){var f=me();PH.texts.push({src:String(s),site:!f||/(^|\/)site\//.test(f)})}, /* settings and == sections == */
   command:function(def){me();PH.defs.push(def)},  /* a built-in command, see engine/commands */
   setup:function(fn){me();PH.hooks.push(fn)},     /* machine hook: runs after the file tree exists */
   start:start
@@ -36,14 +45,14 @@ var PH=window.Phosphor={
    so start() can name it on the glass. (The browser's own error event cannot be used: for
    a page opened from disk it hides which file failed.) */
 function me(){
-  var s=document.currentScript,f=s?(s.getAttribute('src')||s.getAttribute('data-src')||''):'';
+  var s=document.currentScript,f=s?(s.getAttribute('src')||''):'';
   if(f)PH.seen[f]=true;
   return f;
 }
 function notLoaded(){
-  var L=[],S=document.querySelectorAll('script[src],script[data-src]');
+  var L=[],S=document.querySelectorAll('script[src]');
   for(var i=0;i<S.length;i++){
-    var f=S[i].getAttribute('src')||S[i].getAttribute('data-src');
+    var f=S[i].getAttribute('src');
     if(!/(^|\/)engine\/phosphor\.js$/.test(f)&&!PH.seen[f])L.push(f);
   }
   return L;
@@ -66,37 +75,33 @@ var PROFILE=(function(){
   var CL={turns:[1,40],width:[6,80],thickness:[1,8],gap:[0,10],straight:[0,200],sway:[0,10]};
   function setKey(k,v){
     var ck=k.match(/^cord (\w+)$/);
-    if(ck&&CL[ck[1]]){var x=parseFloat(v),L=CL[ck[1]];if(!isNaN(x))P.cord[ck[1]]=Math.min(L[1],Math.max(L[0],x));return}
+    if(ck&&has(CL,ck[1])){var x=parseFloat(v),L=CL[ck[1]];if(!isNaN(x))P.cord[ck[1]]=Math.min(L[1],Math.max(L[0],x));return}
     if(k==='name'){if(v)P.name=v}
-    else if(k==='email')P.email=v;
+    else if(/^(email|title|badge|installed|offline)$/.test(k))P[k]=v;
     else if(k==='speed'){var n=parseFloat(v);if(n>0)P.speed=n}
     else if(k==='sound')P.sound=yes(v);
     else if(k==='uppercase')P.upper=yes(v);
     else if(k==='protected')P.protected=P.protected.concat(list(v));
-    else if(k==='title')P.title=v;
-    else if(k==='badge')P.badge=v;
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
-    else if(k==='installed')P.installed=v;
-    else if(k==='user'){if(/^[a-z][a-z0-9_]{0,7}$/i.test(v))P.user=v.toLowerCase()}
+    else if(k==='user'){if(LOGIN_NAME.test(v))P.user=v.toLowerCase()}
     else if(k==='hostname')P.hostname=v.toLowerCase();
     else if(k==='source'){ /* becomes a link: same rule as links in the text */
       if(!v||/^https?:\/\/\S+$/i.test(v))P.source=v;
       else P.problems.push('source: must start with http:// or https://');
     }
     else if(k==='prompt')P.prompt=v.replace(/^"(.*)"$/,'$1');
-    else if(k==='offline')P.offline=v;
     else if(k==='commands')list(v).forEach(function(x){ /* commands: -ping, -ifconfig switches them off */
       if(x.charAt(0)==='-')P.off.push(x.slice(1));
       else P.off=P.off.filter(function(o){return o!==x});
     });
     else P.problems.push('unknown setting "'+k+'"');
   }
-  PH.texts.forEach(function(src,ti){
+  PH.texts.forEach(function(text){
     var cur=null; /* settings come first in each block, before its first == section == */
-    src.replace(/\r/g,'').split('\n').forEach(function(raw){
+    text.src.replace(/\r/g,'').split('\n').forEach(function(raw){
       if(/^\s*#/.test(raw))return;
       var h=raw.match(/^\s*==\s*(.*?)\s*==\s*$/);
-      if(h){cur={head:h[1],lines:[],site:PH.fromSite[ti]};secs.push(cur);return}
+      if(h){cur={head:h[1],lines:[],site:text.site};secs.push(cur);return}
       if(cur){cur.lines.push(raw.replace(/\s+$/,''));return}
       var m=raw.match(/^\s*([a-z][a-z _-]*?)\s*:\s*(.*?)\s*$/i);if(!m)return;
       setKey(m[1].toLowerCase().replace(/[\s_-]+/g,' '),m[2]);
@@ -108,12 +113,16 @@ var PROFILE=(function(){
   var VARS={site:SITE||P.host,hostname:P.host,owner:P.owner,email:P.email,year:String(P.year)};
   function fill(t){return String(t).replace(/\{(site|hostname|owner|email|year)\}/g,function(m,k){return VARS[k]})}
   P.fill=fill;
-  function up(t){return P.upper?t.toUpperCase():t}
-  function lines(L){
+  function up(t){return P.upper?String(t).toUpperCase():t}
+  P.up=up;
+  function trimBlank(L){
     L=L.slice();
     while(L.length&&!L[0].trim())L.shift();
     while(L.length&&!L[L.length-1].trim())L.pop();
-    return L.map(function(l){
+    return L;
+  }
+  function lines(L){
+    return trimBlank(L).map(function(l){
       l=fill(l);
       var href=null,k=l.match(/^(.*?)\s+->\s*((?:https?:\/\/|mailto:)\S+)\s*$/i);
       if(k){l=k[1];href=k[2]}
@@ -129,28 +138,25 @@ var PROFILE=(function(){
     if(/^welcome$/i.test(hd))P.welcome=body;
     else if(/^about$/i.test(hd))P.about=body;
     else if(/^mail$/i.test(hd))P.mail=body.map(function(l){ /* project row = has a run of 2+ spaces inside it: */
-      var re=/(\S)( {2,})(?=\S)/,s=Array.isArray(l)?l[0]:l;      /* that run becomes a squeezable gap */
+      var re=/(\S)( {2,})(?=\S)/,x=lineOf(l),s=x[0];             /* that run becomes a squeezable gap */
       if(!re.test(s))return l;
-      return [s.replace(re,'$1\u0003$2\u0004'),Array.isArray(l)?l[1]||'':'',
-        Object.assign({row:true},Array.isArray(l)&&l[2]||{})];
+      return [s.replace(re,'$1\u0003$2\u0004'),x[1]||'',Object.assign({row:true},x[2])];
     });
     else if(/^alias(es)?$/i.test(hd))sc.lines.forEach(function(l){
       var a=l.match(/^\s*([^=#]+?)\s*=\s*(.+?)\s*$/);
       if(!a)return;
-      var from=a[1].toLowerCase().split(/\s+/);
-      P.aliases=P.aliases.filter(function(x){return x.from.join(' ')!==from.join(' ')});
-      P.aliases.push({from:from,to:a[2]}); /* the command keeps its case: echo Hello prints Hello */
+      P.aliases=setAlias(P.aliases,a[1].toLowerCase().split(/\s+/),unquote(fill(a[2]))); /* the command keeps its case: echo Hello prints Hello */
     });
     else if((m=hd.match(/^command\s*:\s*([^|]+?)\s*(?:\|\s*(.*))?$/i))){
-      var names=m[1].split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean);
+      var names=list(m[1]);
       if(!names.length)return;
       P.commands=P.commands.filter(function(c){return !c.names.some(function(n){return names.indexOf(n)>=0})});
-      P.commands.push({names:names,help:up(m[2]||''),body:body,site:sc.site});
+      P.commands.push({names:names,help:up(fill(m[2]||'')),body:body,site:sc.site});
     }
     else if((m=hd.match(/^file\s*:\s*(\S+)$/i)))P.files.push({name:m[1].toLowerCase(),body:body});
     else if((m=hd.match(/^dir(?:ectory)?\s*:\s*(\S+)$/i)))P.dirs.push(m[1].toLowerCase());
     else if((m=hd.match(/^man\s*:\s*(\S+)$/i)))P.man[m[1].toLowerCase()]=body;
-    else{var key=hd.toLowerCase();P.sec[key]=body;P.raw[key]=sc.lines.map(fill)} /* machine sections: banner, dmesg, ps ... */
+    else{var key=hd.toLowerCase();P.sec[key]=body;P.raw[key]=trimBlank(sc.lines).map(fill)} /* machine sections: banner, dmesg, ps ... */
   });
   if(!P.welcome)P.welcome=[up('welcome to '+P.name.toLowerCase()+'.'),[up('type help and press return.'),'dim']];
   return P;
@@ -159,8 +165,17 @@ var PROFILE=(function(){
 function $(s){return document.querySelector(s)}
 var term=$('#term'),out=$('#out'),glow=$('#glow'),kb=$('#kb'),svg=$('#cable'),sway=$('#sway');
 var cursor=document.createElement('span');cursor.className='cursor';
-var coarse=window.matchMedia&&matchMedia('(pointer:coarse)').matches;
-var chain=Promise.resolve(),ready=false,booted=false,buf='',bufNode=null,hist=[],hi=0;
+var calm=matchMedia('(prefers-reduced-motion:reduce)');
+/* what screen readers hear: each line once it is finished, not every character of the typing */
+var log=document.createElement('div');log.id='log';log.setAttribute('role','log');log.setAttribute('aria-live','polite');
+document.body.appendChild(log);
+function announce(s){
+  if(!s.trim())return;
+  var p=document.createElement('div');p.textContent=s;log.appendChild(p);
+  trim(log,50);
+}
+var coarse=matchMedia('(pointer:coarse)').matches;
+var chain=Promise.resolve(),buf='',bufNode=null,hist=[],hi=0;
 if(PROFILE.title)document.title=PROFILE.title;
 var badge=$('.badge');if(badge)badge.textContent=PROFILE.badge;
 
@@ -199,11 +214,12 @@ function click(vol,freq){
 /* ---------- afterglow ---------- */
 var lastG=0;
 function afterglow(top,a,ms,force){
+  if(calm.matches)return;
   var n=performance.now();
   if(!force&&(n-lastG<90||glow.childElementCount>2))return;
   lastG=n;
   var g=out.cloneNode(true);
-  g.removeAttribute('id');g.className='ghost';
+  g.removeAttribute('id');g.className='ghost';g.inert=true; /* a copy: its links must not take focus */
   var cs=g.querySelectorAll('.cursor');for(var i=0;i<cs.length;i++)cs[i].remove();
   g.style.transform='translateY('+(-top)+'px)';
   g.style.setProperty('--a',a);g.style.animationDuration=ms+'ms';
@@ -214,10 +230,10 @@ function scrollBottom(){
   var b=term.scrollTop;term.scrollTop=term.scrollHeight;
   if(term.scrollTop-b>1)afterglow(b,.38,460);
 }
-function trim(){while(out.childElementCount>240)out.firstElementChild.remove()}
+function trim(box,max){while(box.childElementCount>max)box.firstElementChild.remove()}
 
 /* ---------- typing engine ---------- */
-function UP(t){return PROFILE.upper?String(t).toUpperCase():t}
+var UP=PROFILE.up;
 function typeLine(text,cls,cb,opt){
   opt=opt||{};
   return queue(function(){return new Promise(function(res){
@@ -228,22 +244,27 @@ function typeLine(text,cls,cb,opt){
     if(opt.indent||opt.hang){d.style.paddingLeft=((opt.indent||0)+(opt.hang||0))+'ch';if(opt.hang)d.style.textIndent=(-opt.hang)+'ch'}
     if(opt.href){host=document.createElement('a');host.href=opt.href;
       if(!/^mailto:/i.test(opt.href)){host.target='_blank';host.rel='noopener'}d.appendChild(host)}
-    var t=document.createTextNode(opt.pre?UP(opt.pre):'');host.appendChild(t);
-    d.appendChild(cursor);out.appendChild(d);trim();
+    var pre=opt.pre?UP(opt.pre):'',t=document.createTextNode(pre);host.appendChild(t);
+    d.appendChild(cursor);out.appendChild(d);trim(out,240);
+    var at=host===d?cursor:null; /* new text goes before the cursor; a link has no cursor inside it */
     var sp=opt.speed||1,i=0;
     function step(){
-      if(i>=text.length){scrollBottom();if(cb)cb();res();return}
+      if(i>=text.length){
+        scrollBottom();
+        announce(pre+text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ').replace(/[\u0001-\u0004]/g,''));
+        if(cb)cb();res();return;
+      }
       var ch=text.charAt(i++);
       if(ch==='\u0003'){ /* a squeezable gap (mail rows, self-test dots): shrinks to fit narrow glass */
         var j=text.indexOf('\u0004',i);if(j<0)j=text.length;
         var g=document.createElement('span');g.className='gap';
         g.dataset.n=j-i;g.dataset.f=text.charAt(i)||' ';g.dataset.w=text.replace(/[\u0001-\u0004]/g,'').length;
-        var at2=cursor.parentNode===host?cursor:null;host.insertBefore(g,at2);squeeze(g);
-        t=document.createTextNode('');host.insertBefore(t,at2);
+        host.insertBefore(g,at);squeeze(g);
+        t=document.createTextNode('');host.insertBefore(t,at);
         i=j+1;step();return;
       }
       if(ch==='\u0001'||ch==='\u0002'){ /* ~~struck~~ text: start or end an <s> run */
-        var at=cursor.parentNode===host?cursor:null;t=document.createTextNode('');
+        t=document.createTextNode('');
         if(ch==='\u0001'){var s=document.createElement('s');s.appendChild(t);host.insertBefore(s,at)}
         else host.insertBefore(t,at);
         step();return;
@@ -256,7 +277,7 @@ function typeLine(text,cls,cb,opt){
   })});
 }
 function say(lines){
-  lines.forEach(function(l){Array.isArray(l)?typeLine(l[0],l[1],null,l[2]):typeLine(l)});
+  lines.forEach(function(l){var x=lineOf(l);typeLine(x[0],x[1],null,x[2])});
 }
 function cols(){ /* how many characters fit on one line of the glass right now */
   var p=document.createElement('span');p.textContent='0000000000';
@@ -266,8 +287,8 @@ function cols(){ /* how many characters fit on one line of the glass right now *
   return cw>0?Math.floor(w/cw+.01):999;
 }
 function squeeze(g,c){ /* shrink a gap (never below 2 characters) until its row fits */
-  var over=Math.max(0,+g.dataset.w-(c||cols()));
-  g.textContent=(g.dataset.f||' ').repeat(Math.max(2,+g.dataset.n-over));
+  var over=Math.max(0,+g.dataset.w-(c||cols())),n=Math.max(2,+g.dataset.n-over);
+  if(g.textContent.length!==n)g.textContent=(g.dataset.f||' ').repeat(n);
 }
 window.addEventListener('resize',function(){ /* rows already printed re-fit on rotate/resize */
   var gs=out.querySelectorAll('.gap');if(!gs.length)return;
@@ -277,16 +298,17 @@ var MODE='shell'; /* shell | login | password (password input is not echoed) */
 function prompt(p,mode){
   queue(function(){
     MODE=mode||'shell';
+    if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
     var d=document.createElement('div');d.className='line';
     bufNode=document.createTextNode(MODE==='password'?'':UP(buf));
     d.appendChild(document.createTextNode(UP(p||PROFILE.prompt)));d.appendChild(bufNode);d.appendChild(cursor);
-    out.appendChild(d);trim();ready=true;term.classList.add('idle');scrollBottom();
+    out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
   });
 }
 
 /* ---------- shell state ---------- */
-var OWNER=PROFILE.owner,HOSTNAME=PROFILE.host;
-var ST={owner:OWNER,user:PROFILE.user,home:'/usr/'+PROFILE.user,cwd:'/usr/'+PROFILE.user,site:SITE,hostname:HOSTNAME,login:null};
+var OWNER=PROFILE.owner;
+var ST={owner:OWNER,user:PROFILE.user,home:'/usr/'+PROFILE.user,cwd:'/usr/'+PROFILE.user,site:SITE,hostname:PROFILE.host,login:in79(new Date())};
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
 function in79(n){ /* now, moved to the machine's year (February 29 becomes the 28th in a non-leap year) */
@@ -299,24 +321,23 @@ function tz(){
     for(var i=0;i<q.length;i++)if(q[i].type==='timeZoneName')return q[i].value}catch(e){}
   return '';
 }
-function ctime(d){return DAYS[d.getDay()]+' '+MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+' '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())}
-function short(d){return MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
-ST.login=in79(new Date());
+function monDay(d){return MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')}
+function short(d){return monDay(d)+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
+function ctime(d){return DAYS[d.getDay()]+' '+short(d)+':'+p2(d.getSeconds())}
 var FD=(function(){var d=new Date(ST.login.getTime()-864e5);d.setHours(21,41,0,0);return d})(); /* home files: last night */
 var SD=(function(){ /* system files: the machine's install date (installed: 1979-01-10 16:12) */
   var m=PROFILE.installed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
   return m?new Date(+m[1],m[2]-1,+m[3],+(m[4]||0),+(m[5]||0)):new Date(PROFILE.year,0,10,16,12,0);
 })();
 function lsdate(d){ /* as ls does it: older than six months shows the year instead of the time */
-  return ST.login-d>15552e6?MONS[d.getMonth()]+' '+String(d.getDate()).padStart(2,' ')+'  '+d.getFullYear():short(d);
+  return ST.login-d>15552e6?monDay(d)+'  '+d.getFullYear():short(d);
 }
 
 /* ---------- file system: the machine builds the system folders; site files live in home ---------- */
 function mk(type,name,o){
   var n={type:type,name:name,owner:OWNER,date:FD,prot:false,bin:false,body:null,size:0,mode:null,dev:null,
     kids:type==='d'?Object.create(null):null,parent:null};
-  if(o)for(var k in o)if(has(o,k))n[k]=o[k];
-  return n;
+  return Object.assign(n,o);
 }
 var ROOT=mk('d','',{owner:'root',date:SD});ROOT.parent=ROOT;
 function parts(p){return p.split('/').filter(Boolean)}
@@ -329,7 +350,7 @@ function put(abs,type,o){ /* create a node, making any missing parent folders */
     n=k;
   }
   var last=s[s.length-1],ex=n.kids[last];
-  if(ex&&ex.type==='d'&&type==='d'){if(o)for(k in o)ex[k]=o[k];return ex}
+  if(ex&&ex.type==='d'&&type==='d')return Object.assign(ex,o);
   ex=n.kids[last]=mk(type,last,o);ex.parent=n;return ex;
 }
 function home(p){return p.charAt(0)==='/'?p:p.slice(0,2)==='~/'?ST.home+p.slice(1):ST.home+'/'+p}
@@ -353,7 +374,7 @@ function find(p,exact){ /* node or null; nobody gets through a locked folder.
   }
   return n;
 }
-function bsize(L){return L.reduce(function(n,l){return n+(Array.isArray(l)?l[0]:l).length+1},0)}
+function bsize(L){return L.reduce(function(n,l){return n+lineOf(l)[0].length+1},0)}
 function body(n){return typeof n.body==='function'?n.body():n.body}
 function fsize(n){
   if(n.type==='d')return 16*(Object.keys(n.kids).length+2);
@@ -377,21 +398,22 @@ var CMDS={},PATHS={},NOH={},HELP=[];
 var MAN={};
 function page(names,what,syn,desc,bugs){
   var F=function(L){return (L||[]).map(function(l){return Array.isArray(l)?[PROFILE.fill(l[0])].concat(l.slice(1)):PROFILE.fill(l)})};
-  var p={names:names,what:what,syn:syn,desc:F(desc),bugs:F(bugs)};
-  names.split(/,\s*/).forEach(function(n){MAN[n]=p});
+  var p={names:names.join(', '),what:what,syn:syn,desc:F(desc),bugs:F(bugs)};
+  names.forEach(function(n){MAN[n]=p});
   return p;
 }
-PH.defs.forEach(function(d){ /* later definitions of the same name win */
+function install(n,fn,noh){ /* later definitions of the same name win */
+  CMDS[n]=fn;NOH[n]=noh;delete PATHS[n];
+  HELP=HELP.filter(function(h){return h[0]!==n});
+}
+PH.defs.forEach(function(d){
   if(typeof d.enabled==='function'&&!d.enabled(PROFILE))return; /* e.g. about, only when there is an about section */
   var names=(d.names||[]).filter(function(n){return PROFILE.off.indexOf(n)<0});
   if(!names.length||typeof d.run!=='function')return;
-  names.forEach(function(n){
-    CMDS[n]=d.run;NOH[n]=!!d.noHelpFlag;delete PATHS[n];
-    HELP=HELP.filter(function(h){return h[0]!==n});
-  });
+  names.forEach(function(n){install(n,d.run,!!d.noHelpFlag)});
   if(d.path)PATHS[names[0]]=d.path; /* where its program file shows up in the file tree */
   if(d.help&&!d.hidden)HELP.push([names[0],d.help]);
-  if(d.man)page(names.join(', '),d.man.what||'',d.man.syn||names[0],d.man.desc,d.man.bugs);
+  if(d.man)page(names,d.man.what||'',d.man.syn||names[0],d.man.desc,d.man.bugs);
 });
 /* Text commands (== command: NAME ==). They cannot take the name of a core command while
    it is running; switch it off first ("commands: -mail") and yours takes its place.
@@ -406,18 +428,15 @@ PROFILE.commands.forEach(function(c){
   });
   if(!n.length)return;
   var fn=function(){say(c.body)};
-  n.forEach(function(x){ /* replaces any built-in of that name, its manual page and program file too */
-    CMDS[x]=fn;NOH[x]=false;delete MAN[x];delete PATHS[x];
-    HELP=HELP.filter(function(h){return h[0]!==x});
-  });
+  n.forEach(function(x){install(x,fn,false);delete MAN[x]}); /* replaces any built-in of that name, its manual page and program file too */
   if(c.help){
     HELP.push([n[0],c.help]);
-    page(n.join(', '),c.help.toLowerCase(),n[0],[c.help.toLowerCase()+'.']); /* a page made from the help text */
+    page(n,c.help.toLowerCase(),n[0],[c.help.toLowerCase()+'.']); /* a page made from the help text */
   }
 });
 Object.keys(PROFILE.man).forEach(function(k){ /* == man: NAME == sections */
   if(has(MAN,k))MAN[k].desc=PROFILE.man[k];
-  else page(k,'',k,PROFILE.man[k]);
+  else page([k],'',k,PROFILE.man[k]);
 });
 function manPage(n){ /* body text is indented 5 with a real margin, so wrapped lines stay indented */
   var p=MAN[n],I=5;
@@ -428,10 +447,10 @@ function manPage(n){ /* body text is indented 5 with a real margin, so wrapped l
     if(!lines.length)return;
     L.push('',title);
     lines.forEach(function(l){
-      var a=Array.isArray(l),t=a?l[0]:l;if(!t){L.push('');return}
+      var x=lineOf(l),t=x[0];if(!t){L.push('');return}
       var lead=t.match(/^ */)[0].length;t=t.slice(lead);
       var opt=t.match(/^(\S+ {2,})\S/); /* "-l   long listing ..." wraps under its text */
-      L.push([t,a?l[1]||'':'',Object.assign({indent:I+lead,hang:opt?opt[1].length:0},a&&l[2]||{})]);
+      L.push([t,x[1]||'',Object.assign({indent:I+lead,hang:opt?opt[1].length:0},x[2])]);
     });
   }
   block('DESCRIPTION',p.desc);block('BUGS',p.bugs);
@@ -442,13 +461,13 @@ function manPage(n){ /* body text is indented 5 with a real margin, so wrapped l
 var LOGOUT=false;
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
-  aliases:PROFILE.aliases.slice(),
+  aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
   find:find,norm:norm,put:put,home:home,pathOf:pathOf,body:body,fsize:fsize,longRow:longRow,
   root:ROOT,fileDate:FD,systemDate:SD,
   ctime:ctime,short:short,in79:in79,p2:p2,tz:tz,row:row,manPage:manPage,fill:PROFILE.fill,
-  clear:function(){queue(function(){afterglow(term.scrollTop,.55,900,true);out.textContent=''})},
+  clear:function(){queue(function(){afterglow(term.scrollTop,.55,900,true);out.textContent='';log.textContent=''})},
   logout:function(){ /* log out: clear the glass, replay the self-test, wait at login: */
     LOGOUT=true;PH.aliases=PROFILE.aliases.slice(); /* session aliases die with the shell */
     PH.clear();pause(500);banner();prompt('login: ','login');
@@ -479,23 +498,33 @@ function expand(seg){ /* longest matching alias wins; extra words pass through *
 }
 function runOne(s){
   s=s.trim();if(!s)return;
-  var parts=s.toLowerCase().split(/\s+/),c=parts[0],args=parts.slice(1);
+  var parts=s.toLowerCase().split(/\s+/),c=parts[0],args=parts.slice(1),word=s.split(/\s+/)[0];
   var f=has(CMDS,c)?CMDS[c]:null,name=c;
   if(!f&&c.indexOf('/')>=0){ /* /bin/ls runs ls; any other path is not a program */
     var n=find(c);
     if(n&&n.bin&&has(CMDS,n.name)){f=CMDS[n.name];name=n.name}
-    else if(n){typeLine(s.split(/\s+/)[0]+': cannot execute','err');return}
+    else if(n){typeLine(word+': cannot execute','err');return}
   }
   if(f&&!NOH[name]&&args.indexOf('-h')>=0&&has(MAN,name)){typeLine('usage: '+MAN[name].syn);return}
   if(f){
     try{f(args,s)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   }
-  else typeLine(s.split(/\s+/)[0]+': not found','err');
+  else typeLine(word+': not found','err');
+}
+function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start of a word or after =, so don't ; won't is two commands */
+  var L=[],start=0,ch,j;
+  for(var i=0;i<s.length;i++){
+    ch=s.charAt(i);
+    if(ch===';'){L.push(s.slice(start,i));start=i+1}
+    else if((ch==="'"||ch==='"')&&(!i||/[\s=;]/.test(s.charAt(i-1)))&&(j=s.indexOf(ch,i+1))>=0)i=j;
+  }
+  L.push(s.slice(start));
+  return L;
 }
 function run(raw){
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
   var segs=[];
-  raw.split(';').forEach(function(seg){if(seg.trim())segs=segs.concat(expand(seg).split(';'))});
+  splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
   for(var i=0;i<segs.length&&!LOGOUT;i++)runOne(segs[i]);
   if(LOGOUT){LOGOUT=false;return} /* exit already queued the login: prompt */
   prompt();
@@ -506,7 +535,7 @@ function login(name){
   var n=name.trim().toLowerCase();
   if(!n){prompt('login: ','login');return}
   var usr=find('/usr');
-  if(n==='root'||n===OWNER||!/^[a-z][a-z0-9_]{0,7}$/.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
+  if(n==='root'||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
   var h=usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
   if(h&&n!==ST.user){delete usr.kids[ST.user];h.name=n;usr.kids[n]=h}
   ST.user=n;ST.home='/usr/'+n;ST.cwd=ST.home;ST.login=in79(new Date());
@@ -514,7 +543,7 @@ function login(name){
 }
 
 /* ---------- input ---------- */
-function renderBuf(){if(ready&&bufNode){bufNode.data=MODE==='password'?'':UP(buf);scrollBottom()}}
+function renderBuf(){if(bufNode){bufNode.data=MODE==='password'?'':UP(buf);scrollBottom()}}
 function setBuf(v){
   buf=v.replace(/[\r\n]/g,'').slice(0,64);
   if(kb.value!==buf)kb.value=buf;
@@ -522,8 +551,8 @@ function setBuf(v){
 }
 function submit(){
   click(1,700);
-  if(!ready)return;
-  ready=false;term.classList.remove('idle');
+  if(!bufNode)return; /* no prompt up yet: output is still typing */
+  term.classList.remove('idle');
   var cmd=buf;bufNode=null;setBuf('');
   if(MODE==='login'){login(cmd);return}
   if(MODE==='password'){pause(1400);typeLine('Login incorrect');prompt('login: ','login');return}
@@ -539,19 +568,22 @@ function histNav(d){
 kb.addEventListener('input',function(){
   var grew=kb.value.length>buf.length;setBuf(kb.value);if(grew)click(.667);
 });
-kb.addEventListener('keydown',function(e){
-  if(e.isComposing)return;
-  if(e.key==='Enter'){e.preventDefault();submit()}
-  else if(e.key==='ArrowUp'){e.preventDefault();histNav(-1)}
-  else if(e.key==='ArrowDown'){e.preventDefault();histNav(1)}
-});
+function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
+  var k=e.key,d=k==='ArrowUp'||k==='PageUp'?-1:1;
+  if(k==='Enter')submit();
+  else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
+  else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
+  else return false;
+  e.preventDefault();
+  return true;
+}
 document.addEventListener('keydown',function(e){
-  if(e.target===kb||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.target===kb){if(!e.isComposing)navKey(e);return}
+  if(e.key==='Enter'&&e.target.closest&&e.target.closest('a'))return; /* Enter on a focused link opens it */
   var k=e.key;
-  if(k==='Enter'){e.preventDefault();submit()}
+  if(navKey(e)){if(k==='PageUp'||k==='PageDown')return} /* paging keeps focus where it is, on a link say */
   else if(k==='Backspace'){e.preventDefault();setBuf(buf.slice(0,-1));click(.556)}
-  else if(k==='ArrowUp'){e.preventDefault();histNav(-1)}
-  else if(k==='ArrowDown'){e.preventDefault();histNav(1)}
   else if(k&&k.length===1){e.preventDefault();setBuf(buf+k);click(.667)}
   else return;
   if(!coarse)kb.focus({preventScroll:true});
@@ -560,7 +592,7 @@ document.addEventListener('keydown',function(e){
 /* tap-to-type: focus on click (not pointerdown), refocus once if the OS bounces it */
 var lastTap=0,bounced=false;
 $('#stage').addEventListener('click',function(e){
-  if(e.target.closest&&e.target.closest('a'))return;
+  if(e.target.closest('a'))return;
   lastTap=Date.now();bounced=false;
   kb.focus({preventScroll:true});
 });
@@ -571,17 +603,17 @@ kb.addEventListener('focus',function(){setTimeout(function(){window.scrollTo(0,0
 
 /* ---------- cable ---------- */
 var NS='http://www.w3.org/2000/svg';
-function path(d,stroke,w,op){
+function path(d,stroke,w){
   var p=document.createElementNS(NS,'path');
   p.setAttribute('d',d);p.setAttribute('fill','none');p.setAttribute('stroke',stroke);
   p.setAttribute('stroke-width',w);p.setAttribute('stroke-linecap','round');p.setAttribute('stroke-linejoin','round');
-  if(op!=null)p.setAttribute('opacity',op);
   return p;
 }
 /* cord settings come from site/config.js */
 var CORD=PROFILE.cord,rx=CORD.width/2,sw=CORD.thickness,edge=sw+1.4,gap=CORD.gap,tilt=.35,turns=Math.max(1,Math.round(CORD.turns));
 var pitch=edge+gap;                        /* drop per turn = cord + rim + gap. gap 0 = turns touching */
 var coilLen=2*tilt*rx+(turns+.5)*pitch;
+var lastW,lastH,lastNub; /* what the cable was last drawn for */
 function drawCable(){
   var nub=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nub'))||11; /* strain-relief bottom */
   /* cable height = nub + straight + coil + straight, so the two straights are always equal */
@@ -589,6 +621,8 @@ function drawCable(){
   document.documentElement.style.setProperty('--cable',want+'px');
   var r=svg.getBoundingClientRect(),W=r.width,H=r.height;
   if(!W||!H){W=960;H=want} /* never bail: hidden/pre-layout still gets a cable */
+  if(W===lastW&&H===lastH&&nub===lastNub)return; /* the drawing depends only on these */
+  lastW=W;lastH=H;lastNub=nub;
   svg.setAttribute('viewBox','0 0 '+W+' '+H);
   var cx=W/2,TAU=Math.PI*2;
   var lead=Math.max(0,(H-nub-coilLen)/2);
@@ -614,11 +648,12 @@ function drawCable(){
   var tail='M'+f(e[0])+' '+f(e[1])+'C'+f(e[0])+' '+f(e[1]+drop*.45)+' '+f(cx+6)+' '+f(e[1]+drop*.7)+' '+f(cx+5)+' '+f(H+12);
 
   var E='#232723',C='#141715';
-  while(sway.firstChild)sway.removeChild(sway.firstChild);
-  segs.forEach(function(sg){if(!sg.front){sway.appendChild(path(d(sg.p),'#1a1d1b',sw+1));sway.appendChild(path(d(sg.p),'#0e100f',sw))}});
-  sway.appendChild(path(cord,E,edge));sway.appendChild(path(cord,C,sw));
-  segs.forEach(function(sg){if(sg.front){sway.appendChild(path(d(sg.p),'#2b302c',edge));sway.appendChild(path(d(sg.p),C,sw))}});
-  sway.appendChild(path(tail,E,edge));sway.appendChild(path(tail,C,sw));
+  function pair(dd,rim,rimW,core){sway.appendChild(path(dd,rim,rimW));sway.appendChild(path(dd,core,sw))} /* rim, then the core over it */
+  sway.textContent='';
+  segs.forEach(function(sg){if(!sg.front)pair(d(sg.p),'#1a1d1b',sw+1,'#0e100f')});
+  pair(cord,E,edge,C);
+  segs.forEach(function(sg){if(sg.front)pair(d(sg.p),'#2b302c',edge,C)});
+  pair(tail,E,edge,C);
   /* idle sway at the coil bottom (cord sway setting), pivoting at the strain relief */
   svg.style.setProperty('--sa',(Math.atan(CORD.sway/Math.max(e[1],40))*180/Math.PI).toFixed(3)+'deg');
 }
@@ -639,9 +674,8 @@ fitViewport();
 if(vv)vv.addEventListener('resize',fitViewport);
 window.addEventListener('resize',fitViewport);
 window.addEventListener('orientationchange',function(){setTimeout(fitViewport,250)});
-drawCable();redraw();
+drawCable();
 window.addEventListener('load',redraw);
-window.addEventListener('resize',redraw);
 if(window.ResizeObserver)new ResizeObserver(redraw).observe(svg);
 
 /* ---------- boot ---------- */
@@ -655,24 +689,21 @@ function problems(){ /* content mistakes, shown on the glass so they get fixed *
 }
 function boot(){
   setTimeout(function(){$('#crt').classList.add('lit')},1300);
-  if(!coarse){try{kb.focus({preventScroll:true})}catch(e){}}
+  if(!coarse)kb.focus({preventScroll:true});
   pause(900); /* tube warm-up */
   problems();
   banner();
   typeLine(ST.user,'',null,{pre:'login: ',hold:700,speed:2.2}); /* first visit: auto-login as guest */
   pause(450);
   welcome();
-  queue(function(){booted=true});
   prompt();
 }
 function banner(){ /* terminal self-test from the machine's == banner == section; replayed after exit */
-  var R=(PROFILE.raw.banner||[]).slice(),B=PROFILE.sec.banner||[];
-  while(R.length&&!R[0].trim())R.shift(); /* line up with the parsed lines, which drop outer blanks */
-  R=R.slice(0,B.length);
+  var R=PROFILE.raw.banner||[],B=PROFILE.sec.banner||[];
   R.forEach(function(raw,i){ /* LABEL | VALUE | pause-ms  prints a dotted self-test row */
     var f=raw.split('|').map(function(x){return x.trim()}),ms=0,line;
     if(f.length>=2){line=[row(UP(f[0]),UP(f[1])),''];ms=parseInt(f[2],10)||0}
-    else line=Array.isArray(B[i])?B[i]:[B[i],''];
+    else line=lineOf(B[i]);
     typeLine(line[0],line[1],null,{speed:.5});
     if(ms)pause(ms);
   });

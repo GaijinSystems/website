@@ -10,7 +10,6 @@
   --sh:calc(var(--sw) * .75);
   --bh:calc(var(--sw) * .842); /* bezel outer height */
   --fs:clamp(13px,calc(var(--sw) / 44.7),32px); /* text scales with the glass (~67 columns) */
-  --cable:80px; /* fallback only: the script sets this from the cord settings */
   --nub:11;     /* strain-relief bottom, px below the cable-wrap top */
 }
 @supports (height:100dvh){:root{--sw:min(calc(80vw / 1.079),calc(var(--app-h,100dvh) * .8 / .842))}}
@@ -22,7 +21,7 @@ body{
   font-family:"VT323","Courier New",Courier,monospace;
 }
 #stage{
-  position:relative;width:100%;height:100%;margin:0 auto;
+  position:relative;width:100%;height:100%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
 }
 
@@ -92,7 +91,8 @@ body{
 .line.dim{color:var(--dim);text-shadow:0 0 6px rgba(29,143,71,.8),0 0 18px rgba(29,143,71,.3)}
 .line.err{color:var(--err);text-shadow:0 0 6px rgba(255,95,86,.85),0 0 22px rgba(255,95,86,.3)}
 .line a{color:inherit;text-decoration:underline dotted;text-underline-offset:.2em;user-select:text;-webkit-user-select:text}
-.line a:hover,.line a:focus-visible{text-decoration-style:solid;outline:none}
+.line a:hover{text-decoration-style:solid}
+.line a:focus-visible{text-decoration-style:solid;outline:2px solid currentColor;outline-offset:2px}
 .line.row{padding:.16em 0} /* project rows (mail) get 25% more room so the underlines do not crowd */
 .cursor{
   display:inline-block;width:.62em;height:1.02em;margin-left:1px;vertical-align:-.17em;
@@ -116,8 +116,8 @@ body{
   66%{opacity:.55}74%{opacity:1}79%{opacity:.45}88%{opacity:.85}95%{opacity:.6}
 }
 .band{position:absolute;left:-4%;right:-4%;z-index:2;pointer-events:none;mix-blend-mode:screen}
-.band.b2{height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:down 19s linear infinite}
-@keyframes down{0%{top:-150px}100%{top:100%}}
+.band.b2{top:0;height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:down 19s linear infinite}
+@keyframes down{0%{transform:translateY(-150px)}100%{transform:translateY(var(--sh))}}
 .scan{z-index:3;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.38) 2px,rgba(0,0,0,.38) 3px)}
 .vig{z-index:4;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 58%,rgba(0,0,0,.35) 80%,rgba(0,0,0,.8) 100%)}
 
@@ -135,6 +135,9 @@ body{
   background:transparent;color:transparent;caret-color:transparent;
 }
 
+/* ---------- screen reader log: out of sight, still read aloud (see engine/phosphor.js) ---------- */
+#log{position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
 /* ---------- content problems (shown on the glass, see engine/phosphor.js) ---------- */
 .line.warn{color:#ffd166;text-shadow:0 0 6px rgba(255,209,102,.7)}
 
@@ -143,13 +146,12 @@ body{
      --app-h shrinks and the whole rig resizes to sit just above it */
   :root{--sw:calc(100vw - 30px);--sh:clamp(140px,calc(var(--app-h,100dvh) - 128px),900px);--fs:clamp(13px,2.2vw,17px);--cable:77px;--nub:8}
   #stage{justify-content:flex-end;padding-top:calc(8px + env(safe-area-inset-top,0px))}
-  #cablewrap{position:relative;top:auto;bottom:auto;left:auto;right:auto;width:100%;flex:0 0 var(--cable);margin-top:-4px}
+  #cablewrap{position:relative;inset:auto;width:100%;flex:0 0 var(--cable);margin-top:-4px}
   #bezel{padding:12px 12px 22px;border-radius:16px 16px 22px 22px / 14px 14px 28px 28px}
   #bezel::after{bottom:-12px;width:28px;height:15px}
   .badge{display:none}
 }
 @media (prefers-reduced-motion:reduce){
-  #crt,#crt::before,.flicker,.band,#sway{animation:none}
-  #crt::before{display:none}
-  .band{display:none}
+  #crt,.flicker,#sway,#term.idle .cursor{animation:none}
+  #crt::before,.band{display:none}
 }

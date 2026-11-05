@@ -28,7 +28,7 @@ P.command({names:['ls'],help:'list files',path:'/bin',
     want.forEach(function(w){
       var n=P.find(w),shown;
       if(!n)L.push([w+' not found','err']);
-      else if(n.type!=='d'){shown=w.replace(/[^\/]*$/,n.name);L.push(long?P.longRow(shown,n):shown)}
+      else if(n.type!=='d'){shown=w.replace(/[^\/]*(\/\.?)*$/,n.name);L.push(long?P.longRow(shown,n):shown)}
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);
     });
@@ -50,7 +50,7 @@ P.command({names:['cat'],help:'print a file',path:'/bin',
     'locked files cannot be opened, and neither can folders.'],bugs:[
     'cat of a program prints exactly what you deserve.']},
   run:function(a){
-    if(!a.length){P.typeLine('usage: cat file ...');return} /* real cat would wait for typing; there is no ^D here */
+    if(!a.length){P.typeLine('usage: '+P.man.cat.syn);return} /* real cat would wait for typing; there is no ^D here */
     a.forEach(function(x){
       var n=P.find(x);
       if(!n||n.prot||n.type==='d')P.typeLine("cat: can't open "+x,'err');
