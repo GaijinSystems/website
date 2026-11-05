@@ -691,6 +691,22 @@ var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
   hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,
+  /* what a game keeps between visits, in this browser only; false or null when the browser refuses */
+  saved:function(k){try{return JSON.parse(localStorage.getItem('phosphor-9/'+k))}catch(e){return null}},
+  save:function(k,v){
+    try{
+      if(v===null)localStorage.removeItem('phosphor-9/'+k);
+      else localStorage.setItem('phosphor-9/'+k,JSON.stringify(v));
+      return true;
+    }catch(e){return false}
+  },
+  fillGlass:function(on){ /* the glass fills the window; remembered in this browser */
+    if(on===undefined)return document.documentElement.classList.contains('fill');
+    document.documentElement.classList.toggle('fill',on);
+    PH.save('fill',on?true:null);
+    window.dispatchEvent(new Event('resize')); /* the glass changed size: everything re-fits */
+    return on;
+  },
   columns:function(){return cols()},fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
@@ -707,6 +723,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
     PH.clear();pause(500);banner();prompt('login: ','login');
   }
 });
+if(PH.saved('fill'))document.documentElement.classList.add('fill');
 PH.hooks.forEach(function(fn){
   try{fn(PH)}catch(e){PROFILE.problems.push('machine setup failed: '+e.message)}
 });

@@ -1,5 +1,5 @@
 /* PHOSPHOR-9 terminal: machine "bsd-1987", small games from the Berkeley distribution: wump,
-   number, primes, factor, banner, hangman and worm. Ported to JavaScript for this terminal from
+   number, primes, factor, banner, hangman, worm, robots and snake. Ported to JavaScript for this terminal from
    the C in NetBSD's games. hangman's word list is new. The originals carry this notice, with years
    from 1980 to 1994 and these authors: wump Dave Taylor, hangman Ken Arnold, worm Michael Toy.
    This file keeps the notice, and may be used under its terms.
@@ -607,5 +607,400 @@ function Worm(S,done,argv,last){
   return {draw:draw,feed:process};
 }
 game('worm','play the growing worm game','worm [ size ]','steer the worm to the numbers, and it grows by that much. h j k l or the arrow keys steer; capitals run. do not hit the wall, or yourself.',fullProgram('worm',Worm),'by michael toy.');
+
+/* ---------- robots: run from them, and make them hit each other ---------- */
+function Robots(S,done,argv,last){
+  var flags=argv.join(''),Start=/a/.test(flags)?4:1,Tele=/t/.test(flags),games=1+(flags.match(/n/g)||[]).length;
+  var YF=S.rows-1,XF=Math.min(60,S.cols-21);
+  if(XF<20||YF<12){setTimeout(function(){last.push('Need at least a 12x41 screen');S.close();done()},0);return {feed:function(){},draw:function(){}}}
+  var DESC=['Directions:','','y k u',' \\|/','h- -l',' /|\\','b j n','','Commands:','','w:  wait for end','t:  teleport','q:  quit','^L: redraw screen','','Legend:','','+:  robot','*:  junk heap','@:  you','','Score: 0'];
+  if(S.rows<24)DESC=DESC.filter(function(l){return l});
+  var MAX=40,field,robots,scrap,me,level,score,dead,waiting,running,runch,count,cnt,num,wb,msg,bonus,query=null,timer=null,best=0,tele=false,over=false,bx=[];
+  function rnd(){
+    var y,x;
+    do{y=ran(YF-1)+1;x=ran(XF-1)+1}while(field[y][x]!==0);
+    return {y:y,x:x};
+  }
+  function make(){
+    var i;
+    field=[];
+    for(i=0;i<=YF;i++){field.push([]);for(var x=0;x<=XF;x++)field[i].push(0)}
+    robots=[];scrap=[];waiting=false;wb=0;running=false;count=0;
+    num=Math.min(level*10,MAX);
+    for(i=0;i<num;i++){var p=rnd();robots.push(p);field[p.y][p.x]++}
+    me=rnd();
+  }
+  function init(){dead=false;waiting=false;score=0;level=Start;bx=[];make()}
+  function draw(){
+    var C=[],y,x;
+    for(y=0;y<S.rows;y++)C.push(' '.repeat(S.cols).split(''));
+    function put(r,c,t){for(var i=0;i<t.length;i++)if(r>=0&&r<S.rows&&c+i<S.cols)C[r][c+i]=t.charAt(i)}
+    put(0,0,'+'+'-'.repeat(XF-1)+'+');put(YF,0,'+'+'-'.repeat(XF-1)+'+');
+    for(y=1;y<YF;y++){put(y,0,'|');put(y,XF,'|')}
+    DESC.forEach(function(l,i){put(i,XF+2,l)});
+    var sr=DESC.length-1;
+    put(sr,XF+9,String(score));
+    if(tele)put(DESC.length,XF+2,'Teleport!');
+    scrap.forEach(function(p){put(p.y,p.x,'*')});
+    robots.forEach(function(p){if(p.y>=0)put(p.y,p.x,'+')});
+    put(me.y,me.x,'@');
+    if(dead)put(me.y,me.x,'AARRrrgghhhh....'.slice(0,Math.max(0,XF-me.x)));
+    bx.forEach(function(t,i){put(DESC.length+1+i,XF+2,t)});
+    if(query)put(YF-1,XF+2,query.q);
+    S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),me.y,me.x);
+    S.say(query?query.q:num+' robots, level '+level+', score '+score);
+  }
+  function eaten(p){
+    for(var y=p.y-1;y<=p.y+1;y++){
+      if(y<=0||y>=YF)continue;
+      for(var x=p.x-1;x<=p.x+1;x++){
+        if(x<=0||x>=XF)continue;
+        if(field[y][x]===1)return true;
+      }
+    }
+    return false;
+  }
+  function must(){
+    for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+      var p={y:me.y+dy,x:me.x+dx};
+      if(p.y<=0||p.y>=YF||p.x<=0||p.x>=XF||field[p.y][p.x]>0)continue;
+      if(!eaten(p))return false;
+    }
+    return true;
+  }
+  function moveRobots(){
+    robots.forEach(function(r){
+      if(r.y<0)return;
+      field[r.y][r.x]--;
+      r.y+=Math.sign(me.y-r.y);
+      r.x+=Math.sign(me.x-r.x);
+      r.y=Math.max(0,Math.min(YF-1,r.y));
+      r.x=Math.max(0,Math.min(XF-1,r.x));
+      field[r.y][r.x]++;
+    });
+    robots.forEach(function(r){
+      if(r.y<0)return;
+      if(r.y===me.y&&r.x===me.x)dead=true;
+      else if(field[r.y][r.x]>1){
+        scrap.push({y:r.y,x:r.x});
+        r.y=-1;
+        num--;
+        if(waiting)wb++;
+        score+=10;
+      }
+    });
+    if(field[me.y][me.x]>0&&!dead)dead=true;
+  }
+  function record(){ /* the score file: ten best, kept in this browser */
+    var T=P.saved('robots/scores')||[],me2=P.st.user;
+    T.push({n:me2,s:score});
+    T.sort(function(a,b){return b.s-a.s});
+    T=T.slice(0,10);
+    P.save('robots/scores',T);
+    bx=['Scores:'].concat(T.slice(0,Math.max(1,YF-DESC.length-5)).map(function(t,i){return String(i+1).padStart(2)+' '+String(t.s).padStart(5)+' '+t.n.slice(0,8)}));
+  }
+  function ended(){
+    if(score>best)best=score;
+    if(!dead)return;
+    record();
+    running=false;count=0;waiting=false;
+    if(--games>0){clearTimeout(timer);timer=setTimeout(function(){init();draw()},1200);return}
+    query={q:'Another game?',fn:function(y){
+      query=null;
+      if(y){games=1;init();draw();return}
+      quit();
+    }};
+  }
+  function quit(){
+    over=true;clearTimeout(timer);
+    last.push('Your best score was '+best);
+    S.close();done();
+  }
+  function afterMove(){
+    if(field[me.y][me.x]!==0)dead=true;
+    if(!dead)moveRobots();
+    if(dead){ended();return}
+    if(num<=0){
+      bx=[];
+      if(level===Start&&Start>1){bx.push('Advance bonus: 600');score+=600}
+      if(wb){bx.push('Wait bonus: '+wb);score+=wb}
+      level++;
+      make();
+    }
+  }
+  function doMove(dy,dx){
+    var p={y:me.y+dy,x:me.x+dx};
+    if(p.y<=0||p.y>=YF||p.x<=0||p.x>=XF||field[p.y][p.x]>0||eaten(p)){
+      if(running)running=false;
+      else{P.click(1,420);count=0}
+      return false;
+    }
+    if(dy===0&&dx===0)return true;
+    me=p;
+    return true;
+  }
+  var DIR={' ':[0,0],'.':[0,0],y:[-1,-1],k:[-1,0],u:[-1,1],h:[0,-1],l:[0,1],b:[1,-1],j:[1,0],n:[1,1]};
+  function act(c){
+    if(Tele&&must())c='t';
+    var d=DIR[c];
+    if(d){
+      if(doMove(d[0],d[1])){afterMove();bx=dead?bx:bx;if(count>0)count--;return true}
+      return false;
+    }
+    if(/^[YUHJKLBN>]$/.test(c)){running=true;runch=c==='>'?' ':c.toLowerCase();return true}
+    if(c==='q'||c==='Q'){query={q:'Really quit?',fn:function(y){query=null;if(y)quit();else draw()}};return false}
+    if(c==='w'||c==='W'){waiting=true;afterMove();return true}
+    if(c==='t'||c==='T'){
+      running=false;
+      me=rnd();
+      tele=true;
+      draw();
+      busy=true;
+      setTimeout(function(){tele=false;busy=false;if(over)return;afterMove();go()},600);
+      return false;
+    }
+    if(c==='C-l')return false;
+    P.click(1,420);count=0;
+    return false;
+  }
+  var busy=false;
+  function go(){ /* keep going by itself while running, counting or waiting */
+    clearTimeout(timer);
+    if(over)return;
+    draw();
+    if(busy||dead||query)return;
+    if(!running&&!waiting&&!count)return;
+    timer=setTimeout(function(){
+      if(over||busy||dead||query)return;
+      if(waiting)afterMove();
+      else if(running){var d=DIR[runch];if(doMove(d[0],d[1]))afterMove()}
+      else if(count)act(cnt);
+      go();
+    },running?40:waiting?90:60);
+  }
+  var digits='';
+  init();draw();
+  return {draw:draw,feed:function(k){
+    if(k==='C-c'){quit();return}
+    if(busy)return;
+    if(query){
+      if(k.length!==1)return;
+      query.fn(k==='y'||k==='Y');
+      if(!over)go();
+      return;
+    }
+    if(dead||waiting||running)return;
+    if(k.length!==1&&k.indexOf('C-')!==0)return;
+    if(/^[0-9]$/.test(k)){digits+=k;return}
+    bx=[];
+    if(digits){count=+digits;cnt=k;digits='';if(!act(cnt))count=0;go();return}
+    act(k);
+    go();
+  }};
+}
+game('robots','fight off villainous robots','robots [ -atns ]','they all move one step towards you each time you move. when two meet, they become a junk heap, and so does anything that hits it. y k u h l b j n move, capitals keep going, w waits for the end, t teleports. -a starts harder, -t teleports you when you must, and -s shows the best scores, kept in this browser.',function(a,raw,w){
+  if(a.join('').indexOf('s')>=0&&a.every(function(x){return x.charAt(0)==='-'})){
+    var T=P.saved('robots/scores')||[];
+    P.say(T.length?T.map(function(t,i){return String(i+1).padStart(2)+' '+String(t.s).padStart(5)+' '+t.n}):['No scores']);
+    return;
+  }
+  fullProgram('robots',Robots)(a,raw,w);
+});
+
+/* ---------- snake: get the money and get out, with a snake after you ---------- */
+function Snake(S,done,argv,last){
+  var lcnt=S.rows-2,ccnt=S.cols-2,i,moves=0,loot=0,penalty=0,fast=true,oldw=0,repeat=1,lastc='',pending='',busy=false,over=false,overlay=[],flash='';
+  for(i=0;i<argv.length;i++){
+    if(argv[i]==='-w')ccnt=Math.min(ccnt,atoi(argv[++i])||ccnt);
+    else if(argv[i]==='-l')lcnt=Math.min(lcnt,atoi(argv[++i])||lcnt);
+    else if(argv[i]==='-t')fast=false;
+  }
+  var mn=Math.min(lcnt,ccnt);
+  if(mn<4){setTimeout(function(){last.push('snake: screen too small for a fair game.');S.close();done()},0);return {feed:function(){},draw:function(){}}}
+  if(mn<12)mn=12;
+  mn+=2;
+  var chunk=Math.trunc(675/(mn+6)+2.5);
+  var you={col:0,line:0},money={col:0,line:0},finish={col:0,line:0},snake=[];
+  for(i=0;i<6;i++)snake.push({col:0,line:0});
+  function same(a,b){return a.line===b.line&&a.col===b.col}
+  function cash(){return Math.trunc(chunk*(loot-penalty)/25)}
+  function snrand(){
+    for(;;){
+      var p={col:ran(ccnt),line:ran(lcnt)};
+      if(p.line===0&&p.col<5)continue;
+      if(same(p,you)||same(p,money)||same(p,finish))continue;
+      if(snake.some(function(s){return same(p,s)}))continue;
+      return p;
+    }
+  }
+  var MX=[0,1,1,1,0,-1,-1,-1],MY=[-1,-1,0,1,1,1,0,-1],ABS=[1,1.4,1,1.4,1,1.4,1,1.4];
+  function chase(sp){
+    var dc=you.col-sp.col,dl=you.line-sp.line,v1=Math.sqrt(dc*dc+dl*dl),w=0,max=0,i,wt=[],vp;
+    for(i=0;i<8;i++){
+      vp=dc*MX[i]+dl*MY[i];
+      vp=v1>0?vp/(v1*ABS[i]):1;
+      if(vp>max){max=vp;w=i}
+    }
+    for(i=0;i<8;i++){
+      var d={col:sp.col+MX[i],line:sp.line+MY[i]};
+      wt[i]=0;
+      if(d.col<0||d.col>=ccnt||d.line<0||d.line>=lcnt||same(d,money)||same(d,finish))continue;
+      wt[i]=i===w?Math.trunc(loot/10):1;
+      if(i===oldw)wt[i]+=Math.trunc(loot/20);
+    }
+    var total=0;for(i=0;i<8;i++)total+=wt[i];
+    vp=total?ran(1024)%total:0;
+    for(i=0;i<8;i++){if(vp<wt[i])break;vp-=wt[i]}
+    if(i===8)for(i=0;i<7&&wt[i]===0;i++);
+    oldw=i;
+    return {col:sp.col+MX[i],line:sp.line+MY[i]};
+  }
+  function draw(){
+    var C=[],y;
+    for(y=0;y<S.rows;y++)C.push(' '.repeat(S.cols).split(''));
+    function pc(p,c){var r=p.line+1,x=p.col+1;if(r>=0&&r<S.rows&&x>=0&&x<S.cols)C[r][x]=c}
+    if(flash){
+      flash.split('').forEach(function(c,i){C[Math.trunc(S.rows/2)][Math.max(0,Math.trunc(S.cols/2)-8)+i]=c});
+      S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),you.line+1,you.col+1);
+      return;
+    }
+    for(y=1;y<=ccnt;y++){C[0][y]='-';C[lcnt+1][y]='-'}
+    for(y=0;y<=lcnt+1;y++){C[y][0]='|';C[y][ccnt+1]='|'}
+    pc(finish,'#');pc(money,'$');
+    for(y=5;y>=1;y--)pc(snake[y],'s');
+    pc(snake[0],'S');
+    if(cash()>0)('$'+cash()).split('').forEach(function(c,i){C[1][1+i]=c});
+    pc(you,'I');
+    overlay.forEach(function(o){pc(o,o.c)});
+    S.draw(C.map(function(r){return r.join('').replace(/\s+$/,'')}),you.line+1,you.col+1);
+    S.say('you $'+cash());
+  }
+  function post(){ /* best for each visitor name and the record, kept in this browser */
+    var R=P.saved('snake/scores')||{best:{},who:'',high:0},u=P.st.user,was=R.best[u]||0,sc=cash();
+    if(sc>was){R.best[u]=sc;last.push('You bettered your previous best of $'+was)}
+    else last.push('Your best to date is $'+was);
+    if(sc>R.high||!R.who){
+      last.push(R.who?'You beat '+R.who+"'s old record of $"+R.high+'!':'You set a new record!');
+      R.high=sc;R.who=u;
+    }
+    else last.push('The highest is '+R.who+' with $'+R.high);
+    P.save('snake/scores',R);
+  }
+  function quit(){
+    over=true;
+    last.push('You made '+moves+' moves.');
+    S.close();done();
+  }
+  function warp(bonus){
+    you=snrand();
+    if(bonus){loot-=penalty;penalty=0}
+    else penalty+=Math.trunc(loot/10);
+    busy=true;flash=bonus?'BONUS!!!':'SPACE WARP!!!';draw();
+    setTimeout(function(){flash='';busy=false;if(!over)draw()},700);
+  }
+  function eaten(){
+    busy=true;
+    overlay=[{col:you.col,line:you.line,c:'@'}];
+    draw();
+    setTimeout(function(){
+      overlay=[];
+      var i=cash()%10,b=ran(10);
+      if(b===i){warp(true);return}
+      last.push('');
+      last.push(loot>=penalty?'You and your $'+cash()+' have been eaten':'The snake ate you.  You owe $'+(-cash())+'.');
+      quit();
+    },900);
+  }
+  function push(){
+    var tmp=snake[5];
+    for(var i=4;i>=0;i--)snake[i+1]=snake[i];
+    snake[0]=chase(snake[1]);
+    for(i=0;i<6;i++)if(same(snake[i],you)||same(tmp,you)){eaten();return true}
+    return false;
+  }
+  function win(){
+    busy=true;
+    var x={col:finish.col,line:finish.line},n=fast?10:4,j,k,O=[];
+    for(j=1;j<n;j++){
+      for(k=0;k<j;k++){O.push({col:x.col,line:x.line,c:'#'});x.line--}
+      for(k=0;k<j;k++){O.push({col:x.col,line:x.line,c:'#'});x.col++}
+      j++;
+      for(k=0;k<j;k++){O.push({col:x.col,line:x.line,c:'#'});x.line++}
+      for(k=0;k<j;k++){O.push({col:x.col,line:x.line,c:'#'});x.col--}
+    }
+    overlay=O;draw();
+    setTimeout(function(){
+      last.push('You have won with $'+cash()+'.');
+      post();
+      quit();
+    },900);
+  }
+  function snap(){
+    function stretch(t){
+      var O=[],l,c;
+      if(Math.abs(t.col-you.col)<Math.trunc(ccnt/12)&&you.line!==t.line){
+        if(you.line<t.line)for(l=you.line+1;l<=t.line;l++)O.push({col:you.col,line:l,c:'v'});
+        else for(l=you.line-1;l>=t.line;l--)O.push({col:you.col,line:l,c:'^'});
+        return O;
+      }
+      if(Math.abs(t.line-you.line)<Math.trunc(lcnt/7)&&you.col!==t.col){
+        if(you.col<t.col)for(c=you.col+1;c<=t.col;c++)O.push({col:c,line:you.line,c:'>'});
+        else for(c=you.col-1;c>=t.col;c--)O.push({col:c,line:you.line,c:'<'});
+        return O;
+      }
+      return null;
+    }
+    overlay=stretch(money)||stretch(finish)||[{col:you.col,line:you.line,c:'?'}];
+    busy=true;draw();
+    setTimeout(function(){overlay=[];busy=false;if(!over)draw()},500);
+  }
+  function step(c,n){
+    for(var k=1;k<=n;k++){
+      moves++;
+      if(/^(s|h|ArrowLeft|Backspace)$/.test(c)){if(you.col>0)you={col:you.col-1,line:you.line}}
+      else if(/^(f|l|ArrowRight| )$/.test(c)){if(you.col<ccnt-1)you={col:you.col+1,line:you.line}}
+      else if(/^(C-p|e|k|ArrowUp|i)$/.test(c)){if(you.line>0)you={col:you.col,line:you.line-1}}
+      else if(/^(C-n|c|j|ArrowDown|Enter|m)$/.test(c)){if(you.line+1<lcnt)you={col:you.col,line:you.line+1}}
+      if(same(you,money)){
+        loot+=25;
+        do{money=snrand()}while(same(money,finish)||(money.col<5&&money.line===0)||same(money,you));
+        continue;
+      }
+      if(same(you,finish)){win();return}
+      if(push())return;
+    }
+    draw();
+  }
+  finish=snrand();you=snrand();money=snrand();
+  snake=[snrand()];
+  for(i=1;i<6;i++)snake.push(chase(snake[i-1]));
+  draw();
+  return {draw:draw,feed:function(k){
+    if(over||busy)return;
+    if(k==='C-c'){quit();return}
+    if(/^[0-9]$/.test(k)){pending+=k;return}
+    var c=k;
+    if(pending){repeat=+pending;pending=''}
+    else if(c!=='.')repeat=1;
+    if(c==='.')c=lastc;
+    lastc=c;
+    switch(c){
+      case 'C-d':case 'x':quit();return;
+      case 'C-l':draw();return;
+      case 'p':case 'd':snap();return;
+      case 'w':warp(false);return;
+      case 'A':repeat=you.col;c='h';break;
+      case 'H':case 'S':repeat=you.col-money.col;c='h';break;
+      case 'T':repeat=you.line;c='k';break;
+      case 'K':case 'E':repeat=you.line-money.line;c='k';break;
+      case 'P':repeat=ccnt-1-you.col;c='l';break;
+      case 'L':case 'F':repeat=money.col-you.col;c='l';break;
+      case 'B':repeat=lcnt-1-you.line;c='j';break;
+      case 'J':case 'C':repeat=money.line-you.line;c='j';break;
+    }
+    step(c,repeat);
+  }};
+}
+game('snake','display chase game','snake [ -w width ] [ -l length ] [ -t ]','you are I, the snake is S and its tail, the money is $, and the way out is #. every move you make, it makes one too. h j k l or the arrows move, capitals line you up with the money, w warps you away at a price, d looks for what is near. x quits.',fullProgram('snake',Snake));
 
 })(window.Phosphor);
