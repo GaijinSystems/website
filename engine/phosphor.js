@@ -136,7 +136,7 @@ function build(){
 /* ---------- content (parsed from every Phosphor.content block, in load order) ---------- */
 var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
 var PROFILE=(function(){
-  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',notFound:'%s: not found',
+  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
     cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:PH.machine&&PH.catalog[PH.machine].year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',
@@ -156,6 +156,8 @@ var PROFILE=(function(){
     else if(k==='uppercase')P.upper=yes(v);
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
     else if(k==='not found')P.notFound=v;
+    else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8}
+    else if(k==='mail notice')P.mailNotice=v;
     else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
     else if(k==='shell')P.dos=/^dos$/i.test(v);           /* backslash paths; no quotes, $ or ; */
     else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
@@ -493,7 +495,7 @@ function input(names,done){ /* the lines a command works on: named files, else i
     var L=[];
     names.forEach(function(x){
       var n=find(x);
-      if(!n||n.type==='d'||n.prot)typeLine("can't open "+x,'err');
+      if(!n||n.type==='d'||n.prot)typeLine(CURRENT+": can't open "+x,'err');
       else L=L.concat(textOf(n));
     });
     done(L);
@@ -609,8 +611,9 @@ function modeOf(n){
 }
 function links(n){return n.type!=='d'?1:2+Object.keys(n.kids).filter(function(k){return n.kids[k].type==='d'}).length}
 function longRow(name,n){
-  var sz=n.dev?String(n.dev[0]).padStart(2)+','+String(n.dev[1]).padStart(3):String(fsize(n)).padStart(6);
-  return [modeOf(n)+' '+String(links(n)).padStart(2)+' '+n.owner.padEnd(8)+sz+' '+lsdate(n.date)+' '+name,n.prot?'dim':''];
+  var O=PROFILE.lsOwner,Z=PROFILE.lsSize; /* widths differ by system: 6 and 7 on V7, 8 and 8 at Berkeley */
+  var sz=n.dev?(String(n.dev[0]).padStart(3)+','+String(n.dev[1]).padStart(3)).padStart(Z):String(fsize(n)).padStart(Z);
+  return [modeOf(n)+' '+String(links(n)).padStart(2)+' '+n.owner.slice(0,O).padEnd(O)+sz+' '+lsdate(n.date)+' '+name,n.prot?'dim':''];
 }
 function row(l,v){var d=Math.max(2,20-l.length);return l+' \u0003'+'.'.repeat(d)+'\u0004 '+v} /* dot leader squeezes on narrow glass */
 
@@ -725,6 +728,7 @@ function expand(seg){ /* longest matching alias wins; extra words pass through *
   });
   return best?[best.to].concat(parts.slice(best.from.length)).join(' '):seg.trim();
 }
+var CURRENT='';
 function runOne(s,words){
   s=s.trim();
   words=words||s.split(/\s+/);
@@ -740,6 +744,7 @@ function runOne(s,words){
   }
   if(f&&!NOH[name]&&args.indexOf('-h')>=0&&has(MAN,name)){typeLine('usage: '+MAN[name].syn);return}
   if(f){
+    CURRENT=name;
     try{f(args,s,words)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   }
   else if(!(PH.fallback&&PH.fallback(word,s,args)))typeLine(PROFILE.notFound.replace('%s',word),'err');
@@ -935,6 +940,7 @@ function parseTree(lines){
       if(i>=S.length){if(stops)throw MORE;return out}
       var t=S[i],w=firstWord(t),m;
       if(stops&&stops.indexOf(w)>=0)return out;
+      if(/^(fi|done|then|do|else|elif|esac)$/.test(w))throw new Error("syntax error: `"+w+"' unexpected");
       i++;
       if(!t)continue;
       if(w==='for'){
@@ -1036,7 +1042,7 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
   queue(function(){ARGS=args||['sh'];SCRIPTS++;runBlock(tree)});
   queue(function(){ARGS=keep;SCRIPTS--;LOOP=null},true);
 }
-var COMPOUND_SH=/^(for|while|until|if|case)$/,COMPOUND_CSH=/^foreach$/;
+var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^foreach$/;
 function compound(line){
   if(PROFILE.dos)return false;
   return statements([line]).some(function(t){return (PROFILE.csh?COMPOUND_CSH:COMPOUND_SH).test(firstWord(t))});
@@ -1206,6 +1212,23 @@ document.addEventListener('keydown',function(e){
   if(!coarse)kb.focus({preventScroll:true});
 });
 
+/* a phone has no escape or control keys, and vi and DOS need them: a small row of them on the glass */
+if(coarse){
+  var soft=document.createElement('div');soft.id='softkeys';soft.setAttribute('aria-label','Keys a phone does not have');
+  [['esc','Escape'],['^C','c'],['^D','d'],['^Z','z'],['tab','Tab']].forEach(function(b){
+    var t=document.createElement('button');t.type='button';t.textContent=b[0];
+    t.addEventListener('click',function(e){
+      e.stopPropagation();
+      var named=b[1].length>1;
+      if(KEYS)KEYS(named?b[1]:'C-'+b[1]);
+      else if(!named)ctrlKey({key:b[1],preventDefault:function(){}});
+      kb.focus({preventScroll:true});
+    });
+    soft.appendChild(t);
+  });
+  $('#screen').appendChild(soft);
+}
+
 /* tap-to-type: focus on click (not pointerdown), refocus once if the OS bounces it */
 var lastTap=0,bounced=false;
 $('#stage').addEventListener('click',function(e){
@@ -1335,7 +1358,7 @@ function banner(){ /* terminal self-test from the machine's == banner == section
 }
 function welcome(){
   say(PROFILE.welcome);
-  if(PROFILE.mail.length)typeLine('you have mail.');
+  if(PROFILE.mail.length)typeLine(PROFILE.mailNotice);
   if(coarse)typeLine('(tap the screen for a keyboard.)','dim');
 }
 boot();

@@ -9,6 +9,7 @@ installed: 1986-06-06 19:55
 user:      guest
 homes:     /usr
 case:      sensitive
+mail notice: You have mail.
 csh:       yes
 prompt:    "% "
 not found: %s: Command not found.
@@ -86,14 +87,14 @@ a  140  co  0:30  rogue
 
 == ifconfig ==
 de0: flags=43<UP,BROADCAST,RUNNING>
-     inet 192.5.48.20 netmask ffffff00 broadcast 192.5.48.255
+	inet 192.5.48.20 netmask ffffff00 broadcast 192.5.48.255
 lo0: flags=49<UP,LOOPBACK,RUNNING>
-     inet 127.0.0.1 netmask ff000000
+	inet 127.0.0.1 netmask ff000000
 
 == command: df ==
-Filesystem  kbytes    used   avail capacity  Mounted on
-/dev/hp0a     7421    6012     667    90%    /
-/dev/hp0g   143927  118204   11330    91%    /usr
+Filesystem    kbytes    used   avail capacity  Mounted on
+/dev/hp0a       7421    6012     667    90%    /
+/dev/hp0g     143927  118204   11330    91%    /usr
 
 == command: cu ==
 Connect failed: dial tone not detected

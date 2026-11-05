@@ -86,7 +86,7 @@ cmd(['dir'],'list files',function(a,raw,w){
       if(row.length===4){L.push(row.join(''));row=[]}
       return;
     }
-    L.push(nm+(n.type==='d'?'   <DIR>   ':String(sz).padStart(9)+'  ')+stampD(n.date).padStart(8)+'  '+stampT(n.date));
+    L.push(nm+(n.type==='d'?' <DIR>     ':String(sz).padStart(9)+'  ')+stampD(n.date).padStart(8)+'  '+stampT(n.date));
   });
   if(row.length)L.push(row.join(''));
   L.push(String(E.length).padStart(9)+' File(s)'+String(FREE).padStart(10)+' bytes free');
@@ -140,7 +140,7 @@ cmd(['del','erase'],null,function(a,raw,w){
   var R=resolve(N[0]);
   if(R.pat==='*.*'){
     var line;
-    P.queue(function(){return P.readLine('Are you sure (Y/N)?').then(function(l){line=l})});
+    P.queue(function(){return P.readLine('Are you sure (Y/N)? ').then(function(l){line=l})});
     P.queue(function(){if(line&&/^y/i.test(line.trim()))del(N[0])});
     return;
   }
@@ -160,6 +160,7 @@ cmd(['copy'],null,function(a,raw,w){
   if(!N.length){P.typeLine('Required parameter missing');return}
   if(isFloppy(N[1])){notReady(N[1].charAt(0).toUpperCase());return}
   var from=N[0].toLowerCase(),to=N[1]||split(from.replace(/^.*[\\\/]/,'')).join('.').replace(/\.$/,'');
+  if(from===to.toLowerCase()){P.typeLine('File cannot be copied onto itself');P.typeLine('        0 File(s) copied');return}
   function write(L,count){
     var d=P.find(to,true),at=d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to;
     if(!P.writeFile(at,L,false)){P.typeLine('Access denied');P.typeLine('        0 File(s) copied');return}

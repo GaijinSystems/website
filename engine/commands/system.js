@@ -33,7 +33,11 @@ P.command({names:['ps'],path:'/bin',
     if(!PSN)PSN=T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0)+5; /* each ps gets the next id */
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
     R.push([String(PSN++),'0','0:00',('ps '+a.join(' ')).trim()]);
-    P.say(['  PID TTY  TIME CMD'].concat(R.map(function(p){return p[0].padStart(5)+' '+p[1].padEnd(3)+' '+p[2].padStart(5)+' '+p[3]})));
+    if(P.profile.csh){ /* Berkeley's columns */
+      P.say(['  PID TT STAT  TIME COMMAND'].concat(R.map(function(p,i){return p[0].padStart(5)+' '+p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)+p[2].padStart(5)+' '+p[3]})));
+      return;
+    }
+    P.say(['   PID TTY TIME CMD'].concat(R.map(function(p){return p[0].padStart(6)+' '+p[1].slice(0,2).padEnd(2)+p[2].padStart(6)+' '+p[3]})));
   }});
 
 P.command({names:['uptime'],path:'/bin',
@@ -70,23 +74,26 @@ P.command({names:['ifconfig'],path:'/etc',
    is a HEAD request for this page, so the times are genuine round trips. Nothing else is reachable.
    Switch it off with "commands: -ping" in site/config.js if you would rather it made no requests. */
 P.command({names:['ping'],path:'/etc',
-  man:{what:'send echo requests to a host',syn:'ping [ -c count ] host',desc:[
-    'sends count echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
+  man:{what:'send echo requests to a host',syn:'ping host [ data size ] [ npackets ]',desc:[
+    'sends npackets echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
     '',
     'localhost answers at once. one other host answers as well: the server this terminal came from. those times are real round trips across your own network.'],bugs:[
     'every other host is unknown. it is {year}.']},
   run:function(a){
     a=a.map(function(x){return x.toLowerCase()}); /* host names never cared about case */
-    var c=4,h=null,i,SITE=P.st.site,HOST=P.st.hostname;
-    for(i=0;i<a.length;i++){if(a[i]==='-c'&&a[i+1])c=parseInt(a[++i],10)||4;else if(a[i].charAt(0)!=='-')h=a[i]}
+    var c=4,h=null,i,SITE=P.st.site,HOST=P.st.hostname,pos=0;
+    for(i=0;i<a.length;i++){ /* ping host [data size] [npackets] */
+      if(a[i]==='-c'&&a[i+1])c=parseInt(a[++i],10)||4;
+      else if(a[i].charAt(0)!=='-'){if(!h)h=a[i];else if(++pos===2)c=parseInt(a[i],10)||c}
+    }
     c=Math.max(1,Math.min(10,c));
-    if(!h){P.typeLine('usage: '+P.man.ping.syn);return}
+    if(!h){P.typeLine('Usage:  ping [-drv] host [data size] [npackets]');return}
     var loop=['localhost','127.0.0.1',HOST].indexOf(h)>=0,
         real=!!SITE&&(h===SITE||h==='www.'+SITE||'www.'+h===SITE);
     if(!loop&&!real){P.typeLine('ping: unknown host '+h,'err');P.typeLine(P.profile.offline,'dim');return}
-    var R=[],name=loop?'localhost':h,dp=loop?3:1;
+    var R=[],name=loop?'localhost':h;
     function ok(){return R.filter(function(x){return x!=null})}
-    P.typeLine('PING '+name+(loop?' (127.0.0.1)':'')+': 56 data bytes');
+    P.typeLine('PING '+name+': 56 data bytes');
     for(i=0;i<c;i++)(function(seq){
       if(seq)P.pause(1000);
       P.queue(function(){
@@ -98,16 +105,16 @@ P.command({names:['ping'],path:'/etc',
       });
       P.typeLine(function(){
         return R[seq]==null?'request timeout for icmp_seq '+seq
-          :'64 bytes from '+name+': icmp_seq='+seq+' ttl='+(loop?255:57)+' time='+R[seq].toFixed(dp)+' ms';
+          :'64 bytes from '+name+': icmp_seq='+seq+'. time='+Math.round(R[seq])+'. ms';
       },'',null,{hang:4});
     })(i);
     P.typeLine('');
-    P.typeLine('--- '+name+' ping statistics ---');
+    P.typeLine('----'+name+' PING Statistics----');
     P.typeLine(function(){var n=ok().length;
       return c+' packets transmitted, '+n+' packets received, '+Math.round(100*(c-n)/c)+'% packet loss'},'',null,{hang:4});
     P.typeLine(function(){var o=ok();if(!o.length)return 'no answer.';
-      return 'round-trip min/avg/max = '+Math.min.apply(null,o).toFixed(dp)+'/'+
-        (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(dp)+'/'+Math.max.apply(null,o).toFixed(dp)+' ms'},'',null,{hang:4});
+      return 'round-trip (ms)  min/avg/max = '+Math.round(Math.min.apply(null,o))+'/'+
+        Math.round(o.reduce(function(s,x){return s+x},0)/o.length)+'/'+Math.round(Math.max.apply(null,o))},'',null,{hang:4});
   }});
 
 /* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */

@@ -142,6 +142,13 @@ body{
 /* ---------- screen reader log: out of sight, still read aloud (see engine/phosphor.js) ---------- */
 #log{position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
+/* ---------- keys a phone does not have (see engine/phosphor.js) ---------- */
+#softkeys{position:absolute;z-index:6;right:6px;bottom:6px;display:flex;gap:4px}
+#softkeys button{
+  font:13px/1 "VT323","Courier New",Courier,monospace;min-width:34px;min-height:30px;padding:0 6px;
+  color:var(--phos);background:rgba(var(--phos-rgb),.08);border:1px solid rgba(var(--phos-rgb),.35);border-radius:3px;
+}
+
 /* ---------- content problems (shown on the glass, see engine/phosphor.js) ---------- */
 .line.warn{color:#ffd166;text-shadow:0 0 6px rgba(255,209,102,.7)}
 
