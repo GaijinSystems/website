@@ -23,7 +23,35 @@ HV RAIL       | 24 KV STABLE      | 200
 HORIZ. SYNC   | 15.734 KHZ LOCKED
 KEYBOARD      | DETECTED (YOURS)  | 200
 
-4.3 BSD UNIX ({hostname})
+== boot ==
+>>> B/3 @300
+%% @200
+loading vmunix @400
+4.3 BSD UNIX #1: Fri Jun  6 19:55:00 PDT 1986 @100
+real mem  = 8388608
+avail mem = 7077888
+using 204 buffers containing 819200 bytes of memory @200
+mcr0 at tr1
+mcr1 at tr2
+uba0 at tr3
+hp0 at mba0 drive 0 @150
+hp0: eagle
+tm0 at uba0 csr 172520 vec 224, ipl 15
+te0 at tm0 slave 0
+dz0 at uba0 csr 160100 vec 300, ipl 15
+de0 at uba0 csr 174510 vec 120, ipl 15 @100
+de0: hardware address 08:00:2b:00:00:00
+root on hp0 @300
+Automatic reboot in progress...
+/dev/rhp0a: 412 files, 6012 used, 667 free (35 frags, 79 blocks) @300
+/dev/rhp0g: 14021 files, 118204 used, 11330 free (602 frags, 1341 blocks) @400
+starting local daemons: syslog sendmail. @250
+preserving editor files @100
+clearing /tmp @100
+standard daemons: update cron accounting. @200
+starting network daemons: routed named inetd printer. @250
+
+4.3 BSD UNIX ({hostname}) (tty02)
 
 == dmesg ==
 4.3 BSD UNIX #1: Fri Jun  6 19:55:00 PDT 1986

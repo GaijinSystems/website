@@ -688,7 +688,8 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,
   fullscreen:fullscreen,piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
-  status:function(n){STATUS=n},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
+  status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
+  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
@@ -734,7 +735,7 @@ function runOne(s,words){
   if(!f&&c.indexOf('/')>=0){ /* /bin/ls runs ls; any other path is not a program */
     var n=find(c);
     if(n&&n.bin&&has(CMDS,n.name)){f=CMDS[n.name];name=n.name}
-    else if(n&&isScript(n)){runScript(textOf(n));return}
+    else if(n&&isScript(n)){runScript(textOf(n),words.slice());return}
     else if(n){typeLine(word+': cannot execute','err');return}
   }
   if(f&&!NOH[name]&&args.indexOf('-h')>=0&&has(MAN,name)){typeLine('usage: '+MAN[name].syn);return}
@@ -744,8 +745,12 @@ function runOne(s,words){
   else if(!(PH.fallback&&PH.fallback(word,s,args)))typeLine(PROFILE.notFound.replace('%s',word),'err');
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
+var ARGS=[]; /* $0 $1 ... of the script that is running */
 function envOf(k){
   if(k==='?')return String(STATUS);
+  if(k==='#')return String(Math.max(0,ARGS.length-1));
+  if(k==='*')return ARGS.slice(1).join(' ');
+  if(/^\d+$/.test(k))return ARGS[+k]||'';
   if(k==='$')return '23';
   if(k==='HOME')return ST.home;
   if(k==='USER'||k==='LOGNAME')return ST.user;
@@ -776,18 +781,19 @@ function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; n
   return found.length?found:[w];
 }
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
-  var list=[],stages=[],op=null,w=null,quoted=false,redir=null,i=0;
+  var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0;
   function fresh(){return {words:[],raw:'',in:null,out:null,app:false}}
   var st=fresh();
   function endWord(){
     if(w===null)return;
     if(redir){if(redir==='<')st.in=w;else{st.out=w;st.app=redir==='>>'}redir=null}
-    else st.words=st.words.concat(quoted||PROFILE.dos?[w]:glob(w));
-    w=null;quoted=false;
+    else if(quoted||PROFILE.dos)st.words.push(w);
+    else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){st.words=st.words.concat(glob(x))});
+    w=null;quoted=false;fromVar=false;
   }
   function endStage(){endWord();if(st.words.length||st.in||st.out)stages.push(st);st=fresh()}
   function endList(nextOp){endStage();if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp}
-  function vars(t){return t.replace(/\$(\w+|\?|\$)/g,function(m,k){return envOf(k)})}
+  function vars(t){return t.replace(/\$(\w+|\?|\$|#|\*)/g,function(m,k){return envOf(k)})}
   while(i<s.length){
     var ch=s.charAt(i),two=s.substr(i,2),close;
     if(/\s/.test(ch)){endWord();if(!redir)st.raw+=ch;i++;continue}
@@ -822,9 +828,9 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       i=close+1;continue;
     }
     if(ch==='$'){
-      var m=s.slice(i).match(/^\$(\w+|\?|\$)/);
+      var m=s.slice(i).match(/^\$(\w+|\?|\$|#|\*)/);
       if(m){
-        w=(w||'')+envOf(m[1]);
+        w=(w||'')+envOf(m[1]);fromVar=true;
         if(!redir)st.raw+=m[0].slice(1);
         i+=m[0].length;continue;
       }
@@ -862,7 +868,30 @@ function runPipeline(stages){
     },true);
   });
 }
+function backtick(s){ /* the first `command` outside single quotes */
+  var q=false,a=-1;
+  for(var i=0;i<s.length;i++){
+    var c=s.charAt(i);
+    if(c==="'"&&a<0)q=!q;
+    else if(c==='`'&&!q){
+      if(a<0)a=i;
+      else return {a:a,b:i,cmd:s.slice(a+1,i)};
+    }
+  }
+  return null;
+}
+function substitute(s,then){ /* run every `command`, put what it printed in its place, then carry on */
+  var m=PROFILE.dos?null:backtick(s);
+  if(!m){then(s);return}
+  var sink=[],keepSink,keepIn;
+  queue(function(){keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;execSeg(m.cmd)});
+  queue(function(){SINK=keepSink;STDIN=keepIn},true);
+  queue(function(){substitute(s.slice(0,m.a)+sink.join(' ')+s.slice(m.b+1),then)});
+}
 function execSeg(seg){
+  queue(function(){substitute(seg,function(text){execText(text)})});
+}
+function execText(seg){
   queue(function(){
     parseList(seg).forEach(function(item){
       queue(function(){
@@ -874,10 +903,155 @@ function execSeg(seg){
     });
   });
 }
-function runScript(lines){ /* each line runs in turn, inside the current step */
+/* for, while, until, if, case (and csh's foreach): read into a tree, then run with the queue */
+var MORE={},LOOP=null,SCRIPTS=0;
+function statements(lines){
+  var S=[];
   lines.forEach(function(l){
-    queue(function(){(PROFILE.dos?[dosLine(l)]:splitCmds(l)).forEach(function(seg){if(seg.trim())execSeg(expand(seg))})});
+    splitCmds(l).forEach(function(seg){
+      var t=seg.trim(),m=t.match(/^(do|then|else)\s+(.*)$/);
+      if(m){S.push(m[1]);S.push(m[2])}else S.push(t);
+    });
   });
+  return S;
+}
+function firstWord(t){return (t||'').split(/\s+/)[0]}
+function parseTree(lines){
+  var S=statements(lines),i=0;
+  function expect(w){if(i>=S.length)throw MORE;if(firstWord(S[i])!==w)throw new Error('syntax error');i++}
+  function ifNode(){
+    var n={k:'if',cond:block(['then'])};
+    expect('then');
+    n.then=block(['elif','else','fi']);
+    var w=firstWord(S[i]);
+    if(w==='elif'){S[i]=S[i].replace(/^elif\s*/,'');n.els=[ifNode()];return n}
+    if(w==='else'){i++;n.els=block(['fi'])}
+    expect('fi');
+    return n;
+  }
+  function block(stops){
+    var out=[];
+    for(;;){
+      if(i>=S.length){if(stops)throw MORE;return out}
+      var t=S[i],w=firstWord(t),m;
+      if(stops&&stops.indexOf(w)>=0)return out;
+      i++;
+      if(!t)continue;
+      if(w==='for'){
+        m=t.match(/^for\s+(\w+)(?:\s+in\s*(.*))?$/);
+        if(!m)throw new Error('syntax error');
+        expect('do');
+        var body=block(['done']);expect('done');
+        out.push({k:'for',v:m[1],words:m[2]===undefined?'$*':m[2],body:body});
+      }
+      else if(w==='while'||w==='until'){
+        S.splice(i,0,t.replace(/^\S+\s*/,''));
+        var cond=block(['do']);expect('do');
+        var b2=block(['done']);expect('done');
+        out.push({k:w,cond:cond,body:b2});
+      }
+      else if(w==='if'){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())}
+      else if(w==='case'){
+        m=t.match(/^case\s+(\S+)\s+in(?:\s+(.*))?$/);
+        if(!m)throw new Error('syntax error');
+        if(m[2])S.splice(i,0,m[2]);
+        var arms=[];
+        for(;;){
+          while(i<S.length&&!S[i])i++;
+          if(i>=S.length)throw MORE;
+          if(firstWord(S[i])==='esac'){i++;break}
+          var a=S[i].match(/^\(?([^)]*)\)\s*(.*)$/);
+          if(!a)throw new Error('syntax error');
+          S[i]=a[2];
+          arms.push({pats:a[1].split('|').map(function(x){return x.trim()}),body:block(['','esac'])});
+        }
+        out.push({k:'case',word:m[1],arms:arms});
+      }
+      else if(w==='foreach'){
+        m=t.match(/^foreach\s+(\w+)\s*\((.*)\)$/);
+        if(!m)throw new Error('foreach: Words not parenthesized.');
+        var b3=block(['end']);expect('end');
+        out.push({k:'for',v:m[1],words:m[2],body:b3});
+      }
+      else out.push({k:'cmd',t:t});
+    }
+  }
+  var tree=block(null);
+  return tree;
+}
+function runBlock(B){
+  B.forEach(function(st){queue(function(){if(!LOOP&&!LOGOUT)runStmt(st)})});
+}
+function afterLoop(){var was=LOOP;if(was!=='exit')LOOP=null;return was}
+function runStmt(st){
+  if(st.k==='cmd'){execSeg(expand(st.t));return}
+  if(st.k==='for'){
+    substitute(st.words,function(text){
+      var L=parseList('x '+text),W=L[0]?L[0].stages[0].words.slice(1):[];
+      (function next(i){
+        if(i>=W.length)return;
+        queue(function(){ENV[st.v]=W[i];runBlock(st.body)});
+        queue(function(){var was=afterLoop();if(was!=='break'&&was!=='exit')next(i+1)});
+      })(0);
+    });
+    return;
+  }
+  if(st.k==='while'||st.k==='until'){
+    (function again(){
+      runBlock(st.cond);
+      queue(function(){
+        if(LOOP||(STATUS===0)!==(st.k==='while'))return;
+        runBlock(st.body);
+        queue(function(){var was=afterLoop();if(was==='break'||was==='exit')return;return sleep(0).then(function(){})});
+        queue(function(){if(!LOOP)again()});
+      });
+    })();
+    return;
+  }
+  if(st.k==='if'){
+    runBlock(st.cond);
+    queue(function(){if(LOOP)return;if(STATUS===0)runBlock(st.then);else if(st.els)runBlock(st.els);});
+    return;
+  }
+  if(st.k==='case'){
+    substitute(st.word,function(text){
+      var L=parseList('x '+text),v=L[0]&&L[0].stages[0].words[1]||'';
+      for(var i=0;i<st.arms.length;i++){
+        var hit=st.arms[i].pats.some(function(p){
+          try{return new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$').test(v)}catch(e){return p===v}
+        });
+        if(hit){runBlock(st.arms[i].body);return}
+      }
+    });
+  }
+}
+function runScript(lines,args){ /* a script: a tree of statements, inside the current step */
+  if(PROFILE.dos){
+    lines.forEach(function(l){queue(function(){var s=dosLine(l);if(s.trim())execSeg(s)})});
+    return;
+  }
+  var keep=ARGS,tree;
+  try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
+  catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
+  queue(function(){ARGS=args||['sh'];SCRIPTS++;runBlock(tree)});
+  queue(function(){ARGS=keep;SCRIPTS--;LOOP=null},true);
+}
+var COMPOUND_SH=/^(for|while|until|if|case)$/,COMPOUND_CSH=/^foreach$/;
+function compound(line){
+  if(PROFILE.dos)return false;
+  return statements([line]).some(function(t){return (PROFILE.csh?COMPOUND_CSH:COMPOUND_SH).test(firstWord(t))});
+}
+function runCompound(lines){ /* typed at the prompt: keeps asking until it is complete */
+  var tree;
+  try{tree=parseTree(lines)}
+  catch(e){
+    if(e!==MORE){typeLine(e.message,'err');return}
+    var l;
+    queue(function(){return readLine(PROFILE.csh?'? ':'> ').then(function(x){l=x})});
+    queue(function(){if(l===null)return;runCompound(lines.concat(l))});
+    return;
+  }
+  runBlock(tree);
 }
 function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start of a word or after =, so don't ; won't is two commands */
   var L=[],start=0,ch,j;
@@ -898,10 +1072,15 @@ function run(raw){
     queue(function(){showPrompt()},true);
     return;
   }
+  if(compound(raw)){
+    queue(function(){runCompound([raw])});
+    queue(function(){LOOP=null;if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+    return;
+  }
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
   var segs=[];
   splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
-  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=]/.test(x)})){ /* needs the shell's parser */
+  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)})){ /* needs the shell's parser */
     segs.forEach(function(x){if(x.trim())execSeg(x)});
     queue(function(){if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
     return;
@@ -1131,6 +1310,11 @@ function boot(){
   pause(900); /* tube warm-up */
   problems();
   banner();
+  (PROFILE.raw.boot||[]).forEach(function(raw){ /* the machine coming up: "text @ms" waits after the line */
+    var m=raw.match(/^(.*?)\s*@(\d+)$/),t=m?m[1]:raw;
+    typeLine(t.replace(/^~\s?/,''),/^~/.test(t)?'dim':'',null,{speed:.12});
+    if(m)pause(+m[2]);
+  });
   if(!PROFILE.noLogin){
     typeLine(ST.user,'',null,{pre:'login: ',hold:700,speed:2.2}); /* first visit: auto-login as guest */
     pause(450);

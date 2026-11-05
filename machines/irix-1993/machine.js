@@ -18,8 +18,22 @@ offline:   the t1 is fine. it is your terminal that is 9600 baud.
 PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07
 ~ port 2, 9600 baud
 
-IRIX System V Release 4.0.5 IP17
-~ Copyright 1987-1992 Silicon Graphics, Inc. All Rights Reserved.
+== boot ==
+System Maintenance Menu @200
+Starting up the system... @500
+
+IRIX Release 4.0.5 IP17 Version 06151813 System V @100
+Copyright 1987-1992 Silicon Graphics, Inc. @100
+All Rights Reserved. @300
+
+Root on dks0d1s0, swap on dks0d1s1 @200
+The system is coming up. @300
+Mounting filesystems: / /usr @300
+Configuring ec0 as {hostname} @200
+Network daemons: routed portmap inetd. @250
+Starting 4Dwm on the console; port 2 is yours. @300
+
+IRIS console login ({hostname}) @100
 
 == dmesg ==
 IRIX Release 4.0.5 IP17 Version 06151813 System V
