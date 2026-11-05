@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "vms-1987", the DIGITAL Command Language.
+/* PHOSPHOR-9 terminal: machine "vms-1988", the DIGITAL Command Language.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';

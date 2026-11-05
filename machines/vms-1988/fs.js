@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "vms-1987", disk DUA0:. Files have versions: NAME.TYP;n.
+/* PHOSPHOR-9 terminal: machine "vms-1988", disk DUA0:. Files have versions: NAME.TYP;n.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 Phosphor.setup(function(P){
   'use strict';
