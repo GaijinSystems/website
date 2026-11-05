@@ -33,7 +33,7 @@ function notReady(drive,then){
     P.typeLine('');
     P.typeLine('Not ready error reading drive '+drive);
     var c;
-    P.queue(function(){return P.readKey('Abort, Retry, Fail?').then(function(k){c=k.toLowerCase()})});
+    P.queue(function(){return P.readKey('Abort, Retry, Fail?',true).then(function(k){c=k.toLowerCase()})});
     P.queue(function(){
       if(c==='f'){P.typeLine('');P.typeLine('Current drive is no longer valid')}
       else if(c==='a'){if(then)then()}

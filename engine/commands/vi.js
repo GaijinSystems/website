@@ -8,7 +8,7 @@
 
 function Vi(name,S){
   var L=[''],r=0,c=0,top=0,mode='cmd',msg='',file=name||'',dirty=false,done;
-  var MAXCOUNT=100000; /* a count no one means: enough to do its work, not enough to hang the tab */
+  var MAXCOUNT=100000,MAXTEXT=1000000; /* a count no one means: enough to do its work, not enough to hang the tab */
   var count=0,op=null,opCount=0,pending=null,reg='"',regs={},exLine='',exKind=':',marks={};
   var undo=null,snapped=false,uline=null,lastF=null,search=null,last=null,cur=[],changed=false,noRec=false,replaying=false;
   var nu=false,typed=[],insCount=1,insKeys=true,lastSub=null;
@@ -484,6 +484,7 @@ function Vi(name,S){
     var e=regs[reg]||regs['"'];
     reg='"';
     if(!e){bell('Nothing in register');return}
+    if(e.t.reduce(function(a,l){return a+l.length+1},0)*n>MAXTEXT){bell('Too much to put');return}
     snap();
     while(n-->0&&L.length<MAXCOUNT){
       if(e.lw){

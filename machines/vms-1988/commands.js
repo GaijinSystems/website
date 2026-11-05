@@ -139,7 +139,7 @@ verb('rename',3,function(a){
   var r=pick(a[0]);
   if(!r.e){err('%RENAME-E-SEARCHFAIL, error searching for '+fullSpec(r.S));err('-RMS-E-FNF, file not found');return}
   var T=parse(a[1]),dir=folder(T.abs);
-  if(!dir||!P.canWrite(P.pathOf(r.e.node))||!P.canWrite(P.pathOf(dir).replace(/\/$/,'')+'/x')){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
+  if(!dir||r.e.node.prot||!P.canWrite(P.pathOf(r.e.node))||!P.canWrite(P.pathOf(dir).replace(/\/$/,'')+'/x')){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
   var v=nextVersion(dir,T),k=T.name+'.'+T.typ+';'+v,n=r.e.node;
   delete r.dir.kids[r.e.key];
   n.name=k;n.parent=dir;dir.kids[k]=n;
@@ -166,7 +166,7 @@ verb('purge',2,function(a){ /* keep only the newest of each */
   if(!dir)return;
   var keep={};
   latest(matches(S,dir)).forEach(function(e){keep[e.key]=true});
-  matches(S,dir).forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&P.canWrite(P.pathOf(e.node)))delete dir.kids[e.key]});
+  matches(S,dir).forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&!e.node.prot&&P.canWrite(P.pathOf(e.node)))delete dir.kids[e.key]});
 });
 verb('create',2,function(a,q){
   if(!a.length){P.typeLine('_File: ');return}

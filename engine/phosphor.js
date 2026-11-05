@@ -453,12 +453,14 @@ function oopsW(who,x,old){ /* the same for a file that could not be made: no suc
   var up=String(x).replace(/\/+[^\/]*$/,'')||'/';
   typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
 }
-function readKey(p){ /* one keypress, no return needed. Call it from inside a queued step. */
+function readKey(p,trap){ /* one keypress, no return needed. Call it from inside a queued step.
+                            ^C stops the command, unless trap: then the program gets it as C-c */
   return new Promise(function(res){
     showPrompt(p==null?'':p,'read');
     KEYS=function(k){
       if(k.length!==1&&k!=='Enter'&&k!=='C-c')return;
       KEYS=null;
+      if(k==='C-c'&&!trap){leavePrompt();interrupt();res(k);return}
       var at=cursor.parentNode;
       if(at&&k.length===1)at.insertBefore(document.createTextNode(k),cursor);
       leavePrompt();
@@ -766,6 +768,12 @@ function setRoot(viaSu){
   ST.user=PROFILE.rootName;ST.home='/';
   if(!viaSu)ST.cwd='/';
 }
+function moved(was,to){ /* a folder moved: anyone standing in it goes with it, including who su left behind */
+  [ST,RP].forEach(function(o){
+    if(!o)return;
+    ['cwd','home'].forEach(function(k){if(o[k]===was||o[k].indexOf(was+'/')===0)o[k]=to+o[k].slice(was.length)});
+  });
+}
 function dropRoot(){
   if(!RP)return;
   ST.user=RP.user;ST.home=RP.home;ST.cwd=RP.cwd;
@@ -842,7 +850,8 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
-  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execSeg,
+  args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,exec:execLine,
+  subshell:function(){return SUB>0},source:function(){return SOURCE},vars:function(t){return plain(varsIn(t))},plain:plain,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
@@ -880,9 +889,10 @@ function expand(seg){ /* longest matching alias wins; extra words pass through *
   });
   return best?[best.to].concat(parts.slice(best.from.length)).join(' '):seg.trim();
 }
-var CURRENT='';
-function runOne(s,words){
+var CURRENT='',SOURCE=''; /* SOURCE: the command as typed, $variables and all */
+function runOne(s,words,src){
   s=s.trim();
+  SOURCE=src===undefined?s:src;
   words=words||s.split(/\s+/);
   if(!s||!words[0])return;
   STATUS=0;
@@ -905,8 +915,14 @@ function runOne(s,words){
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 var ARGS=[]; /* $0 $1 ... of the script that is running */
+var VAR=PROFILE.csh?'\\$(\\?\\w+|\\w+|\\?|\\$|#|\\*)':'\\$(\\w+|\\?|\\$|#|\\*)',VAR_AT=new RegExp('^'+VAR),VAR_ALL=new RegExp(VAR,'g'); /* csh also has $?name: is it set */
+function varsIn(t){return t.replace(VAR_ALL,function(m,k){return envOf(k)})}
 function envOf(k){
   if(k==='?')return String(STATUS);
+  if(k.length>1&&k.charAt(0)==='?'){
+    var keep=SCRIPTS;SCRIPTS=0;
+    try{envOf(k.slice(1));return '1'}catch(e){return '0'}finally{SCRIPTS=keep}
+  }
   if(k==='#')return String(Math.max(0,ARGS.length-1));
   if(k==='*')return ARGS.slice(1).join(' ');
   if(/^\d+$/.test(k))return ARGS[+k]||'';
@@ -947,31 +963,38 @@ function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; n
   return found.length?found:[w];
 }
 var NOMATCH={};
+/* what a `command` printed is data: its special characters travel as private-use ones until the words are made */
+var META='|&<>$`"\'\\# ';
+function guard(t,spaces){
+  return t.replace(spaces?/[|&<>$`"'\\# ]/g:/[|&<>$`"'\\#]/g,function(c){return String.fromCharCode(0xE000+META.indexOf(c))});
+}
+function plain(t){return t.replace(/[\uE000-\uE00A]/g,function(c){return META.charAt(c.charCodeAt(0)-0xE000)})}
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
   var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0;
-  function fresh(){return {words:[],raw:'',in:null,out:null,app:false,err:null}}
+  function fresh(){return {words:[],raw:'',src:'',in:null,out:null,app:false,err:null}}
   var st=fresh();
+  function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
   function endWord(){
     if(w===null)return;
-    if(redir){if(redir==='<')st.in=w;else if(redir==='2>')st.err=w;else{st.out=w;st.app=redir==='>>'}redir=null}
-    else if(quoted||PROFILE.dos)st.words.push(w);
+    if(redir){w=plain(w);if(redir==='<')st.in=w;else if(redir==='2>')st.err=w;else{st.out=w;st.app=redir==='>>'}redir=null}
+    else if(quoted||PROFILE.dos)st.words.push(plain(w));
     else w.split(fromVar?/\s+/:/\0/).filter(function(x){return x||!fromVar}).forEach(function(x){
+      x=plain(x);
       var g=glob(x);
       if(PROFILE.csh&&g.length===1&&g[0]===x&&/[*?\[]/.test(x))throw NOMATCH; /* csh says so; sh passes the word along */
       st.words=st.words.concat(g);
     });
     w=null;quoted=false;fromVar=false;
   }
-  function endStage(){endWord();if(st.words.length||st.in||st.out)stages.push(st);st=fresh()}
+  function endStage(){endWord();st.raw=plain(st.raw);if(st.words.length||st.in||st.out||st.err)stages.push(st);st=fresh()}
   function endList(nextOp){endStage();if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp}
-  function vars(t){return t.replace(/\$(\w+|\?|\$|#|\*)/g,function(m,k){return envOf(k)})}
   while(i<s.length){
     var ch=s.charAt(i),two=s.substr(i,2),close;
-    if(/\s/.test(ch)){endWord();if(!redir)st.raw+=ch;i++;continue}
+    if(/\s/.test(ch)){endWord();if(!redir)add(ch);i++;continue}
     if(PROFILE.dos){ /* COMMAND.COM: pipes and redirection, and nothing else is special */
       if(!PROFILE.dcl&&ch==='|'){endStage();i++;continue}
       if(!PROFILE.dcl&&(ch==='>'||ch==='<')){endWord();redir=two==='>>'?'>>':ch;i+=redir.length;continue}
-      if(!redir)st.raw+=ch;
+      if(!redir)add(ch);
       w=(w||'')+ch;i++;
       continue;
     }
@@ -980,35 +1003,35 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(ch==='|'){endStage();i++;continue}
     if(ch==='&'){i++;continue} /* no background here: it just runs */
     if(ch==='>'||ch==='<'){
-      var fd=w!==null&&!quoted&&!fromVar&&/^[0-2]$/.test(w)?w:null; /* 2> names a file descriptor, not an argument */
-      if(fd!==null){w=null;st.raw=st.raw.slice(0,-1)}
+      var fd=!PROFILE.csh&&w!==null&&!quoted&&!fromVar&&/^[0-2]$/.test(w)?w:null; /* sh: 2> names a file descriptor, not an argument. csh has no such thing */
+      if(fd!==null){w=null;st.raw=st.raw.slice(0,-1);st.src=st.src.slice(0,-1)}
       endWord();
-      if(two==='>&'&&/\d/.test(s.charAt(i+2))){i+=3;continue} /* 2>&1: errors are on the glass either way */
+      if(two==='>&'&&!PROFILE.csh&&/^[\d-](?=$|[\s|&<>])/.test(s.slice(i+2))){i+=3;continue} /* 2>&1, 2>&-: errors are on the glass either way */
       if(two==='>&'){redir='>';i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file */
       redir=two==='>>'?'>>':ch;
       i+=redir.length;
       if(fd==='2')redir='2>'; /* made, and left empty: errors stay on the glass */
       continue;
     }
-    if(!redir)st.raw+=ch;
+    if(!redir)add(ch);
     if(ch==='\\'&&i+1<s.length){
       w=(w||'')+s.charAt(i+1);quoted=true;
-      if(!redir)st.raw+=s.charAt(i+1);
+      if(!redir)add(s.charAt(i+1));
       i+=2;continue;
     }
     if((ch==="'"||ch==='"')&&(w===null||/=$/.test(w))&&(close=s.indexOf(ch,i+1))>=0){
-      var inside=s.slice(i+1,close);
-      if(ch==='"')inside=vars(inside);
+      var inside=s.slice(i+1,close),given=inside;
+      if(ch==='"')inside=varsIn(inside);
       w=(w||'')+inside;quoted=true;
-      if(!redir)st.raw+=inside+ch;
+      if(!redir)add(inside+ch,given+ch);
       i=close+1;continue;
     }
     if(ch==='$'){
-      var m=s.slice(i).match(/^\$(\w+|\?|\$|#|\*)/);
+      var m=s.slice(i).match(VAR_AT);
       if(m){
         var val=envOf(m[1]);
         w=(w||'')+val;fromVar=true;
-        if(!redir)st.raw=st.raw.slice(0,-1)+val;
+        if(!redir){st.raw=st.raw.slice(0,-1)+val;st.src+=m[0].slice(1)}
         i+=m[0].length;continue;
       }
     }
@@ -1020,7 +1043,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
 function runPipeline(stages){
   var pipe=null;
   stages.forEach(function(st,i){
-    var last=i===stages.length-1,sink=null,keepSink,keepIn,ok=true;
+    var last=i===stages.length-1,sink=null,keepSink,keepIn,ok=true,own=false;
     queue(function(){
       keepSink=SINK;keepIn=STDIN;
       if(st.in!==null){
@@ -1028,17 +1051,19 @@ function runPipeline(stages){
         if(!n||n.type==='d'||n.prot){typeLine(st.in+(PROFILE.csh?': No such file or directory':': cannot open'),'err');pipe=[];ok=false;return}
         pipe=textOf(n);
       }
-      if(st.err!==null)writeFile(st.err,[],true);
+      if(st.err!==null&&!writeFile(st.err,[],false)){oopsW('',st.err,st.err+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
       if(!last||st.out!==null)sink=[];
       if(sink)SINK=sink;
       if(pipe)STDIN=pipe;
+      if(stages.length>1){SUB++;own=true} /* a stage of a pipeline is its own process */
       var as=st.words.length===1&&st.words[0].match(/^([A-Za-z_]\w*)=(.*)$/);
       if(as){ENV[as[1]]=as[2];STATUS=0}
-      else runOne(st.raw,st.words);
+      else runOne(st.raw,st.words,st.src);
     });
     queue(function(){
+      if(own)SUB--;
       if(!ok)return;
       if(st.out!==null&&sink)writeFile(st.out,sink,true);
       pipe=st.out!==null?[]:sink;
@@ -1046,15 +1071,19 @@ function runPipeline(stages){
     },true);
   });
 }
-function backtick(s){ /* the first `command` outside single quotes */
-  var q=false,a=-1;
+function opens(s,i){return !i||/[\s=;|&<>]/.test(s.charAt(i-1))} /* a quote only opens at the start of a word or after = */
+function backtick(s){ /* the first `command` outside single quotes, with the parser's idea of a quote */
+  var dq=false,a=-1,j;
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i);
-    if(c==="'"&&a<0)q=!q;
-    else if(c==='`'&&!q){
+    if(c==='\\'){i++;continue}
+    if(c==='`'){
       if(a<0)a=i;
       else return {a:a,b:i,cmd:s.slice(a+1,i)};
     }
+    else if(a>=0)continue;
+    else if(c==='"'&&(dq||opens(s,i)))dq=!dq;
+    else if(c==="'"&&!dq&&opens(s,i)&&(j=s.indexOf("'",i+1))>=0)i=j;
   }
   return null;
 }
@@ -1063,13 +1092,17 @@ function substitute(s,then,done){ /* run every `command`, left to right, put wha
   done=done||'';
   var m=PROFILE.dos?null:backtick(s);
   if(!m){then(done+s);return}
-  var sink=[],keepSink,keepIn;
-  queue(function(){keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;execSeg(m.cmd)});
-  queue(function(){SINK=keepSink;STDIN=keepIn},true);
-  queue(function(){substitute(s.slice(m.b+1),then,done+s.slice(0,m.a)+sink.join(' '))});
+  var sink=[],keepSink,keepIn,own=false,before=done+s.slice(0,m.a);
+  queue(function(){keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;SUB++;own=true;execLine(m.cmd)});
+  queue(function(){SINK=keepSink;STDIN=keepIn;if(own)SUB--},true);
+  /* x=`command` is one word whatever it prints */
+  queue(function(){substitute(s.slice(m.b+1),then,before+guard(sink.join(' '),/(^|\s)[A-Za-z_]\w*=$/.test(before)))});
 }
 function execSeg(seg){
   queue(function(){substitute(seg,function(text){execText(text)})});
+}
+function execLine(line){ /* a whole command line: aliases, and any number of commands */
+  splitCmds(line).forEach(function(seg){splitCmds(expand(seg)).forEach(function(x){if(x.trim())execSeg(x)})});
 }
 function parsed(seg){ /* parseList, or null once it has said what was wrong */
   try{return parseList(seg)}
@@ -1082,6 +1115,7 @@ function parsed(seg){ /* parseList, or null once it has said what was wrong */
 }
 function execText(seg){
   queue(function(){
+    if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg);return} /* its ( ) comes before any < or > */
     var L=parsed(seg);
     if(!L)return;
     L.forEach(function(item){
@@ -1095,7 +1129,7 @@ function execText(seg){
   });
 }
 /* for, while, until, if, case (and csh's foreach): read into a tree, then run with the queue */
-var MORE={},LOOP=null,SCRIPTS=0;
+var MORE={},LOOP=null,SCRIPTS=0,SUB=0; /* SUB: inside a pipeline stage or `command`, each its own process */
 function statements(lines){
   var S=[];
   lines.forEach(function(l){
@@ -1142,7 +1176,7 @@ function parseTree(lines){
         var b2=block(['done']);expect('done');
         out.push({k:w,cond:cond,body:b2});
       }
-      else if(w==='if'&&!PROFILE.csh){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())} /* csh's one-line if is a command */
+      else if(w==='if'&&!(PROFILE.csh&&/^if\s*\(/.test(t))){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())} /* csh's one-line if is a command */
       else if(w==='case'){
         m=t.match(/^case\s+(\S+)\s+in(?:\s+(.*))?$/);
         if(!m)throw new Error('syntax error');
@@ -1223,7 +1257,7 @@ function runStmt(st){
   }
 }
 function runScript(lines,args){ /* a script: a tree of statements, inside the current step */
-  var keep=ARGS,tree,ran=false;
+  var keep=ARGS,keepSub=SUB,tree,ran=false;
   if(!PROFILE.dos){
     try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
     catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
@@ -1231,14 +1265,14 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
   queue(function(){return sleep(0)}); /* so that ^C can reach a script that keeps running itself */
   queue(function(){
     if(SCRIPTS>=32){typeLine(PROFILE.dcl?'%SYSTEM-F-EXQUOTA, process quota exceeded':PROFILE.dos?'Insufficient memory':PROFILE.csh?'No more processes.':'sh: no more processes','err');return}
-    ran=true;SCRIPTS++;
+    ran=true;SCRIPTS++;keepSub=SUB;SUB=0; /* a script's exit ends the script, wherever its output is going */
     if(PROFILE.dos){lines.forEach(function(l){queue(function(){var s=dosLine(l);if(s.trim())execSeg(s)})});return}
     ARGS=args||['sh'];
     runBlock(tree);
   });
   queue(function(){
     if(!ran)return; /* ^C got in first, or there were too many */
-    SCRIPTS--;
+    SCRIPTS--;SUB=keepSub;
     if(!PROFILE.dos){ARGS=keep;LOOP=null}
   },true);
 }
@@ -1262,7 +1296,9 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
   for(var i=0;i<s.length;i++){
     ch=s.charAt(i);
     if(ch===';'){L.push(s.slice(start,i));start=i+1}
-    else if((ch==="'"||ch==='"')&&(!i||/[\s=;]/.test(s.charAt(i-1)))&&(j=s.indexOf(ch,i+1))>=0)i=j;
+    else if(ch==='\\')i++;
+    else if(ch==='`'&&(j=s.indexOf('`',i+1))>=0)i=j;
+    else if((ch==="'"||ch==='"')&&opens(s,i)&&(j=s.indexOf(ch,i+1))>=0)i=j;
   }
   L.push(s.slice(start));
   return L;
@@ -1275,6 +1311,7 @@ function nextPrompt(pre){
 }
 function run(raw){
   LOOP=null; /* a break typed at the prompt has no loop to end */
+  SUB=0;
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
     nextPrompt();

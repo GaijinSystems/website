@@ -8,7 +8,11 @@ var cmd=P.fcb.cmd,fcb=P.fcb.name;
 var user=0,SIZE=486; /* a double-sided eight-inch disk */
 function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n=P.root.kids[k];return n.type!=='d'&&k.charAt(0)!=='.'&&(n.user||0)===user})}
 function get(k){var n=P.root.kids[k];return n&&(n.user||0)===user?n:undefined}
-function write(k,L){P.writeFile(k,L,false);var n=P.root.kids[k];if(n)n.user=user}
+function write(k,L){
+  if(!P.writeFile(k,L,false)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
+  var n=P.root.kids[k];
+  if(n)n.user=user;
+}
 function matcher(pat){return P.fcb.matcher(pat.toLowerCase().replace(/^a:/,''))}
 function bdos(d,why){ /* the classic: a drive that is not there, and a key, ctrl-c or any other, gets you out */
   P.typeLine('BDOS ERR ON '+d+': '+(why||'SELECT'));
@@ -49,6 +53,7 @@ cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD *
   if(!q){P.typeLine((raw.trim()+'?').toUpperCase());return}
   var n=get(q[2]);
   if(!n){P.typeLine('NO FILE');return}
+  if(n.prot){P.typeLine('BDOS ERR ON A: FILE R/O');return}
   if(get(q[1])){P.typeLine('FILE EXISTS');return}
   delete P.root.kids[q[2]];n.name=q[1];P.root.kids[q[1]]=n;
 });

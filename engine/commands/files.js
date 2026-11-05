@@ -42,7 +42,7 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       var n=P.find(w),shown;
       if(!n)L.push([w+' not found','err']);
       else if(self&&n.type==='d')L.push(long?P.longRow(w,n):plain(w,n));
-      else if(n.type!=='d'){shown=w.replace(/[^\/]*(\/\.?)*$/,n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
+      else if(n.type!=='d'){var key=P.norm(w).split('/').pop(),up=P.find(P.dirOf(P.norm(w)),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);
     });
