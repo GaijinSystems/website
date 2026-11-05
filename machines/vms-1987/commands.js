@@ -270,6 +270,12 @@ verb('logout',2,function(a,q){
   P.logout();
 });
 verb('run',2,function(a){
+  var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec+'.exe');
+  if(spec&&r.e&&r.S.abs==='/games'){
+    err('%DCL-W-ACTIMAGE, error activating image '+dirName(r.S.abs)+up(r.e.name)+'.EXE;'+r.e.ver);
+    err('-SITE-F-PRIMESHIFT, games are disabled during prime shift - see your system manager');
+    return;
+  }
   err('%DCL-W-ACTIMAGE, error activating image '+dirName(P.st.cwd)+up(a[0]||'')+'.EXE;');
   err('-RMS-E-FNF, file not found');
 });
