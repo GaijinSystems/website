@@ -1,0 +1,390 @@
+/* PHOSPHOR-9 terminal: machine "bsd-1987", quiz. Ported to JavaScript for this terminal from 4.3BSD's
+   games/quiz/quiz.c, 4.2 85/01/09, and its quiz.k files, which are here unchanged. That source carries no
+   notice, only "quiz.c 4.2 85/01/09"; it is 98% the V7 program, whose source is under the Caldera text below.
+   Some of the data files quote poems and the like, which belong to their authors.
+   Differences: 4.3's seed is an int it never fills, stack garbage on a VAX; this uses the low half of the clock, V7's
+   intent. It keeps line[] as the C does, but a long entry here does not run over into the variables after it.
+
+Copyright(C) Caldera International Inc. 2001-2002. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+following conditions are met:
+
+Redistributions of source code and documentation must retain the above copyright notice, this list of conditions and the
+following disclaimer. Redistributions in binary form must reproduce the above copyright notice, this list of conditions
+and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+All advertising materials mentioning features or use of this software must display the following acknowledgement:
+
+This product includes software developed or owned by Caldera International, Inc.
+
+Neither the name of Caldera International, Inc. nor the names of other contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA INTERNATIONAL, INC.
+AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR
+ANY DIRECT, INDIRECT INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+ */
+(function(P){
+'use strict';
+var K={
+"africa":"Algeria:Alg[iers|er]\nBotswana:Gaberones\nBurundi:Bujumbura\nCameroun:Yaound['\be|e\b'|e]\nCentral Africa{n Rep{ublic}}:Bangui\nChad:Ndjamena\nCongo:Brazzaville\nDahomey:Porto Novo\nEthiopia:Addis Ababa\nGabon:Libreville\nGhana:Accra\nGuinea-Bissau:Bissau\nGuinea:Conakry\nIvory Coast:Abidjan\nKenya:Nairobi\nLesotho:Maseru\nLiberia:Monrovia\nLibya:Tripoli|Al Bayda{'}\nMalagasy{ Rep{ublic}}|Madagascar:Tananarive\nMalawi:Zomba\nMali:Bamako\nMauritania:Nouakchott\nMorocco:Rabat\nMo[z|,\bc|c\b,|c]ambique:Louren[,\bc|c\b,|c]o Marques\nNamibia:Windhoek\nNiger:Niamey\nNigeria:Lagos\nRhodesia:Salisbury\nRwanda:Kigali\nSenegal:Dakar\nSierra Leone:Freetown\nSomali{ Rep{ublic}}:Mogadis[cio|hu]\nSudan:Khartoum\nSwaziland:Mbabane\nTanzania:Dar es Salaam\nTogo:Lom['\be|e\b'|e]\nTunisia:Tunis\nUganda:Kampala\nUnited Arab Rep{ublic}|Egypt:Cairo\nUpper Volta:Ouagadougou\nZambia:Lusaka\nZa[\"\bi|i\b\"|i]re:Kinshasa\n{Rep{ublic} of }South Africa:Pretoria\n{The }Gambia:Bathurst\n",
+"america":"Argentina:Buenos Aires\nBahamas:Nassau\nBarbados:Bridgetown\nBolivia:La Paz|Sucre\nBra[z|s]il:Brasilia\nCanada:Ottawa\nChile:Santiago\nColombia:Bogot['\ba|a\b'|a]\nCosta Rica:San Jose\nCuba:Ha[v|b]ana\nDominican Republic:Santo Domingo\nEcuador:Quito\nEl Salvador:San Salvador\nGuatemala:Guatemala\nGuyana:Georgetown\nHaiti:Port au Prince\nHonduras:Tegucigalpa\nJamaica:Kingston\nMexico:Mexico\nNicaragua:Managua\nPanama:Panama\nParaguay:Asunci['\bo|o\b'|o]n\nPeru:Lima\nTrinidad[ and Tobago|]:Port of Spain\nUnited States|US{A}:Washington\nUruguay:Montevideo\nVenezuela:Caracas\n",
+"areas":"201:northern new jersey|NJ:newark\n202:washington d c|DC:\n203:connecticut|CT:\n204:manitoba:\n205:alabama|AL:\n206:western washington state|WA:seattle\n207:maine|ME:\n208:idaho|ID:\n209:central california|CA:fresno\n212:new york city, new york|NY:\n213:los angeles, california|CA:\n214:northeastern texas|TX:dallas\n215:southeastern pennsylvania|PA:philadelphia\n216:northeastern ohio|OH:akron\n217:central illinois|IL:springfield\n218:northern minnesota|MN:duluth\n219:northern indiana|IN:south bend\n301:maryland|MD:\n302:delaware|DE:\n303:colorado|CO:\n304:west virginia|WV:\n305:southeastern florida|FL:miami\n306:saskatchewan:\n307:wyoming|WY:\n308:western nebraska|NE:omaha\n309:northwestern illinois|IL:peoria\n312:chicago, illinois|IL:\n313:eastern michigan|MI:detroit\n314:southeastern missouri|MO:jefferson city\n315:northern central new york|NY:syracuse\n316:southern kansas|KS:wichita\n317:central indiana|IN:indianapolis\n318:western louisiana|LA:shreveport\n319:eastern iowa|IA:cedar rapids\n401:rhode island|RI:\n402:eastern nebraska|NE:north platte\n403:alberta:\n404:northern georgia|GA:atlanta\n405:western oklahoma|OK:oklahoma city\n406:montana|MT:\n408:central coastal california|CA:san jose\n412:western pennsylvania|PA:pittsburgh\n413:western massachusetts|MA:springfield\n414:southeastern wisconsin|WI:milwaukee\n415:san francisco, california|CA:\n416:southern central ontario:toronto\n417:southwestern missouri|MO:springfield\n418:northeastern quebec:quebec\n419:northwestern ohio|OH:toledo\n501:arkansas|AR:\n502:western kentucky|KY:louisville\n503:oregon|OR:\n504:eastern louisiana|LA:new orleans\n505:new mexico|NM:\n506:new brunswick:\n507:southern minnesota|MN:rochester\n509:eastern washington state|WA:spokane\n512:southern texas|TX:austin\n513:southwestern ohio|OH:dayton\n514:southwestern quebec:montreal\n515:central iowa|IA:des moines\n516:long island, new york|NY:\n517:central michigan|MI:lansing\n518:northeastern new york|NY:albany\n519:southwestern ontario:windsor\n601:mississippi|MS:\n602:arizona|AZ:\n603:new hampshire|NH:\n604:british columbia:\n605:south dakota|SD:\n606:eastern kentucky|KY:ashland\n607:southern central new york|NY:ithaca, binghamton\n608:southwestern wisconsin|WI:madison\n609:southern new jersey|NJ:trenton\n612:central minnesota|MN:minneapolis\n613:southeastern ontario:ottawa\n614:southeastern ohio|OH:columbus\n615:eastern tennessee|TN:nashville\n616:western michigan|MI:grand rapids\n617:eastern massachusetts|MA:boston\n618:southern illinois|IL:centralia\n701:north dakota|ND:\n702:nevada|NV:\n703:western virginia|VA:arlington\n704:western north carolina:charlotte\n705:northeastern ontario:sault ste. marie\n707:northwestern california|CA:santa rosa\n709:newfoundland:\n712:western iowa|IA:council bluffs\n713:southeastern texas|TX:houston\n714:southern california|CA:san diego\n715:northern wisconsin|WI:superior\n716:northern western new york|NY:buffalo, rochester\n717:eastern pennsylvania|PA:wilkes-barre, scranton\n801:utah|UT:\n802:vermont|VT:\n803:south carolina|SC:\n804:eastern virginia|VA:richmond\n805:southern central coastal california|CA:bakersfield\n806:panhandle texas|TX:amarillo\n807:western ontario:fort william\n808:hawaii|HI:\n809:bermuda, puerto rico, virgin islands, caribbean:\n812:southern indiana|IN:evansville\n813:southwestern florida|FL:st. petersburg\n814:central pennsylvania|PA:erie\n815:northeastern illinois|IL:rockford\n816:northern missouri|MO:kansas city\n817:northern central texas|TX:fort worth\n819:northwestern quebec:trois rivieres\n901:western tennessee|TN:memphis\n902:nova scotia, prince edward island:\n903:western mexico:mexicali\n904:northern florida|FL:jacksonville\n905:eastern mexico:mexico city\n906:upper michigan|MI:escanaba\n907:alaska|AK:\n912:southern georgia|GA:savannah\n913:northern kansas|KS:topeka\n914:southern new york|NY:westchester county\n915:western texas|TX:el paso\n916:northeastern california|CA:sacramento\n918:eastern oklahoma|OK:tulsa\n919:eastern north carolina|NC:raleigh\n",
+"arith":"63 - ... = 55:8\n147 - 3 = ...:144\n614 - 9 ...:605\n465 - 7 = ...:458\n563 - ... = 560:3\n33 - 14 = ...:19\n42 - ... = 37:5\n264 - 3 = ...:261\n763 - 8 = ...:755\n375 - 6 = ...:369\n736 - ... = 728:8\n62 - 34 = ...:28\n75 - 8 = ...:67\n244 - ... = 230:14\n478 - 19 = ...:459\n78 - ... = 75:3\n679 - 5 = ...:674\n564 - 7 = ...:557\n761 - 5 = ...:756\n718 - ... = 716:2\n56 - 18 = ...:38\n65 - ... = 48:17\n748 - 5 = ...:743\n856 - 8 = ...:848\n763 - 5 = ...:758\n445 - ... = 436:9\n94 - 55 = ...:39\n42 - 9 = ...:33\n483 - ... = 455:28\n742 - ... = 714:28\n84 - ... = 75:9\n569 - 7 = ...:562\n856 - 7 = ...:849\n324 - 6 = ...:318\n437 - ... = 432:5\n84 - 56 = ...:28\n81 - ... = 65:16\n326 - 4 = ...:322\n643 - 7 = ...:636\n546 - 9 = ...:537\n842 - ... = 835:7\n53 - 39 = ...:14\n63 - 48 = ...:15\n57 - 38 = ...:19\n52 - 26 = ...:26\n",
+"asia":"Afghanistan:Kabul\nAustralia:Canberra\nBahrein:Manama\nBangladesh:Dacca\nBhutan:Thimbu\nBurma:Rangoon\nChina:Peking\nCyprus:Nicosia\nIndia:New Delhi\nIndonesia:Djakarta\nIran:Tehran\nIraq:Baghdad\nIsrael:Jerusalem\nJapan:Tokyo\nJordan:Amman\nKhmer|Cambodia:P{h}nom Penh\nKuwait:Al-kuwait\nLaos:Vientiane\nLebanon:Beirut\nMalaysia:Kuala Lumpur\nMaldive Islands:Male\nMongolia:Ulan Bator\nNepal:Katmandu\nNorth Korea:P{'}yongyang\nNorth Yemen:San{'}a\nOman:Muscat\nPakistan:Islamabad\nPapua[-| ]New Guinea:Port Moresby\nPhillipines:Quezon City\nQatar:Doha\nSaudi Arabia:Riyadh|J{ei}ddah\nSingapore:Singapore\nSouth Korea:Seoul\nSouth Yemen:Aden\nSri Lanka:Colombo\nSyria:Damascus\nTaiwan:Taipei\nThailand:Bangkok\nTurkey:Ankara\nUnited Arab Emirates:Abu Dhabi\nVietnam:Hanoi\n",
+"babies":"cub:lion|tiger|bear\nkitten:cat|fox|skunk|rabbit|bobcat|panther\ngosling:goose\ncolt|foal:horse|donkey|zebra\npuppy:dog\npup:seal|fox|beaver\nduckling:duck\nfawn:deer\npiglet|shoat:pig\nlamb:sheep\nkid:goat|antelope\nchick:chicken\ntadpole|polliwog:frog|toad\njoey:kangaroo\ncalf:cow|whale|moose|elephant|buffalo|giraffe\ncaterpillar:butterfly|moth\nelver:eel\neaglet:eagle\nowlet:owl\nfingerling|fry:fish\nnestling:bird\n",
+"bard":"The quality of mercy is not strain['|e]d:\\\nIt droppeth as the gentle rain from heaven:\\\n{The }Merchant{ of Venice{ IV-i}}:\\\nPortia\nFriends{,} Romans{,} Countrymen:\\\nlend me your ears{;}:\\\n{Julius }Caesar{ III-ii}:\\\n{Mark }Antony\nNeither a borrower nor a lender be:\\\nFor loan oft loses both itself and friend{.}:\\\nHamlet{ I-iii}:\\\nPolonius\nTo be{,} or not to be{\\:}:\\\nthat is the question{\\:}:\\\nHamlet{ III-i}:\\\nHamlet\nAlas{,} poor Yorick{!}:\\\nI knew him{,} Horatio{;}:\\\nHamlet{ V-i}:\\\nHamlet\nDouble{,} double toil and trouble{;}:\\\nFire burn and cauldron bubble{.}:\\\nMacbeth{ IV-i}:\\\nWitch{es}\nBy the pricking of my thumbs{,}:\\\nSomething wicked this way comes{.}:\\\nMacbeth{ IV-i}:\\\n{Second |2nd }Witch\nOut, damned spot! out, I say!:\\\n:\\\nMacbeth{ V-i}:\\\nLady Macbeth\nUnbidden guests:\\\nAre often welcomest when they are gone{.}:\\\n{King }Henry VI{,} Part I{ I-ii}:\\\n\nShe is a woman{,} therefore may be woo'd{;}:\\\nShe is a woman{,} therefore may be [won|screw'd]{.}:\\\nTitus Andronicus{ II-i}:\\\nDemetrius\nSuch duty as the subject owes the prince{,}:\\\nEven such a woman oweth to her husband{.}:\\\n{The }Taming of the Shrew{ V-ii}:\\\nKate\nWho is Silvia{?} what is she{,}:\\\nThat all our swains commend her{?}:\\\n{The }Two Gentlemen of Verona{ IV-ii}:\\\nThurio\nTu-whit{,} tu-who[ - | |--]a merry note{,}:\\\nWhile greasy Joan doth keel the pot{.}:\\\nLove's Labo{u}r Lost{ V-ii}:\\\nWinter\nMy only love sprung from my only hate{!}:\\\nToo early seen unknown{,} and known too late{!}:\\\nRomeo{ and Juliet{ I-v}}:\\\nJuliet\nBut{,} soft{!} what light through yonder window breaks{?}:\\\nIt is the east{,} and Juliet is the sun{!}:\\\nRomeo{ and Juliet{ II-ii}}:\\\nRomeo\nWhat's in a name{?} That which we call a rose:\\\nBy any other name would smell as sweet{.}:\\\nRomeo{ and Juliet{ II-ii}}:\\\nJuliet\nGood night{,} good night{!} parting is such sweet sorrow{,}:\\\nThat I shall say good night till it be morrow{.}:\\\nRomeo{ and Juliet{ II-ii}}:\\\nJuliet\nA plague o['|n] both your houses{!}:\\\nThey have made worms' meat of me{.}:\\\nRomeo{ and Juliet{ III-i}}:\\\nMercutio\nThis royal throne of kings{,} this scepter['|e]d isle{,}:\\\nThis earth of majesty{,} this seat of Mars{,}:\\\n{King }Richard II{ II-i}:\\\nJohn of Gaunt\nNot all the water in a rough rude sea:\\\nCan wash the balm from an anointed king{.}:\\\n{King }Richard II{ III-ii}:\\\n{King }Richard II\nI'll put a girdle round the earth:\\\nIn forty minutes{.}:\\\n{A }Midsummer[-| ]Night's Dream{ II-i}:\\\nPuck\nI can call spirits from the vasty deep{.}:\\\nWhy{,} so can I{,} or so can any man{;}:\\\n{King }Henry IV{,} Part I{ II-iv}:\\\n\nThere are more things in heaven and earth{,} Horatio{,}:\\\nThan are dream[t|ed] of in your philosophy{.}:\\\nHamlet{ I-v}:\\\nHamlet\nThe time is out of joint{;} O cursed spite{,}:\\\nThat ever I was born to set it right{!}:\\\nHamlet{ I-v}:\\\nHamlet\nOnce more unto the breach{,} dear friends{,} once more{;}:\\\nOr close the wall up with our English dead{.}:\\\n{King }Henry V{ III-i}:\\\n{King }Henry V\nWas ever woman in this humour woo['|e]d{?}:\\\nWas ever woman in this humour [won|screw'd]{?}:\\\n{King }Richard III{ I-ii}:\\\n{King }Richard III\nNow is the winter of our discontent:\\\nMade glorious summer by this sun of York:\\\n{King }Richard III{ I-i}:\\\n{King }Richard III\nThere['s| is] a divinity that shapes our ends{,}:\\\nRough[-| ]hew them how we will{.}:\\\nHamlet{ V-ii}:\\\nHamlet\nThere is a tide in the affairs of men:\\\nWhich{,} taken at the flood{,} leads on to fortune{;}:\\\n{Julius }Caesar{ IV-iii}:\\\nBrutus\nNever{,} never{,} never{,} never{,} never{.}:\\\nPray you undo this button{.}{ Thank you{,} sir{.}}:\\\n{King }Lear{ V-iii}:\\\n{King }Lear\nI grow{,} I prosper{\\:}:\\\nNow{,} gods{,} stand up for bastards{!}:\\\n{King }Lear{ I-ii}:\\\nEdmund\nThe better part of valour is discretion{;}:\\\nin the which better part I have saved my life{.}:\\\n{King }Henry IV{,} Part I{ V-iv}:\\\nFalstaff\nAsses are made to bear{,} and so are you{.}:\\\nWomen are made to bear{,} and so are you{.}:\\\n{The }Taming of the Shrew{ II-i}:\\\n\nFull fathom five thy father lies{;}:\\\nOf his bones are coral made{;}:\\\n{The }Tempest{ I-ii}:\\\nAriel\nShe lov['|e]d me for the dangers I had pass['|e]d{;}:\\\nAnd I lov['|e]d her that she did pity them{.}:\\\nOthello{ I-iii}:\\\nOthello\nUneasy lies the head that wears a crown{.}:\\\nMany good morrows to your Majesty{!}:\\\n{King }Henry IV{,} Part II{ III-i}:\\\n\nMislike me not for my complexion{,}:\\\nThe shadow['|e]d livery of the burnish['|e]d sun{.}:\\\n{The }Merchant{ of Venice{ II-i}}:\\\nMorocco\nCowards die many times before their deaths{;}:\\\nThe valiant never taste of death but once{.}:\\\n{Julius }Caesar{ II-ii}:\\\nCaesar\nO{h}{!|,} Pardon me{,} thou bleeding piece of earth{,}:\\\nThat I am meek and gentle with these butchers{.}:\\\n{Julius }Caesar{ III-i}:\\\n{Mark }Antony\nThe play's the thing:\\\nWherein I'll catch the conscience of the king{.}:\\\nHamlet{ II-ii}:\\\nHamlet\nHow sharper than a serpent's tooth it is:\\\nto have a thankless child{.}:\\\n{King }Lear{ I-iv}:\\\n{King }Lear\nHad I but served my God with half the zeal I served my king:\\\nHe would not in [mine|my] old age have left me naked to [mine|my] enemies{.}:\\\n{King }Henry VIII{ IV-ii}:\\\n{Cardinal }Wolsey\nIt seems she hangs upon the cheek of night:\\\nLike a rich jewel in an Ethiop's ear{.}:\\\nRomeo{ and Juliet{ I-v}}:\\\nRomeo\nWhere the bee sucks{,} there suck I{;}:\\\nIn a cowslip's bell I lie{.}:\\\n{The }Tempest{ V-i}:\\\nAriel\nO brave new world{,}:\\\nThat has such people [in't|in it]{!}:\\\n{The }Tempest{ V-i}:\\\nMiranda\nWhy{,} then the world's mine oyster{,}:\\\nWhich I with sword will open{.}:\\\n{The }Merry Wives of Windsor{ II-ii}:\\\nFalstaff\nA goodly apple rotten at the heart{\\:}:\\\nO{h}{,} what a goodly outside falsehood hath{!|.}:\\\n{The }Merchant{ of Venice{ I-iii}}:\\\nAntonio\nI never kill['|e]d a mouse{,} nor hurt a fly{;}:\\\nI trod upon a worm against my will{,}:\\\nPericles{ IV-i}:\\\nMarina\nGolden lads and girls all must{,}:\\\nLike chimney sweepers{,} come to dust{.}:\\\nCymbeline{ IV-ii}:\\\nGuiderius\nYou blocks, you stones, you worse than senseless things!:\\\nO you hard hearts{,} you cruel men of Rome{.}:\\\n{Julius }Caesar{ I-i}:\\\nMarullus\nA horse{!|,} a horse{!|,} my kingdom for a horse{!}:\\\n:\\\n{King }Richard III{ V-iv}:\\\n{King }Richard III\nMy salad days,:\\\nWhen I was green in judg{e}ment, cold in blood{,}:\\\nAntony [and|&] Cleopatra{ I-v}:\\\nCleopatra\nAge cannot wither her, nor custom stale:\\\nHer infinite variety{.}:\\\nAntony [and|&] Cleopatra{ II-iii}:\\\nEnobarbus\nGive me some music\\: music, moody food:\\\nOf us that trade in love{.}:\\\nAntony [and|&] Cleopatra{II-v}:\\\nCleopatra\n'Tis better playing with a lion's whelp,:\\\nThan with an old one dying{.}:\\\nAntony [and|&] Cleopatra:\\\nEnobarbus\nThe barge she sat in, like a burnished throne,:\\\nBurned on the water{.} The poop was burnished gold{;|.}:\\\nAntony [and|&] Cleopatra:\\\nEnobarbus\nDone like a Frenchman - turn and turn again!:\\\n:\\\n{King }Henry VI{,} Part I{ III-iii}:\\\n{Joan }Pucelle|{Saint |St{.} }Joan{ of Arc}\n",
+"chinese":"rabbit:dragon\ndragon:snake\nsnake:horse\nhorse:sheep\nsheep:monkey\nmonkey:rooster\nrooster:dog\ndog:boar\nboar:rat\nrat:ox\nox:tiger\ntiger:rabbit\n",
+"collectives":"ants:colony|hill\napes:shrewdness\nasses:pace|bunch\nbadgers:cete\nbass:shoal\nbears:sloth\nbees:swarm\nbirds:dissimulation\nbrats:passel\ncandidates:slate\ncaterpillars:army\ncats:clowder\ncattle:drove|herd\nchickens:peep|flock\ncrows:murder\ncurs:cowardice\ndogs:pack\ndoves:dule\nducks:[pad|ba]dling\nearthquakes:swarm\neggs:clutch\nelephants:herd\nelk:gang\nferrets:business\nfinches:charm\nfiremen:brigade\nfish:school\nfoxes:skulk\ngeese in flight:skein\ngeese on water:gaggle\ngoats:trip\nhawks:cast\nhens:brood\nherons:siege\nhorses:haras|team\nhounds:kennel\njellyfish:smack\nkangaroos|monkeys:troop\nkittens:kindle\nlapwings:deceit\nlarks:exaltation|bevy\nleopards:leap\nlions:pride\nlocusts:plague\nmagpies:tidings\nmaidens|quail:bevy\nmartens:richness\nmen:band\nmoles:labor\nmonkeys|kangaroos:troop\nmountains:range\nmules:barren|baren\nnightingales:watch\noperating companies:at&t|bell system\nowls:parliament\npartridges|grouse:covey\npeacocks:ostentation\npheasants:bouquet\nplovers:congregation\nponies:string\nprisoners:gang\npups:litter\nquail|maidens:bevy\nrabbits:nest\nravens:unkindness\nrhinoceroses:crash\nroebucks:bevy\nrooks:building\nseals:pod\nsheep:flock\nships:fleet\nsnipe:walk|wisp\nsparrows:host\nsquirrels:dray\nstarlings:murmuration\nstars:constellation\nstorks:mustering\nswallows:flight\nteal:spring\ntoads:knot\nturkeys:rafter\nturtledoves:pitying\nwhales:gam|pod\nwitches:coven\nwolves:route\nwoodcocks:fall\nwoodpeckers:descent\n{wild }swine:sounder\n",
+"ed":"prepare to add text at beginning of file:0a|1i\nfind name of file being edited:f\nprint last 3 lines of file:$-[2|-],$p\nprint previous line:[-|^]{p}|{.}-{1}{p}\nprint whole file:1,$p|g/[^|$]/p\ndelete this line and next:.{,|;}[{.}+{1}|.1]d\nprepare to replace text from here to just before next \"PP\":\\\n.{,|;}/[PP|{^}\\\\.PP]/-{1}c\nfind next \"1.2\":/1\\\\.2/{p}\nfind next 2-or-more digit number:\\\n/\\[[0|1]-9\\]\\[0-9\\]/{p}\nmove rest of this paragraph (separated by \"PP\") to end of previous one:\\\n[.,|{.}+{1},|.1,]/[PP|{^}\\\\.PP]/-{1}m[??|?{^}{\\\\.}PP?]-{1}\nprint every \"Oxygen\" or \"oxygen\":[g|1,$g]/\\[[Oo|oO]\\]xygen/[p|.p]\nchange each \"BTL\" in file to \"Bell Laboratories\" and check:\\\n[g|1,$g]/BTL/[s|.s]/[/|BTL/]Bell Laboratories/gp\ncombine every even-numbered line with the next odd-numbered line:\\\n2,${-{1}}g/[^|$]/[j|.,{.}+{1}j|.,.1j]\nprint next \"SH\" and following line:\\\n/SH/;[{.}+{1}|.1]p|/SH/,[//|/SH/][{.}+{1}|.1]p\nprint from next \"TS\" to following \"TE\":/TS/;/TE/p\nreverse order of lines in whole file:[g|1,$g]/^/[m|.m]0\nreplace each string of x's in current line by one x:\\\n[s|.s]/[x|\\[x\\]][x|\\[x\\]]*/x/g{p}{  (not s/x*/x/g)}\nchange first \"hte\" in current line to \"the\" and check:[s|.s]/hte/the/p\ncombine previous line and this one:\\\n[-,|^,|{.}-{1},].j\ngo to line after third \"PP\" ahead:\\\n/[PP|{^}\\\\.PP]/;[//|/[PP|{^}\\\\.PP]/];[//|/[PP|{^}\\\\.PP]/]\\\n[{+}1|+]|;[{.}+{1}|.1]{  (not ...p)}\nexchange current line with previous line:\\\n[[-|^]m|{.}-{1}m].|{.}m[[--|^^]|{.}-2]\nmove everything from here through \"stop.\" to end of file:\\\n.,/stop\\\\./m$\ncurrent line has 2 fields separated by 1 blank; exchange them:\\\n[s|.s]/[\\\\|^\\\\]([.|\\[^ \\]]*\\\\) \\\\([.|\\[^ \\]]*\\\\)[/|$/]\\\\2 \\\\1/{p}\ninsert a \"0\" after last \"0\" on current line:\\\n[s|.s]/[.*0/&0|^.*0/&0|0\\\\(\\[^0\\]*\\\\)$/[0&|00\\1]|0\\[^0\\]*$/0&\\\n|\\[^0\\]*$/0&]/{p}\nreplace \"a*b\" by \"a**b\":s/[a\\\\*b|a[*]b]/a**b/{p}|\\\ns/\\\\*/**/p\nattach the word \"extra\" to the end of the current line:\\\n[s|.s]/$/{ }extra/{p}\nreplace \"ATT\" in current line by \"AT&T\":\\\n[s|.s]/ATT/AT\\\\&T/{g}{p}\ndouble the length of the current line by repetition:\\\n[s|.s]/[.*|.|^.*$]/&&/{p}\nlook for another line containing what you just looked for://\nfind the previous line that contains a capital letter:?\\[A-Z\\]?{p}\ndelete the next line that contains only capital letters:\\\n/^\\[A-Z\\]*$/d|/^\\[A-Z\\]\\[A-Z\\]*$/d\nplace a copy of current line at the end of the file:\\\nt$|.{,.}t$\nfind how many lines there are:=|$=\nfind the number of the current line:.=\ndelete the first 3 lines of the file:1,3d\ndelete every line that doesn't begin with \"A\":\\\n[v|1,$v]/^A/d{  (not g/^\\[^A\\]/d)}\ndelete every empty line from here through next \"LP\":\\\n.,/[LP|{{^}\\\\.}LP]/g/^$/d\nprint the line after each \"AU\":\\\n[g|1,$g]/[AU|{^}\\\\.AU]/[{.}+{1}|.1]{p}\ndelete everything after \"proud\" from current line:\\\n[s|.s]/proud.*/proud/{p}\ndelete part of current line from \"alpha\" through \"omega\":\\\n[s|.s]/alpha.*omega//{p}\nsave everything up through current line in file \"prefix\":1,.w prefix\nprepare to add text at end of file:$a\nappend the contents of file \"suffix\" to this file:$r suffix\ngo back 10 lines:{.}-10{p}|----------\nchange every \"01\" in current line to \"1\":[s|.s]/01/1/g{p}\ngo to next line that contains a double capital letter:\\\n/\\\\(\\[A-Z\\]\\\\)\\\\1/{p}\nplace parens () around current line:\\\n[s|.s]/[.*|^.*$]/(&)/{p}\nthe current line is too long for your terminal; print it to fit:\\\nl|.l\nput the work you've done back in the original file:w\nappend the whole file to the file \"unfinished\":\\\n[W|1,$W] unfinished\ninsert \"\\\\&\" at beginning of current line:\\\n[s|.s]/^/\\\\\\\\\\\\&/{p}\nlist your current directory:!ls\nstop work on current file and shift to file \"other\":e other\n",
+"elements":"H:1:1.008:Hydrogen\nHe:2:4.003:Helium\nLi:3:6.94:Lithium\nBe:4:9.013:Beryllium\nB:5:10.82:Boron\nC:6:12.011:Carbon\nN:7:14.008:Nitrogen\nO:8:16.0:Oxygen\nF:9:19.0:Fluorine\nNe:10:20.183:Neon\nNa:11:22.991:Sodium\nMg:12:24.32:Magnesium\nAl:13:26.98:Aluminum\nSi:14:28.09:Silicon\nP:15:30.975:Phosphorus\nS:16:32.066:Sulphur\nCl:17:35.457:Chlorine\nAr:18:39.944:Argon\nK:19:39.1:Potassium\nCa:20:40.08:Calcium\nSc:21:44.96:Scandium\nTi:22:47.9:Titanium\nV:23:50.95:Vanadium\nCr:24:52.01:Chromium\nMn:25:54.94:Manganese\nFe:26:55.85:Iron\nCo:27:58.94:Cobalt\nNi:28:58.71:Nickel\nCu:29:63.54:Copper\nZn:30:65.38:Zinc\nGa:31:69.72:Gallium\nGe:32:72.6:Germanium\nAs:33:74.91:Arsenic\nSe:34:78.96:Selenium\nBr:35:79.916:Bromine\nKr:36:83.8:Krypton\nRb:37:85.48:Rubidium\nSr:38:87.63:Strontium\nY:39:88.92:Yttrium\nZr:40:91.22:Zirconium\nNb:41:92.91:Niobium\nMo:42:95.95:Molybdenum\nTc:43:(99):Technetium\nRu:44:101.1:Ruthenium\nRh:45:102.91:Rhodium\nPd:46:106.4:Palladium\nAg:47:107.88:Silver\nCd:48:112.41:Cadmium\nIn:49:114.82:Indium\nSn:50:118.7:Tin\nSb:51:121.76:Antimony\nTe:52:127.61:Tellurium\nI:53:126.91:Iodine\nXe:54:131.3:Xenon\nCs:55:132.91:Cesium\nBa:56:137.36:Barium\nLa:57:138.92:Lanthanum\nCe:58:140.13:Cerium\nPr:59:140.92:Praseodymium\nNd:60:144.27:Neodymium\nPm:61:(145):Promethium\nSm:62:150.35:Samarium\nEu:63:152.0:Europium\nGd:64:157.26:Gadolinium\nTb:65:158.93:Terbium\nDy:66:162.51:Dysprosium\nHo:67:164.94:Holmium\nEr:68:167.27:Erbium\nTm:69:168.94:Thulium\nYb:70:173.04:Ytterbium\nLu:71:174.99:Lutetium\nHf:72:178.5:Hafnium\nTa:73:180.95:Tantalum\nW:74:183.86:Tungsten\nRe:75:186.22:Rhenium\nOs:76:190.2:Osmium\nIr:77:192.2:Iridium\nPt:78:195.09:Platinum\nAu:79:197.0:Gold\nHg:80:200.61:Mercury\nTl:81:204.39:Thallium\nPb:82:207.21:Lead\nBi:83:209.0:Bismuth\nPo:84:(210):Polonium\nAt:85:(210):Astatine\nRn:86:(222):Radon\nFr:87:(223):Francium\nRa:88:(226):Radium\nAc:89:(227):Actinium\nTh:90:232.05:Thorium\nPa:91:(231):Protactinium\nU:92:238.07:Uranium\nNp:93:(237):Neptunium\nPu:94:(242):Plutonium\nAm:95:(243):Americium\nCm:96:(248):Curium\nBk:97:(247):Berkelium\nCf:98:(249):Californium\nEs:99:(254):Einsteinium\nFm:100:(253):Fermium\nMd:101:(256):Mendelevium\nNo:102:(253):Nobelium\nLw:103:(259):Lawrencium\n",
+"europe":"Albania:Tirana|Tirane\b\"\nAndorra:Andorra la V[ell|iej]a\nAustria:Vienna|Wien\nBelgium:Brussel[s|]|Bruxelles\nBulgaria:Sofi[a|ya]\nCzechoslovakia:Prague|Praha\nDenmark:Copenhagen|K[o|o\b/]benhavn\nEast Germany:Berlin\nUnited Kingdom|England|Great Britain|UK:London\nFinland:Helsinki\nFrance:Paris\nGreece:Athens\nHungary:Budapest\nIceland:Reykjavik\nIreland|Eire:Dublin\nItaly:Rom[e|a]\nLiechtenstein:Vaduz\nLuxembourg:Luxembourg\nMalta:Valletta\nMonaco:Monte Carlo\nNetherlands|Holland:The Hague|'sGravenhage|den Haag|Amsterdam\nNorway:Oslo\nPoland:Wars[aw|zawa]\nPortugal:Lisbo[n|a]\nR[u|o]mania:Bucharest|Bucuresti\nSan Marino:San Marino\nSpain:Madrid\nSweden:Stockholm\nSwitzerland:Bern{e}\nTurkey:Ankara\nUSSR|Russia:Mos[cow|kva]\n[West |]Germany:Bonn\nYugoslavia:Belgrade|Beograd\n",
+"greek":"$luw$:{I} [loose|destroy]\n$eluon$:{I} [loosed|destroyed|was loosing|was destroying]\n$elusa$:{I} [loosed|destroyed]\n$leluka$:{I} have [loosed|destroyed]\n$lusw$:{I} will [loose|destroy]\n$luswn$:[loosing|destroying]\n$lusas$:{having} [loosed|destroyed]\n",
+"inca":"manco capac:sinchi roca\nsinchi roca:lloque yupanqui\nlloque yupanqui:mayta capac\nmayta capac:capac yupanqui\ncapac yupanqui:inca roca\ninca roca:yahuar huacac\nyahuar huacac:viracocha\nviracocha:pachacuti\npachacuti:tupa inca yupanqui\ntupa inca yupanqui:huayna capac\nhuayna capac:huascar\nhuascar:atahuallpa\n",
+"index":"/usr/games/lib/quiz.k/state:state:cap{ital}:abbr{ev{iation}}:flower\n/usr/games/lib/quiz.k/america:America{n}:cap{ital}\n/usr/games/lib/quiz.k/europe:Europe{an}:cap{ital}\n/usr/games/lib/quiz.k/africa:Africa{n}:cap{ital}\n/usr/games/lib/quiz.k/pres:pres{ident}:term:succ{essor}\n/usr/games/lib/quiz.k/sov:sov{ereign}:cen{t{ury}}:succ{essor}\n/usr/games/lib/quiz.k/seq-easy:easy{-}{seq{uence}}:next:name\n/usr/games/lib/quiz.k/seq-hard:hard{-}{seq{uence}}:next:name\n/usr/games/lib/quiz.k/posneg:pos{itive}:neg{ative}\n/usr/games/lib/quiz.k/bard:Shakespeare{{-}line{s}}|line{s}:next:work:char{acter}\n/usr/games/lib/quiz.k/murders:victim:killer\n/usr/games/lib/quiz.k/collectives:ind{ividuals}:coll{ective}\n/usr/games/lib/quiz.k/trek:star:trek\n/usr/games/lib/quiz.k/babies:baby:adult\n/usr/games/lib/quiz.k/poetry:poem{-}line:next:poem:author\n/usr/games/lib/quiz.k/midearth:M[iddle{-}Earth|E]:cap{ital}\n/usr/games/lib/quiz.k/inca:inca:succ{essor}\n/usr/games/lib/quiz.k/morse:clear|alpha{bet{ic}}:morse\n/usr/games/lib/quiz.k/sexes:male:female\n/usr/games/lib/quiz.k/greek:greek:english\n/usr/games/lib/quiz.k/latin:latin:english\n/usr/games/lib/quiz.k/locomotive:locomotive:name\n/usr/games/lib/quiz.k/ucc:section:ucc\n/usr/games/lib/quiz.k/chinese:year:next\n/usr/games/lib/quiz.k/elements:symbol:number:weight:element\n/usr/games/lib/quiz.k/province:province:cap{ital}\n/usr/games/lib/quiz.k/asia:Asia{n}:cap{ital}\n/usr/games/lib/quiz.k/arith:arith{metic}:ans{wer}\n/usr/games/lib/quiz.k/areas:area{-code}:state{-region}:city\n/usr/games/lib/quiz.k/ed:function:ed-command\n",
+"latin":"condo:{I }found\ncondidi:{I }founded\nlaedo:{I }[injure|thwart]\nimpello:{I }[drive|force]\nimpulit:{he }[drove|forced]\nsino:{I }permit\nsinat:{he }permit{s}\ndolor:pain|grief\ninvideo:{I }[envy|hate]\ninvisus:[hated|envied]\nimmitis:cruel|harsh\narceo:{I }[keep away|hinder|prevent]\nratis:ship\nantrum:cave\nfreno:rein{ in}|curb|check\ncelsus:lofty\nspelunca:cave{rn}\nfoedus (n.):agreement|treaty|truce\nfoedera:agreements|treaties\nlaxus:loose|free\nhabena:rein{s}\nmulceo:soothe|calm\nfluctus (n.):wave{s}\nexigo:finish|spend\nexegit:{he }[finished|spent]\nopto (v.):desire|wish\noptat:{he }[desire{s}|wish{es}]\ncapesso:seize|carry out\nconcilio (v.):secure|gain\nconverto:reverse\nprocella:blast|gust\npolus:sky|heaven\nmico:flash|gleam\nextemplo:immediately\nfrigus (n.):cold|chill\ningemo:groan\nos (n.):mouth\neffundo:pour{ out}\ncorripio:snatch|catch\nharena:sand\nexcutio:shake{ off}\nnare:{to }swim\nrima:crack|fissure\nfatisco:gape{ open}\ndisjicio:scatter|disperse\ndolus (n.):deceit\nluo:wash{ away}|atone{ for}\ncito (adv.):quickly|soon\ntumidus:swollen\nfugo:put to flight|drive out\nadnitor:strive\nseditio:riot|uprising\nfax:fire{-}brand\nvolo (v.):fly\narrigo:prick up\ncunctus:whole|entire\nflecto:turn|guide\nsinus:bay|fold|curve|gulf\nscindo:split|divide\nrupes:crag|cliff\ngeminus:twin\nminatur:{he }threaten{s}\ncoruscus:flashing|waving\nhorreo:bristle\nnemus:grove\nnemora:groves\numbra:shade|shadow\nintus:within\ndulcis:sweet|fresh\nsedile:seat|bench\nfessus:weary|tired\nuncus:hooked|curved\nmorsus:bite\nartus:joint|limb\nsilex:flint\nscintilla:spark\nfolium:leaf\naridus:dry\ncorrumpo:spoil|ruin\ncorrupit:{he }[spoil{ed}|ruin{ed}]\nfrux:grain\ntorreo:parch\ncelsus:high|lofty\ncervus:stag\nerro:wander\narmentum:herd\npasco:feed|nourish\npascor:graze\narcus:bow\nturba:crowd\nsterno:strew\nhumus:ground|earth\nvinum:wine\nmaereo:mourn|sorrow\nignarus:unknowing|ignorant|inexperienced\nrabies:rage|fury\npenitus:within\nsono (v.):sound|roar\nmaestus:sad|gloomy\nforsan:perhaps\nolim:someday|sometime\nmemini:{I }remember\nvarius:different\ndiscrimen:crisis|danger\nquiesco:become quiet\nrefert:{he }[say{s}|tell{s}]\nvultus:face|countenance\ncor:heart\ncorda:hearts\ndolor:pain|grief\ndaps:feast\ndapes:feasts\nviscus:flesh\nseco:cut\ntremo:quiver\npinguis:fat|rich\nmensa:table\nsermo:talk|discourse\ndubius:doubtful|wavering\npius:dutiful|devoted|loyal\ngemo:lament|moan|bemoan\ncrudelis:cruel|bitter\nlumen:light|eye\nlumina:lights|eyes\ntristis:sad\nlacrima:tear\nniteo:shine|glisten\nfulmen:thunderbolt|lightning\nfulmina:thunderbolts\nfunus:death|disaster\nfunera:deaths|disasters\norbis terrarum:world\nductor:leader\ndicio (n.):power\nfons:spring|source\nfontes:springs|sources\narvum:land\ninfandus:unspeakable\nrideo:laugh\nosculum:lip\nlibo:sip|touch|kiss\nnata:daughter\nhaereo:{I }[stick to|adhere]\npromitto:primise\nsublimis:high|uplifted|up high\nquando:since|when|because\narcanum:{a }secret\nferox:fierce|savage\ncontundo:crush\nalbus:white\ndonec:until\nsacerdos:priest{ess}\nlupus:wolf\nnutrix:nurse\nnutrices:nurses\nfulvus:tawny|yellow\nmeta:limit|boundary\n",
+"locomotive":"4-4-0:American\n4-6-0:Mogul\n4-4-2:Atlantic\n4-6-2:Pacific\n2-8-0:Consolidation\n2-8-2:Mikado\n4-8-2:Mountain\n2-8-4:Berkshire\n4-6-4:Hudson\n4-8-4:Northern\n2-10-2:Decapod\n",
+"midearth":"Shire:Michel Delving|Hobbiton\nMordor:Minas Morgul\nGondor:Minas Tirith\nUmbar:{City of the }Corsairs\nRhovanion:Esgaroth{ upon the Long Lake}\nRohan:Edoras\nLothl['\bo|o|o\b']rien:Caras Galadon\nBreeland:Bree\nArnor:Ann['\bu|u\b'|u]minas\nArthedain:Fornost{ Erain}|Norbury of the Kings\n",
+"morse":"A:.-\nB:-...\nC:-.-.\nD:-..\nE:.\nF:..-.\nG:--.\nH:....\nI:..\nJ:.---\nK:-.-\nL:.-..\nM:--\nN:-.\nO:---\nP:.--.\nQ:--.-\nR:.-.\nS:...\nT:-\nU:..-\nV:...-\nW:.--\nX:-..-\nY:-.--\nZ:--..\n",
+"murders":"Cock Robin:{the }sparrow\nsleep|Duncan:Macbeth\n{the }cat:curiosity|care\n{John {F{.} }}Kennedy|JFK:{Lee Harvey }Oswald|{the }FBI|{the }CIA\n{Lee Harvey }Oswald:{Jack }Ruby|{the }FBI|{the }CIA\n{Martin Luther }King:{James {Earl }}Ray|{the }FBI|{the }CIA\n[Bobby |Robert {F{.} }]Kennedy|RFK:{Sirhan }Sirhan|{the }FBI|{the }CIA\nChrist:{the }Romans|{Pontius }Pilate|{the }CIA\n{Sharon }Tate:{Charles }Manson\nCharles Lindbergh Jr{.}:{Bruno }Hauptman{n}\n{Mr{.} }{{and }Mrs{.} }Borden|{her }parents:Lizzie{ Borden}\n{Prof{essor} }{James }Moriarty:{Sherlock }Holmes\nAchilles:Paris\nAbel:Cain\n{the }nurses:{Richard }Speck\n{J{.} |Julius }Caesar:Brutus{ et al.}\nPompeii:Vesuvius\n{Abraham |Abe }Lincoln:{John {Wilkes }}Booth\n{Yukio }Mishima:{Yukio }Mishima\n{Alexander }Hamilton:{Aaron }Burr\nCleopatra:{the |an }asp\n[Ann Boleyn|Catharine Howard]:Henry{ VIII}\nvaudeville:{the }movies|film\n{the }movies|film:TV|television\n{the }VA patients:{the }nurses\n",
+"poetry":"Come live with me and be my love:\\\nAnd we will all the pleasures prove:\\\n{The }Passionate Shepherd{ to his Love}:\\\n{Christopher }Marlowe\nShall I compare thee to a summer's day{?}:\\\nThou art more lovely and more temperate:\\\nSonnet 18:\\\n{William }Shakespeare\nFine knacks for ladies, cheap, choice, brave, and new!:\\\nGood pennyworths{! }but money cannot move:\\\nFine Knacks{ for Ladies}:\\\n{John }Dowland\nMy mind to me a kingdom is:\\\nSuch perfect joy therein I find:\\\nMy Mind to Me a Kingdom Is:\\\n{Sir }{Edward }Dyer\nUnderneath this stone doth lie:\\\nAs much beauty as could die:\\\nEpitaph on Elizabeth{,} {L. H.}:\\\n{Ben }Jonson\nDeath be not proud, though some have called thee:\\\nMighty and dreadful{,} for thou art not so:\\\n{Holy }Sonnet{s}{ 10}:\\\n{John }Donne\nGather ye rose-buds while ye may:\\\nOld Time is still a-flying:\\\nTo the Virgins{,} {To Make Much of Time}:\\\n{Robert }Herrick\nWhy so pale and wan, fond lover?:\\\nPrithee{,} why so pale{?}:\\\nSong:\\\n{Sir }{John }Suckling\nStone walls do not a prison make:\\\nNor iron bars a cage:\\\nTo Althea{,} From Prison:\\\n{Richard }Lovelace\nI could not love thee (Dear) so much,:\\\nLov['|e]d I not hono{u}r more:\\\nTo Lucasta{, Going to the Wars}:\\\n{Richard }Lovelace\nI saw Eternity the other night:\\\nLike a great ring of pure and endless light:\\\n{The }World:\\\n{Henry }Vaughan\nCome and trip it as you go,:\\\nOn the light fantastic toe:\\\nL'Allegro:\\\n{John }Milton\nWhen I consider how my light is spent:\\\nEre half my days in this dark world and wide:\\\nOn His Blindness|When I Consider:\\\n{John }Milton\nThe grave's a fine and private place{,}:\\\nBut none{,} I think{,} do there embrace{.}:\\\nTo His Coy Mistress:\\\n{Andrew }Marvel\nGreat wits are sure to madness near allied:\\\nAnd thin partitions do their bounds divide:\\\nAbsalom and Achitophel|Absalom:\\\n{John }Dryden\nA little learning is a dangerous thing{;}:\\\nDrink deep{,} or taste not the Pierian spring{.}:\\\n{An }Essay on Criticism|{On }Criticism:\\\n{Alexander }Pope\nThe curfew tolls the knell of parting day{,}:\\\nThe lowing herd wind slowly o'er the lea:\\\nElegy{ Written in a Country Church{-| }Yard:\\\n{Thomas }Gray\nThe best laid schemes o' mice an' men gang aft a-gley{,}:\\\nAn{'|d} lea{'|v}e us nought but grief an{'|d} pain for promised joy{.}:\\\nTo a Mouse:\\\n{Robert }Burns\nTiger! tiger! burning bright!:\\\nIn the forests of the night:\\\n{The }Tiger:\\\n{William }Blake\nMy heart leaps up when I behold:\\\nA rainbow in the sky:\\\nMy Heart Leaps Up:\\\n{William }Wordsworth\nThe world is too much with us; late and soon{,}:\\\nGetting and spending{,} we lay waste our powers:\\\n{The }World is Too Much With Us|Sonnet:\\\n{William }Wordsworth\nA sadder and a wiser man{,}:\\\nHe rose the morrow morn:\\\n{The }{Rime of }{The }Ancient Mariner:\\\n{Samuel }{Taylor }Coleridge\nIn Xanadu did Kubla Khan:\\\nA stately pleasure{-| }dome decree:\\\nKubla Khan:\\\n{Samuel }{Taylor }Coleridge\nShe walks in beauty, like the night:\\\nOf cloudless climes and starry skies:\\\nShe Walks in Beauty:\\\n{George Gordon, }{Lord }Byron\nI want a hero- an uncommon want{,}:\\\nWhen every year and month sends forth a new one:\\\nDon Juan{ Canto I}:\\\n{George Gordon, }{Lord }Byron\nA thing of beauty is a joy forever.:\\\nIts loveliness increases{;|.} {it will never/Pass into nothingness}:\\\nEndymion{ Book I}:\\\n{John }Keats\nMatched with an aged wife, I mete and dole:\\\nUnequal laws unto a savage race:\\\nUlysses:\\\n{Alfred{,} }{Lord }Tennyson\nHe will hold thee, when his passion shall have spent its novel force{,}:\\\nSomething better than his dog{,} a little dearer than his horse:\\\nLocksley Hall:\\\n{Alfred{,} }{Lord }Tennyson\n'Tis better to have loved and lost:\\\nThan never to have loved at all:\\\n{In }Memoriam{ A. H. H.}:\\\n{Alfred{,} }{Lord }Tennyson\nKind hearts are more than coronets,:\\\nAnd simple faith than Norman blood{.}:\\\nLady Clara Vere de Vere:\\\n{Alfred{,} }{Lord }Tennyson\nOh, to be in England:\\\nNow that April's there:\\\nHome{-| }Thoughts{,} From Abroad:\\\n{Robert }Browning\nAh, but a man's reach should exceed his grasp{,}:\\\nOr what's a heaven for{?}:\\\nAndrea Del Sarto:\\\n{Robert }Browning\nHow do I love thee? Let me count the ways.:\\\nI love thee to the depth and breadth and height:\\\nSonnet{s} {From the Portuguese}{ 43}:\\\n{Elizabeth }{Barrett }Browning\nA Book of Verses underneath the Bough{,}:\\\nA Jug of Wine, a Loaf of Bread{-|,| }and Thou:\\\n{The }Rubaiyat{ of Omar Khayyam}{ 12}:\\\n{Edward }Fitzgerald\nThe Moving Finger writes; and, having writ,:\\\nMoves on{\\:|,|.} nor all your Piety nor Wit:\\\n{The }Rubaiyat{ of Omar Khayyam}{ 71}:\\\n{Edward }Fitzgerald\nAh Love! could you and I with Him conspire:\\\nTo grasp this sorry Scheme of Things entire:\\\n{The }Rubaiyat{ of Omar Khayyam}{ 99}:\\\n{Edward }Fitzgerald\nRemember me when I am gone away,:\\\nGone far away into the silent land:\\\nRemember:\\\n{Christina }Rossetti\nHome is the sailor, home from the sea,:\\\nAnd the hunter home from the hill:\\\nRequiem:\\\n{Robert }{Louis }Stevenson\nI fled Him, down the nights and down the days;:\\\nI fled Him, down the arches of the years:\\\n{The }Hound of Heaven:\\\n{Francis }Thompson\nSo 'ere's to you, Fuzzy-Wuzzy, at your 'ome in the Soudan;:\\\nYou're a {pore|poor} benighted {'|h}eathen but a first class fightin{'|g} man:\\\nFuzzy{-| }Wuzzy:\\\n{Rudyard }Kipling\nMorns abed and daylight slumber:\\\nWere not meant for man alive:\\\nReveille:\\\n{A{.}{ }E{.}{ }}Houseman\nI will arise and go now, and go to Innisfree,:\\\nAnd a small cabin build there{,} of clay and wattles made:\\\n{The }{Lake Isle of }Innisfree:\\\n{William }{Butler }Yeats\nI must go down to the seas again, to the lonely sea and the sky,:\\\nAnd all I ask is a tall ship and a star to steer her by:\\\nSea{-| }Fever:\\\n{John }Masefield\nApril is the cruelest month, breeding:\\\nLilacs out of the dead land:\\\n{The }Waste{ }Land:\\\n{T{.}{ }S{.}{ }}Eliot\nNow as I was young and easy under the apple boughs:\\\nAbout the little house and happy as the grass was green:\\\nFern Hill:\\\n{Dylan }Thomas\nOf Man's first disobedience, and the fruit:\\\nOf that forbidden tree{,} whose mortal taste:\\\nParadise Lost:\\\n{John }Milton\n",
+"posneg":"large|big:small\non:off\nstanding up:sitting down\ninside:outside\nhigh:low\nold:new|young\nhot:cold\nout:in\nheavy|dark:light\ndaytime:night[time| time]\nstop|come:go\ntop:bottom\nfloor:ceiling\nnear:far\nrun:walk\nempty|hungry:full\nbackwards:f[or|ront]wards\nbig|large:little|small\nfat|thick:thin|skinny\nbright|light:dark|dull\nright:wrong|left\ngive:take|receive|get\nbuy:sell\nshiny|bright:dull\ndawn:dusk\nfall down|go to bed:[get|stand|rise] up\nasleep:awake\nup:down\nopen[\u0001|ed|]:close[d|]\nsmile:frown|cry\nhappy|glad:sad\nhard:soft|easy\nboy|woman|lady:girl|man\nfast:slow\nwet:dry\ncovered|hid[den|]:uncovered|open\ngood:bad\nalways|sometimes|now:never|sometimes\nbeautiful|pretty:ugly\nrough:smooth\nhairy:bald||smooth\nabove:below\nyin:yang\nsweet:sour\nif:unless\nfrom|fro:to\nwith[\u0001|in|]:without|against\nafter:before\ntogether:apart\nplus:minus\n",
+"pres":"{G{eorge} }Washington:1789-{17}97:{J{ohn} }Adams\n{J{ohn} }Adams:1797-1801:{T{homas} }Jefferson\n{T{homas} }Jefferson:1801-{{18}0}9:{J{ames} }Madison\n{J{ames} }Madison:1809-{18}17:{J{ames} }Monroe\n{J{ames} }Monroe:1817-1825:{J{ohn} }{Q{uincy} }Adams\n{J{ohn} }{Q{uincy} }Adams:1825-{{18}2}9:{A{ndrew} }Jackson\n{A{ndrew} }Jackson:1829-{18}37:{M{artin} }Van Buren\n{M{artin} }Van Buren:1837-{18}41:{W{illiam|m} }{H{enry} }Harrison\n{W{illiam|m} }{H{enry} }Harrison:1841:{J{ohn} }Tyler\n{J{ohn} }Tyler:1841-{{18}4}5:{J{ames} }{K{nox} }Polk\n{J{ames} }{K{nox} }Polk:1845-{{18}4}9:{Z{achary} }Taylor\n{Z{achary} }Taylor:1849-{18}50:{M{illard} }Fillmore\n{M{illard} }Fillmore:1850-{{18}5}3:{F{ranklin} }Pierce\n{F{ranklin} }Pierce:1853-{{18}5}7:{J{ames} }Buchanan\n{J{ames} }Buchanan:1857-{18}61:{A{braham|be} }Lincoln\n{A{braham|be} }Lincoln:1861-{{18}6}5:{A{ndrew} }Johnson\n{A{ndrew} }Johnson:1865-{{18}6}9:{U{lysses} }{S{impson} }Grant\n{U{lysses} }{S{impson} }Grant:1869-{18}77:{R{utherford} }{B{irchard} }Hayes\n{R{utherford} }{B{irchard} }Hayes:1877-{18}81:{J{ames} }{A{bram} }Garfield\n{J{ames} }{A{bram} }Garfield:1881:{C{hester} }{A{lan} }Arthur\n{C{hester} }{A{lan} }Arthur:1881-{{18}8}5:{G{rover} }Cleveland{ (1st term)}\n{G{rover} }Cleveland{ (1st term)}:1885-{{18}8}9:{B{enjamin} }Harrison\n{B{enjamin} }Harrison:1889-{18}93:{G{rover} }Cleveland{ (2nd term)}\n{G{rover} }Cleveland{ (2nd term)}:1893-{18}97:{W{illiam|m} }McKinley\n{W{illiam|m} }McKinley:1897-1901:{T{heodore|eddy} }Roosevelt|TR\n{T{heodore|eddy} }Roosevelt|TR:1901-{{19}0}9:{W{illiam|m} }{H{oward} }Taft\n{W{illiam|m} }{H{oward} }Taft:1909-{19}13:{W{oodrow} }Wilson\n{W{oodrow} }Wilson:1913-{19}21:{W{arren} }{G{amaliel} }Harding\n{W{arren} }{G{amaliel} }Harding:1921-{{19}2}3:{C{alvin} }Coolidge\n{C{alvin} }Coolidge:1923-{{19}2}9:{H{erbert} }Hoover\n{H{erbert} }Hoover:1929-{19}33:{F{ranklin} }{D{elano} }Roosevelt|FDR\n{F{ranklin} }{D{elano} }Roosevelt|FDR:1933-{19}45:{H{arry} }{S }Truman\n{H{arry} }{S }Truman:1945-{19}53:{D{wight} }{D{avid} }Eisenhower\n{D{wight} }{D{avid} }Eisenhower:1953-{19}61:{J{ohn} }{F{itzgerald} }Kennedy|JFK\n{J{ohn} }{F{itzgerald} }Kennedy|JFK:1961-{{19}6}3:{L{yndon} }{B{aines} }Johnson|LBJ\n{L{yndon} }{B{aines} }Johnson|LBJ:1963-{{19}6}9:{R{ichard} }{M{ilhouse} }Nixon\n{R{ichard} }{M{ilhouse} }Nixon:1969-{19}74:{G{erald} }{R{obert} }Ford\n{G{erald} }{R{obert} }Ford:1974-:\n",
+"province":"Newfoundland{ and Labrador}:[St.|Saint] John's\nNew Brunswick:Fredericton\nPrince Edward Island:Charlottetown\nNova Scotia:Halifax\nQuebec:Quebec\nOntario:Toronto\nManitoba:Winnipeg\nSaskatchewan:Regina\nAlberta:Edmonton\nBritish Columbia:Victoria\nYukon Territory:Whitehorse\nNorthwest Territories:Yellowknife\nCanada:Ottawa\n",
+"seq-easy":"1,2,3,4,5,6:7{(integers)}:integers|[natural|counting] numbers\n1,2,3,5,8,13:21{(Fibonacci)}:Fibonacci{ seq{ence}| numbers}\n1,2,4,8,16,32:64{(powers of 2)}:powers of 2|2[**|^]n\n1,2,6,24,120,720:5040{(factorials)}:factorials|n!\n1,3,5,7,9,11:13{(odd nos.)}:odd [integ|numb]ers\n1,3,6,10,15,21:28{(triangular)}:triangular{ numbers}|C(n,2)\n1,3,9,27,81:243{(powers of 3)}:powers of 3|3[**|^]n\n1,4,9,16,25:36{(squares)}:squares|n[**|^]2\n1,4,16,64:256{(powers of 4)}:powers of 4|4[**|^]n\n1,5,25,125:625{(powers of 5)}:powers of 5|5[**|^]n\n1,8,27,64,125:216{(cubes)}:cubes|n[**|^]3\n2,3,5,7,11,13:17{(primes)}:prime[ number]s\n2,4,6,8,10,12:14{(even nos.)}:even [integ|numb]ers|multiples of 2|2n\n3,6,9,12,15:18{(3n)}:multiples of 3|3n\n",
+"seq-hard":"1,1,2,1,2,2,3,1,2,2,3,2,3,3,4:1{(1's in binary nos)}:number of 1's in binary numbers\n1,1,2,2,4,2,6,4,6,4,10:4{(phi(n))}:Euler's [totient|phi]{ function}|phi(n)\n1,2,2,4,2,4,2,4,6,2:6{(diff of primes)}:diff{erences} [between|of] primes\n1,2,4,11,34:156{(unlabeled graphs)}:{unlabeled }graphs\n1,2,5,14,42,132:429{(Catalan)}:Catalan{ numbers}\n1,2,5,16,61:272{(Euler)}:Euler{ numbers}\n1,3,12,60,360:2520{(n!/2)}:Even permutations|n!/2\n1,3,16,125,1296,16807:262144{(n**(n-2))}:{labeled }trees|n[**|^](n-2)\n1,4,10,20,35,56:84{(C(n,3))}:Tetrahedral{ numbers}|C(n,3)\n1,4,11,20,31,44,61:100{(n**2 base 8)}:[Squares|n[**|^]2} base 8|octal squares\n1,4,16,256:65536{(2**2**n)}:{labeled }boolean functions|2[**|^]2[**|^]n\n1,6,28:496{(perfect nos)}:perfect{ numbers}\n2,7,1,8,2,8:1{(e)}:{digits of }e\n3,1,4,1,5,9:2{(pi)}:{digits of }pi\n3,7,31,127:8191{(Mersenne primes)}:Mersenne{ primes}\n",
+"sexes":"Y|y:X|x\nabbot:abbess\nalumnus:alumna\nambassador:ambassadress\nboar:sow\nbuck:doe\nbull:cow\ncob:pen\ncolt:filly\ncurator:curatrix\ndog:bitch|vixen\nduke:duchess\ndrake:duck\neffeminate|womanish:mannish\ngander:goose\ngentleman:lady|gentlewoman\njack:jenny\nlad:lass\nmanly:womanly\nmarquis:marchioness[|e]|marquise\nmonk:nun\n[O|o]edipus complex:[E|e]lectra[| complex]\nprince:princess\nram:ewe\nrooster|cock:hen\nstallion:mare\n",
+"sov":"W[illia|]m [I|1|the Conqueror]:11:W[illia|]m [II|2|Rufus|the Red]\nW[illia|]m [II|2|Rufus|the Red]:11:Hen[ry|] [I|1]\nHen[ry|] [I|1]:12:Stephen\nStephen:12:Hen[ry|] [II|2]\nHen[ry|] [II|2]:12:Rich[ard|] [I|1]\nRich[ard|] [I|1]:12:John\nJohn:13|12-13:Hen[ry|] [III|3]\nHen[ry|] [III|3]:13:Ed[w[ard|]|] [I|1]\nEd[w[ard|]|] [I|1]:13-14|13|14:Ed[w[ard|]|] [II|2]\nEd[w[ard|]|] [II|2]:14:Ed[w[ard|]|] [III|3]\nEd[w[ard|]|] [III|3]:14:Rich[ard|] [II|2]\nRich[ard|] [II|2]:14:Hen[ry|] [IV|4] Part 1\nHen[ry|] [IV|4] Part 1:15|14-15:Hen[ry|] [IV|4] Part 2\nHen[ry|] [IV|4] Part 2:15|14-15:Hen[ry|] [V|5]\nHen[ry|] [V|5]:15:Hen[ry|] [VI|6]\nHen[ry|] [VI|6]:15:Ed[w[ard|]|] [IV|4]\nEd[w[ard|]|] [IV|4]:15:Ed[w[ard|]|] [V|5]\nEd[w[ard|]|] [V|5]:15:Rich[ard|] [III|3]\nRich[ard|] [III|3]:15:Hen[ry|] [VII|7]\nHen[ry|] [VII|7]:15-16|15|16:Hen[ry|] [VIII|8]\nHen[ry|] [VIII|8]:16:Ed[w[ard|]|] [VI|6]\nEd[w[ard|]|] [VI|6]:16:Mary\nMary:16:Eliz[abeth|][ [I|1]|]\nElizabeth[ [I|1]|]:16-17|16:Ja[me|]s [I|1]\nJa[me|]s [I|1]:17:Cha[rle|]s [I|1]\nCha[rle|]s [I|1]:17:[Oliver |]Cromwell\n[Oliver |]Cromwell:17:Rich[ard|] Cromwell\nRich[ard|] Cromwell:17:Ch[arle|]s [II|2]\nCha[rle|]s [II|2]:17:Ja[me|]s [II|2]\nJa[me|]s [II|2]:17:W[illia|]m and Mary\nW[illia|]m and Mary:17-18|17:Anne\nAnne:18:Geo[rge|] [I|1]\nGeo[rge|] [I|1]:18:Geo[rge|] [II|2]\nGeo[rge|] [II|2]:18:Geo[rge|] [III|3]\nGeo[rge|] [III|3]:18-19|18|19:Geo[rge|] [IV|4]\nGeo[rge|] [IV|4]:19:W[illia|]m [IV|4]\nW[illia|]m [IV|4]:19:Victoria\nVictoria:19:Ed[w[ard|]|] [VII|7]\nEd[w[ard|]|] [VII|7]:19-20|19|20:Geo[rge|] [V|5]\nGeo[rge|] [V|5]:20:Ed[w[ard|]|] [VIII|8]\nEd[w[ard|]|] [VIII|8]:20:Geo[rge|] [VI|6]\nGeo[rge|] [VI|6]:20:Eliz[abeth|] [II|2]\n",
+"spell":"The son went behind a cloud.:sun\nDid you see the monky at the zoo?:monkey\n",
+"state":"Alabama|Ala|AL:Montgomery:AL:camellia\nAlaska|AK:Juneau:AK:forget{-| }me{-| }not\nArizona|Ariz|AZ:Phoenix:AZ:{saguaro }cactus{ blossom}\nArkansas|Ark|AR:Little Rock:AR:apple{ blossom}\nCal{if{ornia}}|CA:Sacramento:CA:{golden }poppy\nCol{o{rado}}|CO:Denver:CO:{Rocky Mountain }columbine\nConn{ecticut}|CT:Hartford:CT:{mountain }laurel\nDel{aware}|DE:Dover:DE:peach{ blossom}\nFl{orid}a|FL:Tallahassee:FL:orange{ blossom}\nGeorgia|Ga:Atlanta:GA:{Cherokee }rose\nHawaii|HI:Honolulu:HI:hibiscus\nIdaho|Ida|ID:Boise:ID:syringa\nIll{inois}|IL:Springfield:IL:violet\nInd{iana}|IN:Indianapolis:IN:peony\nIowa|Ia:Des Moines:IA:{wild }rose\nKans{as}|Kan|KS:Topeka:KS:sun{ }flower\nKentucky|Ky:Frankfort:KY:goldenrod\nLouisiana|La:Baton Rouge:LA:magnolia\nMaine|Me:Augusta:ME:{white }pine{ }cone{ and}{ tassel}\nMaryland|Md:Annapolis:MD:blackeyed susan\nMass{achusetts}|MA:Boston:MA:{trailing }arbutus\nMich{igan}|MI:Lansing:MI:apple{ blossom}\nMinn{esota}|MN:Saint Paul|St Paul:MN:{showy }lady{-|'s | }slipper\nMiss{issippi}|MS:Jackson:MS:magnolia\nMissouri|Mo:Jefferson City:MO:hawthorn\nMont{ana}|MT:Helena:MT:bitterroot\nNebraska|Neb|NE|NB:Lincoln:NE|NB:goldenrod\nNevada|Nev|NV:Carson City:NV:sagebrush\nNew Hampshire|NH:Concord:NH:{purple }lilac\nNew Jersey|NJ:Trenton:NJ:violet\nNew Mexico|NM:Santa Fe:NM:yucca\nNew York|NY:Albany:NY:rose\nN{orth} Carolina|NC:Raleigh:NC:{flowering }dogwood\nN{orth} Dakota|ND:Bismarck:ND:{wild }{prairie }rose\nOhio|OH|O:Columbus:OH:{scarlet }carnation\nOklahoma|Okla|OK:Oklahoma City:OK:mistletoe\nOregon|Ore|OR:Salem:OR:{Oregon }grape\nPennsylvania|Pa:Harrisburg:PA:{mountain }laurel\nRhode Island|RI:Providence:RI:violet\nS{outh} Carolina|SC:Columbia:SC:{yellow }jasmine\nS{outh} Dakota|SD:Pierre:SD:{American }pasque{{f| f}lower}\nTenn{essee}|TN:Nashville:TN:iris\nTexas|Tex|TX:Austin:TX:blue{-| }bonnet\nUtah|UT:Salt Lake City:UT:{sego }lily\nVermont|Vt:Montpelier:VT:{red }clover\nVirginia|Va:Richmond:VA:{flowering }dogwood\nWash{ington}|WA:Olympia:WA:{western }rhododendron\nW{est} Virginia|W{ }Va|WV:Charleston:WV:rhododendron\nWisconsin|Wis|WI:Madison:WI:violet\nWyo{ming}|WY:Cheyenne:WY:Indian paint brush\n",
+"trek":"captain's name:{James |Jim }{T. }Kirk|{james |jim}{t. }kirk\nfirst officers name:Spock|spock|Mr. Spock|mr. spock\nname of ship:{the }{u.s.s. }enterprise|Enterprise\nname of the \"good guys\":{the }Federation|federation|{the }federation\nname of the \"bad guys\":{the }klingons|{the }romulans\nnickname of chief engineer:scotty|Scotty\nnickname of chief medical officer:bones|Bones\nmachine use for transportation to surface of nearby planet:transporter|shuttlecraft\nmain engines of ship:warp engines|warp\nnumber of crew:400|four hundred\nhand-held weapon:phaser\ntype of torpedoes used on the ship:photon torpedoes|photon\nname of electronic protective device on ship:shields|shield\nname of device that makes a ship invisible:cloaking device|cloak|cloaking\ntype of voice that the on-board computer has:female|feminine|woman's\nwhere first officer comes from:vulcan|Vulcan\nrare, but very powerful enemies:romulans|Romulans\nreaction that main engines operate on:matter-antimatter{ reaction}|matter/antimatter{ reaction}\nslow engines used in emergencies:impulse engines|impulse\n",
+"ucc":"1-103:supplementary general principles of law applicable\n1-106:remedies to be liberally administered\n1-201:general definitions\n1-203:obligation of good faith\n1-205:course of dealing and usage of trade\n1-206:statue of frauds for kinds of personal property not otherwise covered\n2-103:definitions-sales\n2-201:statute of frauds\n2-208:course of performance or practical consideration\n2-302:unconscionable contract or clause\n2-310:open time for payment or running of credit\n2-319:FOB and FAS terms\n2-320:CIF and C&F terms\n2-323:form of bill of lading required in overseas shipment\n2-401:passing of title; reservation for security\n2-402:rights of seller's creditors against sold goods\n2-403:powr to transfer; good faith purchase of goods; entrusting\n2-501:insurable interest in goods; manner of identification of goods\n2-502:buyer's right to goods on seller's insolvency\n2-503:manner of seller's tender of delivery\n2-506:rights of financing agency\n2-507:effect of seller's tender; delivery on condition\n2-508:cure by seller of improper tender or delivery; replacement\n2-509:risk of loss in the absence ogf breach\n2-510:effect of breach on risk of loss\n2-513:buyer's right to inspection of goods\n2-601:buyer's rights on improper delivery\n2-602:manner and effect of rightful rejection\n2-603:merchant buyer's duties as to rightfully rejected goods\n2-605:waiver of buyer's objections by failure to particularize\n2-606:what constitutes acceptance of goods\n2-607:effect of acceptance; notice of breach\n2-608:revocation of acceptance in whole or in part\n2-609:right to adequate assurance of performance\n2-610:anticipatory repudiation\n2-611:retraction of anticipatory repudiation\n2-612:installment contract; breach\n2-702:seller's remedies on discovery o buyer's insolvency\n2-703:seller's remedies in general\n2-705:seller's stoppage of delivery in transit or otherwise\n2-706:seller's resale including contract for resale\n2-708:seller's damages for non-acceptance or repudiation\n2-709:action for the price\n2-711:buyer's remedies in general; buyer's security interest in rejected goods\n2-712:cover; buyer's procurement of substitute goods\n2-713:buyer's damages for on-delivery or repudiation\n2-714:buyer's damages for breach in regard to accepted goods\n2-715:buyer's incidental and consequential damages\n2-716:buyer's right to specific performance or replevin\n3-102:definitions-commercial paper\n3-104:form of negotiable instruments; draft; check; certificate of deposit; note\n3-110:payable to order\n3-111:payable to bearer\n3-201:transfer: right to indorsement\n3-202:negotiation\n3-204:special indorsement; blank indorsement\n3-301:rights of a holder\n3-302:holder in due course\n3-305:rights of a holder in due course\n3-306:rights of one not holder in due course\n3-401:signature\n3-404:unauthorized signature\n3-405:impostors; signature in name of payee\n3-406:negligence contributing to alteration or unauthorized signature\n3-407:alteration\n3-410:definition and operation of acceptance\n3-411:certification of a check\n3-413:contract of maker, drawer and acceptor\n3-414:contract of indorser; order of liability\n3-417:warranties on presentment and transfer\n3-418:finality of payment or acceptance\n3-419:conversion of instrument; innocent representative\n3-501:when presentment, notice of dishonor, and protest necessary or permissible\n3-502:unexcused delay; discharge\n3-503:time or presentment\n3-507:dishonor; holder's right of recourse; term allowing representment\n3-508:notice of dishonor\n3-511:waived or excused presentment, protest or notice of dishonor or delay therein\n3-601:discharge of parties\n3-802:effect of instrument on obligation for which it is given\n3-804:lost,destroyed or stolen instruments\n4-104:definitions-bank deposits and collections\n4-105:banks-depositary, intermediary, collecting, payor, presenting, remitting\n4-207:warranties of customer and collecting bank on transfer or presentment of items\n4-208:security interest of collecting bank in items, accompanying documents and proceeds\n4-209:when bank gives value for purposes of holder in due course\n4-211:media of remittance; provision and final settlement in remittance cases\n4-213:final payment of item by payor bank\n4-401:when bank may charge customer's account\n4-406:customer's duty to discover and report unauthorized signature or alteration\n4-402:bank liability to customer for wrongful dishonor\n4-407:payor bank's right to subrogation on improper payment\n5-111:warranties on transfer and presentment (letters of credit)\n5-114:issuer's duty and privilege to honor; right to reimbursement\n5-115:remedy for improper dishonor or anticipatory repudiaion (letters of credit)\n7-104:negotiable and non-negotiable warehouse receipt, bill of lading, other title\n7-204:duty of care; contractual limitation of warehouseperson's liability\n7-301:liability for non-receipt or misdescription\n7-403:obligation of warehouseperson or carrier to deliver; excuse\n7-404:no liability for good faith delivery pursuant to receipt or bill\n7-501:form of negotiation and requirements of due negotiation\n7-502:rights acquired by due negotiation\n7-503:document of title to goods defeated in certain cases\n7-504:rights acquired in absence of due negotiation; effect of diversion\n7-507:warranties on negotiation or transfer of receipt or bill\n7-508:warranties of collecting bank as to documents\n9-105:definitions-secured transactions\n9-107:definitions \"purchase money security interest\"\n9-109:classification of goods; consumer goods; equipment; farm products; inventory\n9-113:security interests arising under article on sales\n9-203:attachment and enforceability of security interest; proceeds; formal requisites\n9-206:agreement not to asserr defenses against assignee; modification of sales warranties\n9-301:persons who take priority over unperfected security interests\n9-302:when filing is required to perfect security interest\n9-303:when security interest is perfected\n9-304:perfection of security interest in instruments, documents\n9-305:when possession by secured party perfects security interest without filing\n9-306:proceeds; secured party's rights on disposition of collateral\n9-307:protection of buyers of goods\n9-310:periority of certain liens arising by opration of law (mechanic's liens)\n9-311:alienability of debtor's rights; judicial process\n9-312:priorities among conflicting security interests in the same collateral\n9-405:assignment of security interest\n9-501:default; procedure when security agreement  covers real and personal property\n9-503:secured party's right to take possession after default\n9-504:secured party's right to dispose of collateral after default\n9-505:compulsory disposition of collateral; acceptance of collateral as discharge of obligation\n"
+};
+var PATH='/usr/games/lib/quiz.k/',NF=10,NL=300,NC=200,SL=100,NA=10,EXIT={};
+function zero(n){var a=[];while(n--)a.push(0);return a}
+/* what the glass shows of a line with overstrikes in it, and without the control characters it doesn't show */
+function glass(s){
+  if(s.indexOf('\b')<0)return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'');
+  var r=[],c=0;
+  for(var i=0;i<s.length;i++){
+    var ch=s.charAt(i);
+    if(ch==='\b'){if(c>0)c--}
+    else if(ch==='\t'){do{if(r[c]===undefined)r[c]=' ';c++}while(c%8)}
+    else if(ch>=' '&&ch!=='\u007f')r[c++]=ch;
+  }
+  for(i=0;i<r.length;i++)if(r[i]===undefined)r[i]=' ';
+  return r.join('');
+}
+P.command({names:['quiz'],run:function(a,raw,words){
+  var o='',tflag=0,xx=zero(NL+1),score=zero(NL),rights=0,wrongs=0,guesses=0,input=null,ipos=0,nl=0,na=NA,inc,ptr=0,nc=0;
+  var L=[],tmp=['','','','','','','','','',''],select=zero(NF),eu,ev,us,vs;
+  function pr(s){
+    o+=s;
+    var i=o.lastIndexOf('\n');
+    if(i>=0){P.say(o.slice(0,i).split('\n').map(glass));o=o.slice(i+1)}
+  }
+  function fopen(f){
+    if(f.indexOf(PATH)===0&&P.has(K,f.slice(PATH.length)))return K[f.slice(PATH.length)];
+    var n=P.find(f);
+    if(!n||n.type==='d'||n.prot)return null;
+    return P.text(n).join('\n')+'\n';
+  }
+  function open(f){input=fopen(f);ipos=0;return input!==null}
+  function lineStr(){var e=L.indexOf('\0');return (e<0?L:L.slice(0,e)).join('')}
+  function readline(){ /* the C leaves a line in line[], with its spaces squeezed; it counts what it read in nc */
+    for(;;){
+      var t=0,again=false;
+      while(ipos<input.length){
+        var c=input.charAt(ipos++);
+        L[t]=c;
+        nc++;
+        if(c===' '&&(t===0||L[t-1]===' '))continue;
+        if(c==='\n'){
+          if(t>0&&L[t-1]==='\\'){t++;continue}
+          while(t>0&&L[t-1]===' ')L[--t]='\n';
+          L[++t]='\0';
+          return 1;
+        }
+        if(t>=NC){
+          pr('Too hard for me\n');
+          for(;;){
+            if(ipos>=input.length)return 0;
+            if(input.charAt(ipos++)==='\n')break;
+          }
+          again=true;
+          break;
+        }
+        t++;
+      }
+      if(!again){L[t]='ÿ';return 0}
+    }
+  }
+  function U(i){return i<us.length?us.charCodeAt(i):0}
+  function V(){return ev<vs.length?vs.charCodeAt(ev):0}
+  function fold(c){return c<65||c>90?c:c|32}
+  function eat(s,c){
+    if(V()!==c)return 2;
+    if(s===0){ev++;return 1}
+    if(fold(U(eu))!==fold(c))return 0;
+    eu++;ev++;
+    return 1;
+  }
+  function string(s){
+    var x;
+    for(;;){
+      switch(V()){
+      case 0:case 124:case 93:case 125:return 1;
+      case 92:
+        ev++;
+        if(V()===0)return 2;
+        if(V()===10){ev++;continue}
+        /* falls through */
+      default:
+        if(eat(s,V())===1)continue;
+        return 0;
+      case 91:
+        ev++;
+        x=disj(s);
+        if(V()!==93||x>1)return 2;
+        ev++;
+        if(s===0)continue;
+        if(x===0)return 0;
+        continue;
+      case 123:
+        ev++;
+        x=disj(s);
+        if(V()!==125||x>1)return 2;
+        ev++;
+        continue;
+      }
+    }
+  }
+  function disj(s){
+    var t=0,x,u=eu;
+    for(;;){
+      x=string(s);
+      if(x>1)return x;
+      switch(V()){
+      case 0:case 93:case 125:return t|(x&s);
+      case 124:ev++;t|=s;s=0;continue;
+      }
+      if(s)eu=u;
+      if(string(0)>1)return 2;
+      switch(V()){
+      case 0:case 93:return 0;
+      case 125:return 1;
+      case 124:ev++;continue;
+      default:return 2;
+      }
+    }
+  }
+  function cmp(u,v){
+    us=u;vs=v;eu=0;ev=0;
+    var x=disj(1);
+    if(x!==1)return x;
+    return eat(1,0);
+  }
+  function pub1(s){
+    for(;;ev++){
+      switch(V()){
+      case 124:s=0;continue;
+      case 93:case 125:case 0:return;
+      case 91:case 123:ev++;pub1(s);continue;
+      case 92:
+        ev++;
+        if(V()===10)continue;
+        /* falls through */
+      default:
+        if(s)pr(String.fromCharCode(V()));
+      }
+    }
+  }
+  function publish(t){vs=t;ev=0;pub1(1)}
+  function segment(u,w){
+    var s=0,i,f,t;
+    for(i=0;i<NF;i++){
+      f=s;t='';
+      while(s<u.length&&u.charAt(s)!==':'&&u.charAt(s)!=='\n'&&s-f<SL){
+        if(u.charAt(s)==='\\'){
+          if(u.charAt(s+1)==='\n'){s+=2;continue}
+          t+=u.charAt(s++);
+        }
+        t+=u.charAt(s++);
+      }
+      while(s<u.length&&u.charAt(s)!==':'&&u.charAt(s)!=='\n')s++;
+      w[i]=t;
+      if(s>=u.length||u.charAt(s++)==='\n')return i+1;
+    }
+    pr('Too many facts about one thing\n');
+    return i;
+  }
+  function badinfo(){pr('Bad info '+lineStr()+'\n')}
+  function perm(u,m,v,n,p){
+    for(var i=0;i<m;i++){
+      var j,hit=false;
+      for(j=0;j<n;j++){
+        var x=cmp(u[i],v[j]);
+        if(x>1)badinfo();
+        if(x===0)continue;
+        p[i]=j;hit=true;
+        break;
+      }
+      if(!hit)return 0;
+    }
+    return 1;
+  }
+  function find(u,m){
+    while(readline()){
+      var n=segment(lineStr(),tmp);
+      if(perm(u,m,tmp.slice(1),n-1,select))return 1;
+    }
+    return 0;
+  }
+  function readindex(){
+    xx[0]=nc=0;
+    while(readline()){
+      xx[++nl]=nc;
+      if(nl>=NL){
+        pr("I've forgotten some of it;\n");
+        pr('I remember '+nl+' items.\n');
+        break;
+      }
+    }
+  }
+  function done(){
+    pr('\nRights '+rights+', wrongs '+wrongs+', ');
+    if(guesses)pr('extra guesses '+guesses+', ');
+    if(rights+wrongs===0){ /* the C divides by zero here */
+      if(o)P.say([glass(o)]);
+      o='';
+      P.typeLine('Floating exception (core dumped)','err');
+      throw EXIT;
+    }
+    pr('score '+Math.trunc(100*rights/(rights+wrongs))+'%\n');
+    throw EXIT;
+  }
+  function dunno(){pr("I don't know about that\n");throw EXIT}
+  function instruct(info){
+    pr('Subjects:\n\n');
+    var i,n;
+    while(readline()){
+      pr('-');
+      n=segment(lineStr(),tmp);
+      for(i=1;i<n;i++){pr(' ');publish(tmp[i])}
+      pr('\n');
+    }
+    pr('\n');
+    open(info);
+    readline();
+    segment(lineStr(),tmp);
+    pr('For example,\n');
+    pr('    quiz ');publish(tmp[1]);
+    pr(' ');publish(tmp[2]);
+    pr('\nasks you a ');publish(tmp[1]);
+    pr(' and you answer the ');publish(tmp[2]);
+    pr('\n    quiz ');publish(tmp[2]);
+    pr(' ');publish(tmp[1]);
+    pr('\nworks the other way around\n');
+    pr('\nType empty line to get correct answer.\n');
+    throw EXIT;
+  }
+  function next(){
+    inc=(inc*3125)&0o77777;
+    ptr=(inc>>2)%na;
+    var flag=0;
+    while(score[ptr]>0)
+      if(++ptr>=na){
+        ptr=0;
+        if(flag)done();
+        flag=1;
+      }
+    return ptr;
+  }
+  function query(l){ /* returns the response squeezed, as query() leaves it */
+    var t=[];
+    for(var i=0;i<l.length;i++){
+      var c=l.charAt(i);
+      if(c===' '&&(t.length===0||t[t.length-1]===' '))continue;
+      t.push(c);
+    }
+    while(t.length&&t[t.length-1]===' ')t.pop();
+    return t.join('');
+  }
+  function* main(){
+    var argv=words.slice(1),info=PATH+'index',i,j,x,z,count;
+    /* 4.3 reads time() into a two-int array and uses the second one, which on a VAX it never fills:
+       V7's intent was the low half of the clock, and that is what this uses */
+    inc=(Math.floor(Date.now()/1000)&0o77774)|1;
+    while(argv.length&&argv[0].charAt(0)==='-'){
+      if(argv[0].charAt(1)==='i'){
+        if(argv.length>1)info=argv[1];
+        argv=argv.slice(2);
+      }
+      else if(argv[0].charAt(1)==='t'){tflag=1;argv=argv.slice(1)}
+      else break;
+    }
+    if(!open(info)){pr('No info\n');throw EXIT}
+    if(argv.length<=1)instruct(info);
+    if(find(argv,argv.length)===0)dunno();
+    if(!open(tmp[0]))dunno();
+    readindex();
+    if(!tflag||na>nl)na=nl;
+    for(;;){
+      i=next();
+      z=xx[i+1]-xx[i];
+      for(j=0;j<z;j++)L[j]=xx[i]+j<input.length?input.charAt(xx[i]+j):'\u00ff';
+      segment(lineStr(),tmp);
+      if(tmp[select[0]]===''||tmp[select[1]]===''){score[i]=1;continue}
+      publish(tmp[select[0]]);
+      pr('\n');
+      for(count=0;;count++){
+        var l=yield;
+        if(l===P.INT||l===null)done();
+        var r=query(l);
+        if(r===''){
+          publish(tmp[select[1]]);
+          pr('\n');
+          if(count===0)wrongs++;
+          score[i]=tflag?-1:1;
+          break;
+        }
+        x=cmp(r,tmp[select[1]]);
+        if(x>1)badinfo();
+        if(x===1){
+          pr('Right!\n');
+          if(count===0)rights++;
+          if(++score[i]>=1&&na<nl)na++;
+          break;
+        }
+        pr('What?\n');
+        if(count===0)wrongs++;
+        score[i]=tflag?-1:1;
+      }
+      guesses+=count;
+    }
+  }
+  var G=main(),pipe=P.stdin();
+  function step(v){
+    var r;
+    try{r=G.next(v)}
+    catch(e){
+      if(e!==EXIT)throw e;
+      if(o)P.say([glass(o)]);
+      return;
+    }
+    if(r.done)return;
+    if(pipe){step(pipe.length?pipe.shift():null);return}
+    var p=glass(o);o='';
+    P.ask(p,step,true);
+  }
+  step();
+}});
+})(window.Phosphor);
