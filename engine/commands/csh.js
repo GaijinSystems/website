@@ -96,19 +96,20 @@ function operator(e,ops){ /* [left,op,right] for the first of them, or by defaul
   return eq||rel;
 }
 function operand(x){ /* a side of a comparison, as a string; null when there is nothing there or it makes no sense */
-  x=x.trim();
+  x=x.replace(/\uE010/g,'').trim();
   if(!x)return null;
+  if(/^["']/.test(x))return value(x); /* a quoted side is a string, whatever is in it */
   var inner=x.charAt(0)==='('&&closing(x,1)===x.length-1?x.slice(1,-1):null;
   if(inner!==null&&!operator(inner,'||')&&!operator(inner,'&&')&&!operator(inner))return operand(inner);
   if(inner!==null||operator(x)||x.charAt(0)==='!'||/^-[edfrwxz]\s/.test(x)){
     var t=truth(x);
     return t===null?null:t?'1':'0';
   }
-  return arith(value(x));
+  return arith(value(x).trim());
 }
 function arith(v){ /* 1 + 1, $x%2: whole numbers and + - * / %; a lone operator among other words makes no sense */
   var t=v.replace(/\s+/g,''),i=0,bad=false;
-  if(!/^-?\d+([-+*\/%]-?\d+)+$/.test(t))return /(^|\s)[-+*\/%](\s|$)/.test(v.trim())?null:v;
+  if(!/^-?\d+([-+*\/%]-?\d+)+$/.test(t))return /\S\s+[-+*\/%](\s|$)|(^|\s)[-+*\/%]\s+\S/.test(v.trim())?null:v; /* a lone / is a word; an operator among words is not */
   function num(){var m=/^-?\d+/.exec(t.slice(i));i+=m[0].length;return +m[0]}
   function term(){var x=num();while(i<t.length&&/[*\/%]/.test(t.charAt(i))){var o=t.charAt(i++),y=num();if(o!=='*'&&!y){bad=true;return 0}x=o==='*'?x*y:o==='/'?Math.trunc(x/y):x%y}return x}
   var x=term();
