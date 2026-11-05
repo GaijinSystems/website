@@ -149,9 +149,12 @@ P.curses43=function(S){ /* a fresh curses for one run of a game on S; initscr() 
       curscr.clear=true;
       stdscr=mkwin(LINES,COLS,0,0);
     }
-    /* the glass: what curses has sent, cut to fit */
+    /* the glass: what curses has sent. The program fits the type to 80x24 where it stays readable; where the glass
+       is still smaller, the view follows the cursor */
     function view(S){
-      S.draw(curscr.lines.slice(0,S.rows).map(function(L){return L.slice(0,S.cols).join('').trimEnd()}),Math.min(curscr.cury,S.rows-1),Math.min(curscr.curx,S.cols-1));
+      var rows=S.rows,cols=S.cols,cy=curscr.cury,cx=curscr.curx;
+      var top=rows<LINES?Math.max(0,Math.min(LINES-rows,cy-(rows>>1))):0,lft=cols<COLS?Math.max(0,Math.min(COLS-cols,cx-(cols>>1))):0;
+      S.draw(curscr.lines.slice(top,top+rows).map(function(L){return L.slice(lft,lft+cols).join('').trimEnd()}),Math.min(cy-top,rows-1),Math.max(0,Math.min(cx-lft,cols-1)));
     }
   var K={LINES:LINES,COLS:COLS,NOCHANGE:NOCHANGE,initscr:function(){initscr();K.stdscr=stdscr;K.curscr=curscr}};
   [blank,mkwin,touchline,touchwin,wmove,wclrtoeol,waddch,waddstr,mvwaddstr,mvwaddch,werase,wclear,makech,wrefresh,view].forEach(function(f){K[f.name]=f});

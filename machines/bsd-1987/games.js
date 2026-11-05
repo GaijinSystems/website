@@ -47,7 +47,10 @@ function run(gen){
     try{r=gen.next(v)}
     catch(e){if(e!==EXIT)throw e;return}
     if(r.done)return;
-    P.ask(r.value||'',function(line){step(line===P.INT?null:line)},true);
+    P.ask(r.value||'',function(line){ /* ^C ends it, as the signal did; ^D is the end of the input */
+      if(line===P.INT){try{gen.return()}catch(e){}return}
+      step(line);
+    },true);
   })();
 }
 run.EXIT={};
@@ -355,8 +358,8 @@ game('primes',function(a){
     if(n>Number.MAX_SAFE_INTEGER||stop!==Infinity&&stop>Number.MAX_SAFE_INTEGER){P.typeLine('primes: ouch.','err');return}
     (function batch(){
       P.queue(function(){
-        var L=[];
-        while(L.length<24&&n<stop){if(isPrime(n))L.push(String(n));n++}
+        var L=[],t0=Date.now();
+        while(L.length<24&&n<stop&&Date.now()-t0<50){if(isPrime(n))L.push(String(n));n++} /* a batch is short in time too, so big numbers don't block */
         P.say(L);
         made+=L.length;
         if(n>=stop||(P.piped()&&made>=10000))return; /* nothing here can tell it the reader has had enough */

@@ -186,7 +186,7 @@ function $drive(G,onend){
 }
 function $program(){
 /* ---------- guts.pas, and the database files, by hand. Solo: nothing else writes to these. ---------- */
-var old_prompt='',line='',seed={v:0},$fresh=false,$dirty={},$files={},$warned=false,$ints=0,$gone=false;
+var old_prompt='',line='',seed={v:0},$fresh=false,$dirty={},$files={},$warned=false,$ints=0,$gone=false,$leaving=false;
 function random(){return $mth_random(seed)}
 function rnd100(){return $round($mth_random(seed)*100)} // random int between 0 & 100, maybe
 function setup_guts(){seed.v=$clock();old_prompt=''}
@@ -206,9 +206,9 @@ function* grab_line(prompt,s,echo=true){
   /* firstkey and nextkey call checkevents while they wait. It can't print over the line being typed here, so one
      round goes before the prompt, and those the wait would have made go when the line comes in. */
   var t0,i,n,l;
-  if($gone){
-    if(++$ints>200){$flush();$halt()}
-    s.v='';
+  if($gone){ /* the player has gone: quit at the command prompt, and nothing anywhere else, so it leaves the normal way */
+    if(++$ints>200){if(!$leaving){$leaving=true;yield* leave_universe()}$flush();$halt()}
+    s.v=prompt==='> '?'quit':'';
     return;
   }
   old_prompt=prompt;
@@ -276,11 +276,17 @@ function $open(f,name,kw){
     f.recs=R;
   }catch(e){f.recs={};$fresh=true}
 }
-function $flush(){
+function $flush(){ /* all the changed files, or none: half a world, saved, would not load */
+  var done=[],ok=true;
   for(var k in $dirty){
-    var f=$files[k],o={};
+    var f=$files[k],o={},was=P.saved('monster/'+k);
     for(var n in f.recs)o[n]=$enc(f.recs[n]);
-    if(!P.save('monster/'+k,o)&&!$warned){$warned=true;$writeln('%warning- this browser would not save the Monster world')}
+    if(!P.save('monster/'+k,o)){ok=false;break}
+    done.push([k,was]);
+  }
+  if(!ok){
+    done.forEach(function(d){P.save('monster/'+d[0],d[1]===undefined?null:d[1])});
+    if(!$warned){$warned=true;$writeln('%warning- this browser would not save the Monster world')}
   }
   $dirty={};
 }
@@ -308,6 +314,98 @@ function* prestart(){
   $writeln('');
   $writeln('');
   if(s.length>0)yield* $y(special(lowcase(s)));
+}
+/* relink_room, from mon.pas, with one check the Pascal lacks: relinking a direction with no exit wrote through exit slot 0 */
+function* relink_room(origdir,targdir,targroom){
+  var tmp=({toloc:0,kind:0,slot:0,exitdesc:0,closed:0,fail:0,success:0,goin:0,comeout:0,hidden:0,objreq:0,alias:"",reqverb:false,reqalias:false,autolook:false});
+  var copyslot=0;
+  var copyloc=0;
+  (yield* gethere());
+  $assign(tmp,here.exits[origdir]);
+  if(tmp.toloc<1||tmp.slot<1||tmp.slot>maxexit){$writeln("There is no exit there to relink.");return}
+  copyloc=tmp.toloc;
+  copyslot=tmp.slot;
+  (yield* getroom(targroom));
+  $assign(here.exits[targdir],tmp);
+  putroom();
+  (yield* getroom(copyloc));
+  here.exits[copyslot].toloc=targroom;
+  here.exits[copyslot].slot=targdir;
+  putroom();
+  (yield* getroom());
+  here.exits[origdir].toloc=0;
+  init_exit(origdir);
+  putroom();
+}
+/* the add* routines of mon.pas, capped: the Pascal adds whatever number SYSTEM is given, past the index and name tables */
+function* addrooms(n){
+  var i=0;
+  (yield* getindex(i_room));
+  n=Math.max(0,Math.min(n,maxroom-indx.top));
+  for(var $e63=(indx.top+n),$ie63=(indx.top+1);$ie63<=$e63;$ie63++){
+    i=$ie63;
+    $locate(roomfile,i);
+    roomfile.buf.valid=i;
+    roomfile.buf.locnum=i;
+    roomfile.buf.primary=0;
+    roomfile.buf.secondary=0;
+    roomfile.buf.which=0;
+    $put(roomfile);
+  }
+  indx.top=(indx.top+n);
+  putindex();
+}
+function* addobjects(n){
+  var i=0;
+  (yield* getindex(i_object));
+  n=Math.max(0,Math.min(n,maxroom-indx.top));
+  for(var $e67=(indx.top+n),$ie67=(indx.top+1);$ie67<=$e67;$ie67++){
+    i=$ie67;
+    $locate(objfile,i);
+    objfile.buf.objnum=i;
+    $put(objfile);
+  }
+  indx.top=(indx.top+n);
+  putindex();
+}
+function* addints(n){
+  var i=0;
+  (yield* getindex(i_int));
+  n=Math.max(0,Math.min(n,maxindex-indx.top));
+  for(var $e64=(indx.top+n),$ie64=(indx.top+1);$ie64<=$e64;$ie64++){
+    i=$ie64;
+    $locate(intfile,i);
+    intfile.buf.intnum=i;
+    $put(intfile);
+  }
+  indx.top=(indx.top+n);
+  putindex();
+}
+function* addlines(n){
+  var i=0;
+  (yield* getindex(i_line));
+  n=Math.max(0,Math.min(n,maxindex-indx.top));
+  for(var $e65=(indx.top+n),$ie65=(indx.top+1);$ie65<=$e65;$ie65++){
+    i=$ie65;
+    $locate(linefile,i);
+    linefile.buf.linenum=i;
+    $put(linefile);
+  }
+  indx.top=(indx.top+n);
+  putindex();
+}
+function* addblocks(n){
+  var i=0;
+  (yield* getindex(i_block));
+  n=Math.max(0,Math.min(n,maxindex-indx.top));
+  for(var $e66=(indx.top+n),$ie66=(indx.top+1);$ie66<=$e66;$ie66++){
+    i=$ie66;
+    $locate(descfile,i);
+    descfile.buf.descrinum=i;
+    $put(descfile);
+  }
+  indx.top=(indx.top+n);
+  putindex();
 }
 /* ---------- mon.pas ---------- */
 var $S1=$set([...$rng("A","Z")]),$S2=$set([...$rng("0","9")]),$S3=$set([...$rng(0,40)]),$S4=$set([...$rng(41,60)]),$S5=$set([2,3,6,7,8,11,12]),$S6=$set([4,9,10]),$S7=$set(["a","A","e","E","i","I","o","O","u","U"]),$S8=$set(["1","3","5","7","9"]),$S9=$set([...$rng("a","z")]),$S10=$set([...$rng("a","z"),...$rng("A","Z")]),$S11=$set([...$rng(0,100)]),$S12=$set([...$rng(0,4)]),$S13=$set([...$rng(0,2)]),$S14=$set([...$rng(0,4),...$rng(6,7)]),$S15=$set([2,6]),$S16=$set([...$rng(1,20)]),$S17=$set([...$rng(21,40)]),$S18=$set([...$rng(0,3),...$rng(100,103)]);
@@ -4993,70 +5091,6 @@ function lookup_cmd(s){
   return $ret;
 }
 /* "Command not found " */
-function* addrooms(n){
-  var i=0;
-  (yield* getindex(i_room));
-  for(var $e63=(indx.top+n),$ie63=(indx.top+1);$ie63<=$e63;$ie63++){
-    i=$ie63;
-    $locate(roomfile,i);
-    roomfile.buf.valid=i;
-    roomfile.buf.locnum=i;
-    roomfile.buf.primary=0;
-    roomfile.buf.secondary=0;
-    roomfile.buf.which=0;
-    $put(roomfile);
-  }
-  indx.top=(indx.top+n);
-  putindex();
-}
-function* addints(n){
-  var i=0;
-  (yield* getindex(i_int));
-  for(var $e64=(indx.top+n),$ie64=(indx.top+1);$ie64<=$e64;$ie64++){
-    i=$ie64;
-    $locate(intfile,i);
-    intfile.buf.intnum=i;
-    $put(intfile);
-  }
-  indx.top=(indx.top+n);
-  putindex();
-}
-function* addlines(n){
-  var i=0;
-  (yield* getindex(i_line));
-  for(var $e65=(indx.top+n),$ie65=(indx.top+1);$ie65<=$e65;$ie65++){
-    i=$ie65;
-    $locate(linefile,i);
-    linefile.buf.linenum=i;
-    $put(linefile);
-  }
-  indx.top=(indx.top+n);
-  putindex();
-}
-function* addblocks(n){
-  var i=0;
-  (yield* getindex(i_block));
-  for(var $e66=(indx.top+n),$ie66=(indx.top+1);$ie66<=$e66;$ie66++){
-    i=$ie66;
-    $locate(descfile,i);
-    descfile.buf.descrinum=i;
-    $put(descfile);
-  }
-  indx.top=(indx.top+n);
-  putindex();
-}
-function* addobjects(n){
-  var i=0;
-  (yield* getindex(i_object));
-  for(var $e67=(indx.top+n),$ie67=(indx.top+1);$ie67<=$e67;$ie67++){
-    i=$ie67;
-    $locate(objfile,i);
-    objfile.buf.objnum=i;
-    $put(objfile);
-  }
-  indx.top=(indx.top+n);
-  putindex();
-}
 function* dist_list(){
   var i=0;
   var j=0;
@@ -6046,26 +6080,6 @@ function* do_link(s){
   }else{
     $writeln($ws("No links are possible here.",0));
   }
-}
-function* relink_room(origdir,targdir,targroom){
-  var tmp=({toloc:0,kind:0,slot:0,exitdesc:0,closed:0,fail:0,success:0,goin:0,comeout:0,hidden:0,objreq:0,alias:"",reqverb:false,reqalias:false,autolook:false});
-  var copyslot=0;
-  var copyloc=0;
-  (yield* gethere());
-  $assign(tmp,here.exits[origdir]);
-  copyloc=tmp.toloc;
-  copyslot=tmp.slot;
-  (yield* getroom(targroom));
-  $assign(here.exits[targdir],tmp);
-  putroom();
-  (yield* getroom(copyloc));
-  here.exits[copyslot].toloc=targroom;
-  here.exits[copyslot].slot=targdir;
-  putroom();
-  (yield* getroom());
-  here.exits[origdir].toloc=0;
-  init_exit(origdir);
-  putroom();
 }
 function* do_relink(s){
   var ok=false;

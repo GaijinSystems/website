@@ -288,13 +288,15 @@ function run(words){
   }
   function* shell_out(){
     printline();
-    if(P.runScript&&!P.piped()){
+    if(P.keep&&!P.piped()){
+      var back=P.keep(); /* a child shell: a cd in it stays there */
       for(;;){
         pr('% ');
         var l=yield;
         if(l===null||/^\s*(exit|logout)\s*$/.test(l))break;
         if(l!==P.INT&&l.trim())P.runScript([l]);
       }
+      back();
     }
     pr('\n');
     printline();

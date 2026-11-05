@@ -12,6 +12,7 @@
    key. The C forks a child for your words: here the dictionary simply runs after you stop. Its escape-formfeed
    clears only a Tektronix, so here it leaves the blank line that it leaves on a vt100. Nothing is logged to
    /usr/games/boglog, the file the C writes only if it exists. "+" as the last argument reads past argv in the C.
+   When piped input runs out it goes on to the keyboard: at the end of a pipe the C spins in getuword for ever.
  */
 (function(P){
 'use strict';

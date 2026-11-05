@@ -53,14 +53,14 @@ P.command({names:['rain'],run:function(){
     function tick(){
       if(over)return;
       frame();draw();
-      setTimeout(tick,100);
+      S.after(100,tick);
     }
     size();
     for(var i=5;--i>=0;){
       xpos[i]=Math.trunc(cols*ranf())+2;
       ypos[i]=Math.trunc(lines*ranf())+2;
     }
-    setTimeout(tick,0);
+    S.after(0,tick);
     return {
       feed:function(k){if(k==='C-c'){over=true;S.close();done()}},
       draw:draw,

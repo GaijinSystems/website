@@ -1037,6 +1037,8 @@ P.command({names:['trek'],run:function(a,raw,words){
     if(!s||typeof s!=='object'||s.version!==2)return false;
     if(!sameShape(Ship,s.Ship)||!sameShape({bases:0,klings:0,date:0,time:0,resource:0,distressed:0,eventptr:Now.eventptr,base:Now.base},s.Now)||!sameShape(Param,s.Param)||!sameShape(Game,s.Game)||!sameShape(Quad,s.Quad)||!sameShape(Move,s.Move)||!sameShape(Event,s.Event))return false;
     if(!s.Etc||!sameShape({klingon:Etc.klingon,nkling:0,fast:0,starbase:Etc.starbase,statreport:0},s.Etc))return false;
+    var sn=s.Etc.snapshot; /* the negative time portal's copy, null until a base has made one */
+    if(sn!==null&&sn!==undefined&&!(sn&&typeof sn==='object'&&sameShape(Quad,sn.Quad)&&sameShape(Event,sn.Event)&&sameShape({bases:0,klings:0,date:0,time:0,resource:0,distressed:0,eventptr:Now.eventptr,base:Now.base},sn.Now)))return false;
     if(!Array.isArray(s.Sect)||s.Sect.length!==Sect.length)return false;
     var k,m;
     for(k=0;k<Sect.length;k++)if(!isInt(s.Sect[k],0,127))return false;
@@ -2066,11 +2068,12 @@ P.command({names:['trek'],run:function(a,raw,words){
     Ship.warp3=Ship.warp2*warpfac;
   }
   function* shell(){
-    if(!P.runScript||P.piped())return;
+    if(!P.keep||P.piped())return;
+    var back=P.keep(); /* a child shell: a cd in it stays there */
     for(;;){
       pr('% ');
       var l=yield;
-      if(l===null||l===undefined||/^\s*(exit|logout)\s*$/.test(l))return;
+      if(l===null||l===undefined||/^\s*(exit|logout)\s*$/.test(l)){back();return}
       if(l.trim())P.runScript([l]);
     }
   }

@@ -1550,7 +1550,7 @@ P.command({names:['hunt'],run:function(a,raw,words){
         if(finished)return;
         for(var i=0;i<bots.length;i++)bots[i].tick();
         turn();
-        if(!finished)timer=setTimeout(tick,TICK);
+        if(!finished)timer=S.after(TICK,tick);
       }
       function enter(){
         me={q:[],closed:false,pp:null,put:incoming};
@@ -1563,8 +1563,8 @@ P.command({names:['hunt'],run:function(a,raw,words){
       function leave(msg){
         if(finished)return;
         finished=true;
-        if(timer!==null)clearTimeout(timer);
-        if(sleeper!==null)clearTimeout(sleeper);
+        if(timer!==null)S.cancel(timer);
+        if(sleeper!==null)S.cancel(sleeper);
         S.close();
         if(msg){P.typeLine(msg);P.status(1)}
         done();
@@ -1611,7 +1611,7 @@ P.command({names:['hunt'],run:function(a,raw,words){
         /* reenter */
         if(ch==='y'){
           want='';
-          sleeper=setTimeout(function(){sleeper=null;if(!finished){enter();turn()}},2000);
+          sleeper=S.after(2000,function(){sleeper=null;if(!finished){enter();turn()}});
           return;
         }
         if(ch==='n'){leave();return}
@@ -1636,15 +1636,15 @@ P.command({names:['hunt'],run:function(a,raw,words){
       cur_row=23;cur_col=0;
       put_str('Starting...');
       draw();
-      sleeper=setTimeout(function(){
+      sleeper=S.after(600,function(){
         sleeper=null;
         if(finished)return;
         D=makeDriver(Math.floor(Date.now()/1000)+Math.floor(Math.random()*30000));
         for(var b=1;b<=ROBOTS;b++){var r=makeBot(D,b);r.enter();bots.push(r)}
         enter();
         turn();
-        timer=setTimeout(tick,TICK);
-      },600);
+        timer=S.after(TICK,tick);
+      });
       if(!finished)draw();
       return {feed:feed,draw:draw};
     },{fit:[80,24]});

@@ -2398,6 +2398,8 @@ P.command({names:['aardvark'],run:function(){
   function good(s){
     if(!s||typeof s!=='object'||!Array.isArray(s.glob)||s.glob.length!==glob.length||!Array.isArray(s.ob)||s.ob.length!==objects.length)return false;
     if(!Array.isArray(s.demons)||!Array.isArray(s.fuses))return false;
+    function rout(r){return Number.isInteger(r)&&r>0&&r<routines.length}
+    if(!s.demons.every(rout)||!s.fuses.every(function(q){return q&&typeof q==='object'&&rout(q.r)&&Number.isInteger(q.at)}))return false;
     return s.glob.every(Number.isInteger)&&s.ob.every(function(e){
       return Array.isArray(e)&&e.length===3+NPROP&&e.every(Number.isInteger)&&e[0]>=0&&e[0]<objects.length&&e[1]>=0&&e[1]<objects.length&&e[2]>=0&&e[2]<objects.length;
     });
@@ -2431,7 +2433,7 @@ P.command({names:['aardvark'],run:function(){
   }
   /* ---------- the player's words ---------- */
   function* fill(){
-    var l=pipe&&np<pipe.length?pipe[np++]:yield READ;
+    var l=pipe?(np<pipe.length?pipe[np++]:null):yield READ; /* the end of a pipe is the end of the input */
     if(l===P.INT||l===null)throw STOP;
     ib+=l+'\n';
   }

@@ -253,7 +253,8 @@ function get_time(q){
   q.l0=Number(t&0xffffffffn);q.l1=Number(t>>32n);
 }
 /* LIB$DAY: days since 17-Nov-1858 */
-function day(d){var n=$now();d.v=Math.floor((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(1858,10,17))/864e5);return 1}
+/* day: only the play hours ask, and they follow the visitor's own week, not the machine's 1988 */
+function day(d){var n=new Date();d.v=Math.floor((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(1858,10,17))/864e5);return 1}
 /* OTS$CVT_TZ_L */
 function convert_hex_to_bin(s,v){
   var t=String(s).trim();
@@ -22037,7 +22038,7 @@ P.command({names:['moria'],noHelpFlag:true,run:function(a,raw,words){
     function quit(){
       if(over)return;
       over=true;
-      if(timer)clearTimeout(timer);
+      if(timer)S.cancel(timer);
       var s=M.screen(),L=s.scr.slice(0,s.cy+1).map(function(R){return R.join('').replace(/\s+$/,'')});
       while(L.length&&L[L.length-1]==='')L.pop();
       last=L;
@@ -22059,7 +22060,7 @@ P.command({names:['moria'],noHelpFlag:true,run:function(a,raw,words){
         show();
         if(r.value&&r.value.sleep!==undefined){
           var k=r.value.key;
-          timer=setTimeout(function(){timer=null;waiting=false;pump()},r.value.sleep);
+          timer=S.after(r.value.sleep,function(){timer=null;waiting=false;pump()});
           waiting=k?'sleep':false;
           return;
         }
@@ -22069,13 +22070,13 @@ P.command({names:['moria'],noHelpFlag:true,run:function(a,raw,words){
       }
     }
     M.onshow(show);
-    setTimeout(function(){G=M.main();pump()},0); /* after the program is set up */
+    S.after(0,function(){G=M.main();pump()}); /* after the program is set up */
     return {
       feed:function(k){
         var m=/^C-([a-z])$/.exec(k),c=k==='Enter'?'\r':k==='Backspace'?'\x7f':k==='Escape'?'\x1b':k==='Tab'?'\t':k.length===1?k:m?String.fromCharCode(m[1].charCodeAt(0)-96):null;
         if(c===null)return;
         if(waiting===true){waiting=false;pump(c)}
-        else if(waiting==='sleep'){M.keys().push(c);clearTimeout(timer);timer=null;waiting=false;pump()}
+        else if(waiting==='sleep'){M.keys().push(c);S.cancel(timer);timer=null;waiting=false;pump()}
         else M.keys().push(c);
       },
       draw:show

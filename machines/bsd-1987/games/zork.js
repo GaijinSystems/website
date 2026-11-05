@@ -13327,7 +13327,7 @@ function step(v){
       throw e;
     }
     if(r.done){flush();return}
-    if(pipe&&np<pipe.length){v=pipe[np++];continue}
+    if(pipe){if(np>pipe.length+2){flush();return}v=np<pipe.length?pipe[np]:null;np++;continue} /* the end of a pipe is the end of the input, as it was */
     var p=o;o='';
     P.ask(p,function again(l){
       if(l===P.INT){P.ask('',again,true);return} /* signal(2,1) */

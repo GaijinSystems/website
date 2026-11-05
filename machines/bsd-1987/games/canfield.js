@@ -692,7 +692,7 @@ P.command({names:['canfield'],run:function(){
     status=NOBOX;
     updatebettinginfo();
     var R=P.saved('canfield/scores');
-    if(!R||typeof R!=='object')R={};
+    if(!R||typeof R!=='object'||Array.isArray(R))R={};
     R[P.st.user]=total;
     P.save('canfield/scores',R);
     throw EXIT;
@@ -750,7 +750,7 @@ P.command({names:['canfield'],run:function(){
     if(r.done){over=true;S.close();finish_();return}
     if(typeof r.value==='number'){ /* sleep */
       asleep=true;view(S);
-      setTimeout(function(){asleep=false;if(!over)step()},r.value);
+      S.after(r.value,function(){asleep=false;if(!over)step()});
       return;
     }
     view(S);
@@ -766,6 +766,6 @@ P.command({names:['canfield'],run:function(){
   };
   step();
   return api;
-  },{tty:'canfield'});
+  },{tty:'canfield',fit:[80,24]});
 }});
 })(window.Phosphor);
