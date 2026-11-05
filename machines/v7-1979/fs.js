@@ -43,6 +43,12 @@ Phosphor.setup(function(P){
     '	 *',
     '	 * You are not expected to understand this.',
     '	 */']});
+  P.env.PATH=':/bin:/usr/bin:/usr/games';
+  var GAMES={arithmetic:5802,backgammon:14148,banner:2840,bcd:2582,bj:1562,checkers:26614,chess:19036,ching:145,cubic:2450,fortune:4536,hangman:7500,maze:9350,moo:624,ppt:2900,quiz:6306,reversi:9320,ttt:2192,words:69,words1:1202,wump:5184};
+  sys('/usr/games','d',{owner:'bin'});
+  Object.keys(GAMES).forEach(function(g){sys('/usr/games/'+g,'f',{owner:'bin',bin:true,size:GAMES[g]})});
+  ['ching.d','quiz.k','lib'].forEach(function(d){sys('/usr/games/'+d,'d',{owner:'bin',prot:true})});
+  sys('/usr/games/ttt.k','f',{owner:'bin',mode:'-rw-------',prot:true,size:278});
   sys('/tmp','d',{mode:'drwxrwxrwx'});
   sys('/unix','f',{bin:true,size:51862});
   sys('/usr','d');
