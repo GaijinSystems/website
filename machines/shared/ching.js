@@ -3,6 +3,11 @@
    text are ported to JavaScript for this terminal from NetBSD's castching.c and printching.c by Guy Harris, which do the
    same job, under the second notice, and were checked against V7's binaries under a simulator. What nroff does with the
    macros is done directly here. Accents are overstruck by nroff; on the glass the last character stays.
+   4.3BSD's cno and phx are VAX binaries of the same programs, read here instruction by instruction where they differ:
+   its cno adds the word after the time (zero) instead of the time, its rand() returns the product before the 12345 is
+   added, and its phx takes a hexagram on the command line (any run of six or more of 6-9, the last six counting).
+   Its ching script prints a line of two blanks before a cast and pipes the page through "more -s". All of that was
+   checked against the real 4.3BSD under a simulator.
    The text of the hexagrams is the Wilhelm/Baynes English translation (Princeton, Bollingen, 1950), whose rights are not
    covered by either notice below.
 
@@ -2449,19 +2454,69 @@ function cast(sum){
   var s=(Math.floor(Date.now()/1000)+sum+Math.floor(Math.random()*30000))&0xffff,str='',i;
   function g(){s=(Math.imul(s,13077)+6925)&0xffff;return s}
   function rnum(){var b=g(),a=g();return a>>>(b%17)}
-  for(i=0;i<6;i++)str+=[6,7,7,8][(rnum()&1)+(rnum()&1)+(rnum()&1)];
+  for(i=0;i<6;i++)str+=[6,7,8,9][(rnum()&1)+(rnum()&1)+(rnum()&1)]; /* cno's table: 6 plus the number of ones */
   return str;
 }
-function answer(ch){
+/* 4.3BSD's cno: srand(question + pid + uid + gid) (the time it reads is the empty word after it), and a rand() whose
+   result is the product before 12345 is added; getrnum is rand() shifted right by rand()%17, the count drawn first */
+function cast43(sum){
+  var x=(sum+Math.floor(Math.random()*30000))|0,str='',i; /* the pid, uid and gid: unknown here */
+  function rand(){var p=Math.imul(x,1103515245);x=(p+12345)|0;return p&0x7fffffff}
+  function rnum(){var b=rand()%17;return rand()>>b}
+  for(i=0;i<6;i++)str+=[6,7,8,9][(rnum()&1)+(rnum()&1)+(rnum()&1)];
+  return str;
+}
+function answer(ch){return nroff(phxsrc(ch))}
+function phxsrc(ch){
   var tr=ch.split('').map(Number),moving=tr.map(function(x){return x===6||x===9}),src=[];
   phx(doahex(tr),0,moving,src);
   var moved=false;
   tr=tr.map(function(x){if(x===6){moved=true;return 7}if(x===9){moved=true;return 8}return x});
   if(moved)phx(doahex(tr),1,moving,src);
-  return nroff(src);
+  return src;
+}
+/* "more -s": blank lines squeezed to one, and a page of 23 lines at a time on the terminal */
+function more(L){
+  var o=[],i,at=0;
+  for(i=0;i<L.length;i++)if(L[i]!==''||o[o.length-1]!=='')o.push(L[i]);
+  if(P.piped()){P.say(L);return}
+  (function page(n){
+    P.say(o.slice(at,at+n));at+=n;
+    if(at>=o.length)return;
+    var k;
+    P.queue(function(){return P.readKey('--More--',true).then(function(x){k=x})});
+    P.queue(function(){if(k!=='q'&&k!=='Q'&&k!=='C-c')page(k==='Enter'?1:23)});
+  })(23);
+}
+function bsd(argv){
+  var H=null;
+  if(/^[6-9]/.test(argv[0]||''))H=argv.shift();
+  var bad=argv.filter(function(x){return x.charAt(0)!=='-'})[0];
+  function out(pre,src){ /* phx's text through nroff, nroff stopping at a file it can't open */
+    if(bad!==undefined){P.typeLine('Cannot open '+bad,'err');if(pre.length)more(pre);return}
+    more(pre.concat(src?nroff(src):[]));
+  }
+  function phx(h){ /* each character shifts the lines along; anything but 6-9 is refused */
+    if(!/^[6-9]{6,}$/.test(h)){P.typeLine('?','err');return null}
+    return phxsrc(h.slice(-6));
+  }
+  if(H!==null){var p=phx(H);if(p||bad!==undefined)out([],p);return}
+  function cast(sum,any){out(['  '],any?phx(cast43(sum)):(P.typeLine('?','err'),null))}
+  var I=P.stdin();
+  function chars(s){var t=0;for(var i=0;i<s.length;i++)t+=s.charCodeAt(i);return t+10}
+  if(I){var t=I.reduce(function(t,l){return t+chars(l)},0);cast(t,t>0);return}
+  var sum=0;
+  (function question(){
+    P.ask('',function(l){
+      if(l===P.INT)return;
+      if(l===null){cast(sum,sum>0);return}
+      sum+=chars(l);question();
+    },true);
+  })();
 }
 P.command({names:['ching'],run:function(a,raw,words){
   var argv=words.slice(1);
+  if(P.machine!=='v7'){bsd(argv);return}
   /* the shell script's "set H=$1" never did set H: a hexagram on the line is shifted away, and the oracle cast as usual */
   if(/^[6-9]/.test(argv[0]||''))argv=argv.slice(1);
   var bad=argv.filter(function(x){return x.charAt(0)!=='-'})[0];

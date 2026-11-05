@@ -7,4 +7,5 @@ image(['../shared/glorkz.js','../shared/adventure.js'],'adventure');
 image('games/startrek.js','startrek');
 image('games/empire.js','empire');
 image('games/monster.js','monster');
+image('games/moria.js','moria');
 })(window.Phosphor);
