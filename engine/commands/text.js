@@ -179,10 +179,18 @@ cmd('cal','print a calendar','cal [ month ] year','prints a month, or a whole ye
   P.say(O);
 });
 cmd('sleep','wait a while','sleep seconds','waits. ctrl-c stops it early.',function(a){
-  if(a.length!==1){P.typeLine('arg count','err');return}
+  if(!a.length){P.typeLine('arg count','err');return}
   if(!/^\d+$/.test(a[0])){P.typeLine('bad character','err');return}
   var s=Math.min(600,+a[0]);
   P.queue(function(){return P.sleep(s*1000)});
+});
+cmd('make','maintain program groups','make [ name ... ]','brings each name up to date, following the rules in the makefile. there is no makefile.',function(a,raw,words){
+  var W=words.slice(1).filter(function(x){return x.charAt(0)!=='-'});
+  if(!W.length){P.typeLine('Make: No arguments or description file.  Stop.','err');return}
+  W.forEach(function(x){
+    if(P.find(x,true))P.typeLine("`"+x+"' is up to date.");
+    else P.typeLine("Make:  Don't know how to make "+x+".  Stop.",'err');
+  });
 });
 cmd('true','succeed','true','does nothing, successfully.',function(){P.status(0)});
 cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1)});

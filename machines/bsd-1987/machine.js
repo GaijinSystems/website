@@ -9,6 +9,7 @@ installed: 1986-06-06 19:55
 user:      guest
 homes:     /usr
 case:      sensitive
+root password: vaxen
 mail notice: You have mail.
 csh:       yes
 prompt:    "% "

@@ -174,7 +174,11 @@ html.fill body{background:#000}
   html.fill{--sw:100vw;--sh:var(--app-h,100dvh)}
   html.fill #stage{padding-top:0;justify-content:flex-start}
 }
+/* ---------- switched off: the picture falls to a line, then a dot, then nothing ---------- */
+#crt.off{animation:crtoff .7s cubic-bezier(.4,0,.8,.2) forwards}
+@keyframes crtoff{0%{transform:none;opacity:1}55%{transform:scale(1,.006);opacity:1}85%{transform:scale(.02,.006);opacity:1}100%{transform:scale(0,0);opacity:0}}
 @media (prefers-reduced-motion:reduce){
+  #crt.off{animation:none;visibility:hidden}
   #crt,.flicker,#sway,#term.idle .cursor{animation:none}
   #crt::before,.band{display:none}
 }

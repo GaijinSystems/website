@@ -29,6 +29,13 @@ main()
     printf("hello, world\n");
 }
 
+== file: secrets ==
+so you know the word.
+there is not much of a secret. there never was. the machine is warm, and now it is yours.
+~ the old hands synced three times before they threw the switch.
+~ on the newer machines, there is /etc/halt.
+~ a reload brings everything back.
+
 == file: .profile ==
 : .profile - read by sh at login
 PATH=:/bin:/usr/bin
@@ -60,6 +67,7 @@ please do not unplug me.
 you found the bottom of the trash.
 there is nothing else down here.
 ~ unless you know the magic word.
+~ the last operator was careless. read what is kept in /etc.
 ~ go back up: cd ..
 
 == file: .old/readme.v8 ==

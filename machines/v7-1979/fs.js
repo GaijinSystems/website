@@ -30,6 +30,19 @@ Phosphor.setup(function(P){
     L.push(ST.user+'::9:2::/usr/'+ST.user+':');
     return L;
   }});
+  sys('/etc/rc.old','f',{body:[': old rc, kept in case the new one fails','/etc/update',': reminder: root is p1green until the auditors have gone','/etc/cron']});
+  sys('/usr/src/v6/ken/slp.c','f',{body:[
+    '/* the old system, kept for reference. from swtch() in the sixth edition. */',
+    '	/*',
+    '	 * If the new process paused because it was',
+    '	 * swapped out, set the stack level to the last call',
+    '	 * to savu(u_ssav).  This means that the return',
+    '	 * which is executed immediately after the call to aretu',
+    '	 * actually returns from the last routine which did',
+    '	 * the savu.',
+    '	 *',
+    '	 * You are not expected to understand this.',
+    '	 */']});
   sys('/tmp','d',{mode:'drwxrwxrwx'});
   sys('/unix','f',{bin:true,size:51862});
   sys('/usr','d');

@@ -12,6 +12,8 @@ installed: 1979-01-01 00:01
 user:      guest
 homes:     /usr
 case:      sensitive
+root password: p1green
+backdoor:  ken
 ls columns: 6 7
 mail notice: You have mail.
 commands:  -head, -printenv, -vi, -uptime, -ifconfig, -ping, -hostname, -whoami, -alias, -clear, -logout
