@@ -1,6 +1,8 @@
 /* gaijin.systems: settings. */
 Phosphor.content(String.raw`
 
+machine:   v7
+machines:  v7
 name:      gaijin
 email:     support@gaijin.systems
 title:     Gaijin Systems

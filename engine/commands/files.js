@@ -13,7 +13,7 @@
 (function(P){
 'use strict';
 
-P.command({names:['ls'],help:'list files',path:'/bin',
+P.command({names:['ls'],core:true,help:'list files',path:'/bin',
   man:{what:'list contents of directory',syn:'ls [ -la ] [ name ... ]',desc:[
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
@@ -43,14 +43,14 @@ P.command({names:['ls'],help:'list files',path:'/bin',
     P.say(L);
   }});
 
-P.command({names:['cat'],help:'print a file',path:'/bin',
+P.command({names:['cat'],core:true,help:'print a file',path:'/bin',
   man:{what:'catenate and print',syn:'cat file ...',desc:[
     'prints each file in turn.',
     '',
     'locked files cannot be opened, and neither can folders.'],bugs:[
     'cat of a program prints exactly what you deserve.']},
   run:function(a){
-    if(!a.length){P.typeLine('usage: '+P.man.cat.syn);return} /* real cat would wait for typing; there is no ^D here */
+    if(!a.length){P.input([],function(L){P.say(L)});return} /* its pipe, or the keyboard until ^D */
     a.forEach(function(x){
       var n=P.find(x);
       if(!n||n.prot||n.type==='d')P.typeLine("cat: can't open "+x,'err');
@@ -59,7 +59,7 @@ P.command({names:['cat'],help:'print a file',path:'/bin',
     });
   }});
 
-P.command({names:['cd'],help:'change directory',
+P.command({names:['cd'],core:true,help:'change directory',
   man:{what:'change working directory',syn:'cd [ dir ]',desc:[
     'makes dir the working directory. with no argument, goes home. understands ~, . and .. in any path.',
     '',
@@ -70,7 +70,7 @@ P.command({names:['cd'],help:'change directory',
     P.st.cwd=P.pathOf(n);
   }});
 
-P.command({names:['pwd'],help:'where am i',path:'/bin',
+P.command({names:['pwd'],core:true,help:'where am i',path:'/bin',
   man:{what:'print working directory',syn:'pwd',desc:[
     'prints the full name of the working directory.']},
   run:function(){P.typeLine(P.st.cwd)}});
