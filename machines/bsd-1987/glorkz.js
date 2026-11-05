@@ -1,4 +1,5 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1987", the game adventure, its cave: the file called glorkz, unchanged.
+/* PHOSPHOR-9 terminal: machine "bsd-1987", the game adventure, its cave: the file called glorkz, as NetBSD has it, except that the
+   credits at the end of the instructions are in the words 4.3BSD shipped.
    Ported to JavaScript for this terminal from the C in NetBSD's games/adventure, with the
    labels kept. It keeps this notice, and may be used under its terms.
 
@@ -1361,9 +1362,10 @@ Phosphor.setup(function(P){P.advData=String.raw`1
 1       (Should you get stuck, type "help" for some general hints.  For
 1       information on how to end your adventure, etc., type "info".)
 1				      - - -
-1       This program was originally developed by Will Crowther.  Most of the
-1       features of the current program were added by Don Woods.  Address
-1       complaints about the UNIX version to Jim Gillogly (jim@rand.org).
+1	This program was originally developed by willie crowther.  Most of the
+1	features of the current program were added by don woods (don @ su-ai).
+1	contact don if you have any questions, comments, etc.
+1	Address complaints about the unix version to jim @ rand-unix.
 2	A little dwarf with a big knife blocks your way.
 3	A little dwarf just walked around a corner, saw you, threw a little
 3       axe at you (which missed), cursed, and ran away.
