@@ -7,8 +7,9 @@
   https://github.com/GaijinSystems/phosphor  -  GNU AGPL v3 or later (see LICENSE)
 
   Your words live in site/. This page only lists the files to load, in order:
-  engine, commands, machine, then your site files. Works opened straight from disk
-  (double-click) or from any web server.
+  engine, commands, the list of machines, then your site files; the engine then
+  loads the chosen machine. Works opened straight from disk (double-click) or from
+  any web server.
 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
@@ -43,11 +44,10 @@
 <script src="engine/commands/shell.js"></script>
 <script src="engine/commands/people.js"></script>
 <script src="engine/commands/system.js"></script>
-<!-- the machine behind the glass -->
-<script src="machines/v7-1979/machine.js"></script>
-<script src="machines/v7-1979/fs.js"></script>
-<script src="machines/v7-1979/eggs.js"></script>
-<!-- your site (loaded last, so it wins over the machine) -->
+<script src="engine/commands/text.js"></script>
+<!-- the machines that can be behind the glass -->
+<script src="machines/machines.js"></script>
+<!-- your site (it wins over the machine) -->
 <script src="site/config.js"></script>
 <script src="site/content.js"></script>
 <script src="site/home.js"></script>

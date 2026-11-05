@@ -3,7 +3,7 @@
 (function(P){
 'use strict';
 
-P.command({names:['help'],
+P.command({names:['help'],core:true,
   man:{what:'list the commands',syn:'help',desc:[
     'lists the commands, alphabetically, with a few words about each. man name says more about any of them.']},
   run:function(){
@@ -13,7 +13,7 @@ P.command({names:['help'],
       ['',[man?'man name for details, or name -h.':'name -h for usage.','dim']]));
   }});
 
-P.command({names:['man'],help:'the manual',
+P.command({names:['man'],core:true,help:'the manual',
   man:{what:'print the manual',syn:'man name',desc:[
     'prints the manual page for name. with no name, the same as help.']},
   run:function(a){
@@ -28,25 +28,25 @@ P.command({names:['man'],help:'the manual',
 
 /* aliases (csh, 1979): from the == aliases == section, plus any set this session */
 function aliasRow(a){var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
-P.command({names:['alias'],help:'list or set aliases',noHelpFlag:true, /* -h inside a quoted command is not a request for help */
+P.command({names:['alias'],core:true,help:'list or set aliases',noHelpFlag:true, /* -h inside a quoted command is not a request for help */
   man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
     'with no argument, lists every alias. with a name, shows that one alias.',
     '',
     "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]},
   run:function(a,raw){
-    var rest=raw.replace(/^\s*\S+\s*/,'').trim(),m; /* names are case-blind; the command keeps its case */
+    var rest=raw.replace(/^\s*\S+\s*/,'').trim(),m; /* the command keeps its case */
     if(!rest){
       if(!P.aliases.length){P.typeLine('no aliases.');return}
       P.say(P.aliases.slice().sort(function(a,b){return a.from.join(' ')<b.from.join(' ')?-1:1}).map(aliasRow));return; /* alphabetical */
     }
-    if(rest.indexOf('=')<0&&rest.toLowerCase().split(/\s+/).indexOf('-h')>=0){P.typeLine('usage: '+P.man.alias.syn);return}
+    if(rest.indexOf('=')<0&&rest.split(/\s+/).indexOf('-h')>=0){P.typeLine('usage: '+P.man.alias.syn);return}
     var nm,to;
-    if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=m[1].toLowerCase();to=P.unquote(m[2]).trim()}
+    if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()}
     else{
-      var hit=P.aliases.filter(function(x){return x.from.join(' ')===rest.toLowerCase().split(/\s+/).join(' ')});
+      var hit=P.aliases.filter(function(x){return x.from.join(' ')===P.fold(rest).split(/\s+/).join(' ')});
       if(hit.length){P.typeLine(aliasRow(hit[0]));return}
-      if(rest.indexOf(' ')<0){P.typeLine('alias: '+rest.toLowerCase()+': not found','err');return}
-      nm=rest.split(/\s+/)[0].toLowerCase();to=P.unquote(rest.replace(/^\S+\s+/,'')); /* csh style: alias name value */
+      if(rest.indexOf(' ')<0){P.typeLine('alias: '+P.fold(rest)+': not found','err');return}
+      nm=P.fold(rest.split(/\s+/)[0]);to=P.unquote(rest.replace(/^\S+\s+/,'')); /* csh style: alias name value */
     }
     if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
     var from=nm.split(/\s+/);
@@ -54,12 +54,12 @@ P.command({names:['alias'],help:'list or set aliases',noHelpFlag:true, /* -h ins
     P.aliases=P.setAlias(P.aliases,from,to);
   }});
 
-P.command({names:['echo'],path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
+P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ arg ... ]',desc:[
     'prints its arguments, separated by spaces.']},
-  run:function(a,raw){P.typeLine(raw.replace(/^\s*\S+\s?/,''))}});
+  run:function(a,raw,words){P.typeLine(words.slice(1).join(' '))}});
 
-P.command({names:['clear'],help:'clear the screen',
+P.command({names:['clear'],core:true,help:'clear the screen',
   man:{what:'clear the screen',syn:'clear',desc:[
     'wipes the glass. the phosphor takes a moment to forget.']},
   run:function(){P.clear()}});
@@ -69,7 +69,7 @@ P.command({names:['exit','logout'],help:'log out',
     'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason. aliases set this session are lost.']},
   run:function(){P.logout()}});
 
-P.command({names:['sound'],help:'keyclicks on or off',
+P.command({names:['sound'],core:true,help:'keyclicks on or off',
   man:{what:'keyclicks on or off',syn:'sound [ on | off ]',desc:[
     'turns the keyclicks on or off. with no argument, reports which. the browser stays silent until the first tap or keypress, whatever this says.']},
   run:function(a){

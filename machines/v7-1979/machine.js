@@ -2,7 +2,7 @@
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
    This is the imaginary computer behind the glass: its year, its self-test, its boot log.
-   Anything here can be overridden from site/ (the site loads after the machine).
+   Anything here can be overridden from site/ (the site always wins over the machine).
    Same text format as the site files; see README.md. Do not type a backtick or a dollar
    sign followed by { between the two backticks below. */
 Phosphor.content(String.raw`
@@ -11,6 +11,9 @@ badge:     PHOSPHOR-9
 year:      1979
 installed: 1979-01-10 16:12
 user:      guest
+homes:     /usr
+case:      sensitive
+commands:  -head, -printenv
 offline:   the arpanet is down the hall.
 
 # The self-test, typed at power-on and after every logout.

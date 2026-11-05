@@ -40,7 +40,7 @@ P.command({names:['uptime'],help:'how long the machine has been up',path:'/bin',
   man:{what:'show how long the system has been up',syn:'uptime',desc:[
     'prints the time, how long the machine has been running, how many users are logged in, and the load average over the last 1, 5 and 15 minutes.']},
   run:function(){ /* up since the machine was installed (or three days, early in the year) */
-    var now=P.in79(new Date()),SD=P.systemDate,boot=now-SD>864e5?SD:new Date(now-(3*864e5+4*36e5+12*6e4)),
+    var now=P.now(),SD=P.systemDate,boot=now-SD>864e5?SD:new Date(now-(3*864e5+4*36e5+12*6e4)),
         m=Math.floor((now-boot)/6e4),d=Math.floor(m/1440),hr=now.getHours();
     function la(){return (Math.random()*.06).toFixed(2)}
     P.typeLine((hr%12||12)+':'+P.p2(now.getMinutes())+(hr<12?'am':'pm')+' up '+(d?d+' day'+(d>1?'s':'')+', ':'')+
@@ -75,6 +75,7 @@ P.command({names:['ping'],help:'is anyone out there',path:'/etc',
     'localhost answers at once. one other host answers as well: the server this terminal came from. those times are real round trips across your own network.'],bugs:[
     'every other host is unknown. it is {year}.']},
   run:function(a){
+    a=a.map(function(x){return x.toLowerCase()}); /* host names never cared about case */
     var c=4,h=null,i,SITE=P.st.site,HOST=P.st.hostname;
     for(i=0;i<a.length;i++){if(a[i]==='-c'&&a[i+1])c=parseInt(a[++i],10)||4;else if(a[i].charAt(0)!=='-')h=a[i]}
     c=Math.max(1,Math.min(10,c));
@@ -108,6 +109,28 @@ P.command({names:['ping'],help:'is anyone out there',path:'/etc',
         (o.reduce(function(s,x){return s+x},0)/o.length).toFixed(dp)+'/'+Math.max.apply(null,o).toFixed(dp)+' ms'},'',null,{hang:4});
   }});
 
+/* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */
+P.command({names:['connect'],help:'plug into another machine',
+  enabled:function(){return P.allowed.length>1},
+  man:{what:'connect this terminal to another machine',syn:'connect [ name ]',desc:[
+    'with no name, lists the machines on the line and marks the one you are on. with a name, plugs the terminal into that machine, which boots from cold.']},
+  run:function(a){
+    a=a.map(function(x){return x.toLowerCase()});
+    if(!a[0]){
+      P.say(['machines on the line:'].concat(P.allowed.map(function(id){
+        return [(id===P.machine?'* ':'  ')+id.padEnd(8)+' '+(P.catalog[id].name||''),'',{hang:11}];
+      })));
+      return;
+    }
+    if(P.allowed.indexOf(a[0])<0){P.typeLine('connect: '+a[0]+': no such machine','err');return}
+    if(a[0]===P.machine){P.typeLine('connect: already on '+a[0]);return}
+    P.typeLine('connecting to '+a[0]+'...');
+    P.pause(600);
+    P.queue(function(){
+      var q=new URLSearchParams(location.search);q.set('machine',a[0]);location.search=q.toString();
+    });
+  }});
+
 P.command({names:['su'],path:'/bin',
   man:{what:'become super-user',syn:'su',desc:[
     'asks for the root password, then makes you the super-user.'],bugs:[
@@ -116,16 +139,22 @@ P.command({names:['su'],path:'/bin',
 
 P.command({names:['rm'],path:'/bin',
   man:{what:'remove files',syn:'rm [ -fri ] file ...',desc:[
-    'removes each file named.'],bugs:[
-    'nothing is ever removed.']},
+    'removes each file named. -r also removes folders and everything in them. you can only remove what is in your own home folder or in /tmp, and only until the terminal is switched off: a reload puts it all back.']},
   run:function(a){
-    var f=a.filter(function(x){return x.charAt(0)!=='-'});
+    var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
     if(!f.length){P.typeLine('usage: rm [-fri] file ...');return}
     f.forEach(function(x){
-      var n=P.find(x);
-      P.typeLine('rm: '+x+(!n?' nonexistent':n.type==='d'?' directory':' not removed'),'err');
+      var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
+      if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
+      if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
+      if(n===P.root||n.prot||!P.canWrite(at)||cwd===at||cwd.indexOf(at+'/')===0){
+        denied=denied||!P.canWrite(at);
+        P.typeLine('rm: '+x+' not removed','err');
+        return;
+      }
+      delete n.parent.kids[n.name];
     });
-    P.typeLine('nice try.','dim');
+    if(denied)P.typeLine('nice try.','dim');
   }});
 
 })(window.Phosphor);

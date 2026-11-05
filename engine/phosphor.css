@@ -4,6 +4,7 @@
    variables below in site/theme.css instead of editing this file. */
 :root{
   --phos:#3dff7e;--dim:#1d8f47;--err:#ff5f56;
+  --phos-rgb:61,255,126;--dim-rgb:29,143,71;--err-rgb:255,95,86; /* the same colours, for the glow */
   /* desktop: the whole monitor (glass + bezel) fits inside 80% of the window's width and
      height, centered. Glass stays 4:3; bezel is 1.079 x 0.842 of the glass width. */
   --sw:min(calc(80vw / 1.079),calc(var(--app-h,100vh) * .8 / .842));
@@ -67,7 +68,7 @@ body{
 #crt{position:absolute;inset:0;animation:warm 1s cubic-bezier(.2,.7,.2,1) both}
 #crt::before{
   content:"";position:absolute;inset:0;z-index:5;pointer-events:none;
-  background:radial-gradient(ellipse at 50% 50%,rgba(61,255,126,.4),rgba(61,255,126,0) 70%);
+  background:radial-gradient(ellipse at 50% 50%,rgba(var(--phos-rgb),.4),rgba(var(--phos-rgb),0) 70%);
   animation:flash 1.1s ease-out forwards;
 }
 @keyframes warm{0%{transform:scale(.85,.004)}30%{transform:scale(1,.02)}55%{transform:scale(1,1)}100%{transform:none}}
@@ -86,10 +87,10 @@ body{
 .line{
   min-height:1.28em;white-space:pre-wrap;word-break:break-word;
   color:var(--phos);
-  text-shadow:0 0 6px rgba(61,255,126,.9),0 0 22px rgba(61,255,126,.35);
+  text-shadow:0 0 6px rgba(var(--phos-rgb),.9),0 0 22px rgba(var(--phos-rgb),.35);
 }
-.line.dim{color:var(--dim);text-shadow:0 0 6px rgba(29,143,71,.8),0 0 18px rgba(29,143,71,.3)}
-.line.err{color:var(--err);text-shadow:0 0 6px rgba(255,95,86,.85),0 0 22px rgba(255,95,86,.3)}
+.line.dim{color:var(--dim);text-shadow:0 0 6px rgba(var(--dim-rgb),.8),0 0 18px rgba(var(--dim-rgb),.3)}
+.line.err{color:var(--err);text-shadow:0 0 6px rgba(var(--err-rgb),.85),0 0 22px rgba(var(--err-rgb),.3)}
 .line a{color:inherit;text-decoration:underline dotted;text-underline-offset:.2em;user-select:text;-webkit-user-select:text}
 .line a:hover{text-decoration-style:solid}
 .line a:focus-visible{text-decoration-style:solid;outline:2px solid currentColor;outline-offset:2px}
@@ -97,7 +98,7 @@ body{
 .cursor{
   display:inline-block;width:.62em;height:1.02em;margin-left:1px;vertical-align:-.17em;
   background:var(--phos);
-  box-shadow:0 0 6px rgba(61,255,126,.9),0 0 22px rgba(61,255,126,.35);
+  box-shadow:0 0 6px rgba(var(--phos-rgb),.9),0 0 22px rgba(var(--phos-rgb),.35);
 }
 #term.idle .cursor{animation:blink 1.06s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
@@ -109,14 +110,14 @@ body{
 
 /* ---------- tube effects ---------- */
 .fx{position:absolute;inset:0;pointer-events:none}
-.flicker{z-index:2;background:rgba(61,255,126,.03);animation:flick 3.1s steps(1) infinite}
+.flicker{z-index:2;background:rgba(var(--phos-rgb),.03);animation:flick 3.1s steps(1) infinite}
 @keyframes flick{
   0%{opacity:.55}6%{opacity:1}9%{opacity:.35}17%{opacity:.8}24%{opacity:.5}
   31%{opacity:1}38%{opacity:.6}46%{opacity:.9}53%{opacity:.3}57%{opacity:.75}
   66%{opacity:.55}74%{opacity:1}79%{opacity:.45}88%{opacity:.85}95%{opacity:.6}
 }
 .band{position:absolute;left:-4%;right:-4%;z-index:2;pointer-events:none;mix-blend-mode:screen}
-.band.b2{top:0;height:150px;background:linear-gradient(180deg,rgba(61,255,126,0),rgba(61,255,126,.03) 50%,rgba(61,255,126,0));animation:down 19s linear infinite}
+.band.b2{top:0;height:150px;background:linear-gradient(180deg,rgba(var(--phos-rgb),0),rgba(var(--phos-rgb),.03) 50%,rgba(var(--phos-rgb),0));animation:down 19s linear infinite}
 @keyframes down{0%{transform:translateY(-150px)}100%{transform:translateY(var(--sh))}}
 .scan{z-index:3;background:repeating-linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.38) 2px,rgba(0,0,0,.38) 3px)}
 .vig{z-index:4;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 58%,rgba(0,0,0,.35) 80%,rgba(0,0,0,.8) 100%)}
