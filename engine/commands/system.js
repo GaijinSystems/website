@@ -117,6 +117,12 @@ P.command({names:['ping'],path:'/etc',
         Math.round(o.reduce(function(s,x){return s+x},0)/o.length)+'/'+Math.round(Math.max.apply(null,o))},'',null,{hang:4});
   }});
 
+/* fill: the terminal's own switch, on every machine. It is not listed in help: you just have to know. */
+P.command({names:['fill'],terminal:true,noHelpFlag:true,
+  man:{what:'fill the window with the glass',syn:'fill',desc:[
+    'puts the monitor away and lets the glass fill the window. fill again brings the monitor back. this browser remembers which you chose.']},
+  run:function(){P.fillGlass(!P.fillGlass())}});
+
 /* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */
 P.command({names:['connect'],terminal:true,help:'plug into another machine',
   enabled:function(){return P.allowed.length>1},

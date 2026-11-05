@@ -162,6 +162,18 @@ body{
   #bezel::after{bottom:-12px;width:28px;height:15px}
   .badge{display:none}
 }
+/* ---------- the fill command: just the glass, as wide as it can be at 4:3, with dark bars at the
+   sides when the window is wider than that ---------- */
+html.fill{--sw:min(100vw,calc(var(--app-h,100dvh) / .75));--sh:calc(var(--sw) * .75)}
+html.fill #bezel{padding:0;background:none;box-shadow:none;border-radius:0}
+html.fill #bezel::after,html.fill .badge,html.fill #cablewrap{display:none}
+html.fill #screen{border-radius:0}
+html.fill body{background:#000}
+@media (max-width:640px){
+  /* a phone: all the width, and whatever height the keyboard leaves */
+  html.fill{--sw:100vw;--sh:var(--app-h,100dvh)}
+  html.fill #stage{padding-top:0;justify-content:flex-start}
+}
 @media (prefers-reduced-motion:reduce){
   #crt,.flicker,#sway,#term.idle .cursor{animation:none}
   #crt::before,.band{display:none}

@@ -38,7 +38,7 @@
 (function(P){
 'use strict';
 
-function Adventure(){
+function Adventure(resume){
   var EXIT={};
   /* ---------- output: a printf-like buffer, handed to the terminal a line at a time ---------- */
   var out='';
@@ -984,16 +984,71 @@ function Adventure(){
     isclosing=panic=closed=scoring=false;
   }
 
+  /* ---------- suspending and resuming: everything that changes ---------- */
+  var latency=45,FORMAT=1;
+  function pack(){
+    var keep=JSON.parse(JSON.stringify({
+      v:FORMAT,when:Date.now(),place:place,prop:prop,links:links,atloc:atloc,abb:abb,fixed:fixed,hinted:hinted,hintlc:hintlc,dseen:dseen,dloc:dloc,odloc:odloc,tk:tk,
+      n:[loc,newloc,oldloc,oldloc2,wasdark,k,verb,obj,spk,tally,tally2,chloc,chloc2,dflag,daltloc,stick,dtotal,attack,turns,lmwarn,iwest,knfloc,detail,abbnum,numdie,holding,dkill,foobar,bonus,clock1,clock2,saved,isclosing,panic,closed,scoring,limit,gaveup,maxdie]
+    }));
+    return keep;
+  }
+  function unpack(G){
+    place=G.place;prop=G.prop;links=G.links;atloc=G.atloc;abb=G.abb;fixed=G.fixed;hinted=G.hinted;hintlc=G.hintlc;dseen=G.dseen;dloc=G.dloc;odloc=G.odloc;tk=G.tk;
+    var n=G.n,i=0;
+    loc=n[i++];newloc=n[i++];oldloc=n[i++];oldloc2=n[i++];wasdark=n[i++];k=n[i++];verb=n[i++];obj=n[i++];spk=n[i++];tally=n[i++];tally2=n[i++];chloc=n[i++];chloc2=n[i++];dflag=n[i++];daltloc=n[i++];stick=n[i++];dtotal=n[i++];attack=n[i++];turns=n[i++];lmwarn=n[i++];iwest=n[i++];knfloc=n[i++];detail=n[i++];abbnum=n[i++];numdie=n[i++];holding=n[i++];dkill=n[i++];foobar=n[i++];bonus=n[i++];clock1=n[i++];clock2=n[i++];saved=n[i++];isclosing=n[i++];panic=n[i++];closed=n[i++];scoring=n[i++];limit=n[i++];gaveup=n[i++];maxdie=n[i++];
+  }
+  function* yesm(x,y,z){
+    for(;;){
+      mspeak(x);
+      var l=yield;
+      if(l===null){write('user closed input stream, quitting...\n');exit()}
+      var ch=l===P.INT?'':l.charAt(0);
+      if(ch==='y'){mspeak(y);return true}
+      if(ch==='n'){mspeak(z);return false}
+      write('Please answer the question.\n');
+    }
+  }
+  function* restore(name){ /* the wait, and the wizard who can waive it */
+    var G=P.saved('adventure/'+name);
+    if(!G){write("adventure: can't open file\n");exit()}
+    if(G.v!==FORMAT){rspeak(202);exit()}
+    var delay=Math.floor((Date.now()-G.when)/60000);
+    if(delay<latency){
+      write('This adventure was suspended a mere '+delay+' minute'+(delay===1?'':'s')+' ago.');
+      if(delay<=Math.trunc(latency/3)){mspeak(2);exit()}
+      mspeak(8);
+      var ok=false;
+      if(yield* yesm(16,0,7)){
+        mspeak(17);
+        yield* getin();
+        if(weq(wd1,'dwarf')){mspeak(19);ok=true}
+        else mspeak(20);
+      }
+      if(!ok){mspeak(9);exit()}
+    }
+    unpack(G);
+    saved=-1;
+    P.save('adventure/'+name,null); /* do not re-use the save */
+  }
+
   /* ---------- the main loop; each label is the one in the C, and so in the FORTRAN ---------- */
   function* game(){
     var i,ll,kk,rval,r;
     rdata();
     linkdata();
     saved=-1;
-    hinted[3]=yield* yes(65,1,0);
-    newloc=1;
-    limit=hinted[3]?1000:330;
     var at_='l2';
+    if(resume){
+      yield* restore(resume);
+      k=nullw;
+      at_='l8';
+    }
+    else{
+      hinted[3]=yield* yes(65,1,0);
+      newloc=1;
+      limit=hinted[3]?1000:330;
+    }
     for(;;)switch(at_){
       case 'l2':
         if(newloc<9&&newloc!==0&&isclosing){
@@ -1223,9 +1278,18 @@ function Adventure(){
             if(closed&&toting(oyster))obj=oyster;
             if(obj>100||obj===0||dark()){at_='l8000';break}
             at_='l9270';break;
-          case 30: /* suspend: this terminal has nowhere to keep it */
-            write('I would suspend your adventure, but this terminal has nowhere to keep it.\n');
-            at_='l2012';break;
+          case 30: /* suspend: kept in this browser, under a name */
+            spk=201;
+            write('I can suspend your adventure for you so you can resume later, but\nyou will have to wait at least '+latency+' minutes before continuing.');
+            if(!(yield* yes(200,54,54))){at_='l2012';break}
+            write('What would you like to call the saved version?\n');
+            var fname=yield;
+            if(fname===null||fname===P.INT||!fname.trim()){at_='l2';break}
+            fname=fname.trim();
+            if(!P.save('adventure/'+fname,pack())){write("I can't find anywhere to keep it.\n");at_='l2012';break}
+            write('To resume, say "adventure '+fname+'".\n"With these rooms I might now have been familiarly acquainted."\n');
+            exit();
+            break;
           case 31:
             write('Colossal cave is closed 9am-5pm Mon through Fri except holidays.\n');
             at_='l2012';break;
@@ -1460,13 +1524,13 @@ function Adventure(){
 }
 
 P.command({names:['adventure'],path:'/usr/games',
-  man:{what:'an exploration game',syn:'adventure',desc:[
+  man:{what:'an exploration game',syn:'adventure [ savedgame ]',desc:[
     'the object of the game is to locate and explore colossal cave, find the treasures hidden there, and bring them back to the building with you. the program is your eyes and hands. direct it with commands of one or two words. only the first five letters of each word count.',
     '',
-    'written in fortran by will crowther and don woods, and translated to c by jim gillogly. ctrl-c quits, after asking.']},
-  run:function(){
+    'written in fortran by will crowther and don woods, and translated to c by jim gillogly. ctrl-c quits, after asking. suspend keeps your game in this browser, under a name you choose, and adventure name resumes it, if you wait.']},
+  run:function(a,raw,words){
     if(P.piped()){P.typeLine('adventure: needs a terminal','err');return}
-    Adventure();
+    Adventure(words[1]);
   }});
 
 })(window.Phosphor);
