@@ -4,6 +4,7 @@
 (function(P){
 'use strict';
 
+function old(){return P.profile.year<1990} /* n, h and H came later */
 function Ed(name){
   var buf=[],dot=0,file=name||'',dirty=false,warned=false,undo=null,lastRe=null,lastErr='',verbose=false,marks={},lastRep=null,done=false;
   function bytes(L){return L.reduce(function(n,x){return n+x.t.length+1},0)}
@@ -176,7 +177,7 @@ function Ed(name){
         dot=Math.min(r.a,buf.length);
         return;
       case 'p':case 'P':need(r,dot,dot);show(r.a,r.b,false,false);return;
-      case 'n':need(r,dot,dot);show(r.a,r.b,true,false);return;
+      case 'n':if(old())fail('unknown command');need(r,dot,dot);show(r.a,r.b,true,false);return;
       case 'l':need(r,dot,dot);show(r.a,r.b,false,true);return;
       case '=':P.typeLine(String(r.given?r.b:buf.length));return;
       case 's':
@@ -269,8 +270,8 @@ function Ed(name){
         if(dirty&&!warned){warned=true;fail('warning: file modified')}
         done=true;return;
       case 'Q':done=true;return;
-      case 'h':if(lastErr)P.typeLine(lastErr);return;
-      case 'H':verbose=!verbose;if(verbose&&lastErr)P.typeLine(lastErr);return;
+      case 'h':if(old())fail('unknown command');if(lastErr)P.typeLine(lastErr);return;
+      case 'H':if(old())fail('unknown command');verbose=!verbose;if(verbose&&lastErr)P.typeLine(lastErr);return;
       default:fail('unknown command');
     }
   }
@@ -312,12 +313,12 @@ P.command({names:['ed'],path:'/bin',
     'edits a file. a line is addressed by its number, . for the current line, $ for the last, /pattern/ for the next match, or +n and -n from any of those, and two addresses separated by a comma make a range.',
     '',
     'a i c   add, insert or change text, up to a line holding only a dot.',
-    'd p n l   delete, print, print with numbers, print showing the invisible.',
+    'd p l   delete, print, print showing the invisible.',
     's/old/new/g   substitute; & is the match, and \\( \\) make \\1.',
     'g/pattern/command   do a command on every matching line; v on every other.',
     'm t j k   move, copy, join, mark.   u   undo.   =   line number.',
     'w r e f   write, read, edit, filename.   q   quit.   Q   quit regardless.',
-    'h   explain the last ?.   H   always explain.'],bugs:[
+    'on later systems only: n prints with numbers, h explains the last ? and H always explains.'],bugs:[
     'there is no prompt. there is no help. when you are wrong it says ?, and it is your job to know why.']},
   run:function(a){Ed(a[0])}});
 

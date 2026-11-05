@@ -10,6 +10,7 @@ user:      guest
 homes:     /usr/people
 hostname:  crimson
 case:      sensitive
+mail notice: You have mail.
 csh:       yes
 not found: %s: Command not found.
 offline:   the t1 is fine. it is your terminal that is 9600 baud.
@@ -46,9 +47,9 @@ Graphics: VGX, 24 bitplanes, 2 raster managers
 
 == ifconfig ==
 ec0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>
-     inet 192.48.153.20 netmask 0xffffff00 broadcast 192.48.153.255
+	inet 192.48.153.20 netmask 0xffffff00 broadcast 192.48.153.255
 lo0: flags=49<UP,LOOPBACK,RUNNING>
-     inet 127.0.0.1 netmask 0xff000000
+	inet 127.0.0.1 netmask 0xff000000
 
 == aliases ==
 cl  = clear ; ls
