@@ -18,6 +18,7 @@ P.command({names:['man'],core:true,help:'the manual',
     'prints the manual page for name. with no name, the same as help.']},
   run:function(a){
     if(!a[0]){
+      if(P.profile.perror){P.typeLine('Usage: man [ section ] name ...');return}
       if(P.has(P.cmds,'help')){P.cmds.help([],'help');return}
       P.say(['usage: man name',['pages: '+Object.keys(P.man).sort().join(', '),'dim',{hang:7}]]); /* help is switched off */
       return;
@@ -27,7 +28,7 @@ P.command({names:['man'],core:true,help:'the manual',
   }});
 
 /* aliases, on the machines whose shell had them: from the == aliases == section, plus any set this session */
-function aliasRow(a){var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
+function aliasRow(a){if(P.profile.csh)return a.from.join(' ')+'\t('+a.to+')';var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
 P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted command is not a request for help */
   man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
     'with no argument, lists every alias. with a name, shows that one alias.',

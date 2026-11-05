@@ -4,6 +4,10 @@
 (function(P){
 'use strict';
 var GAMES=['adventure','backgammon','boggle','canfield','chess','cribbage','fish','fortune','hangman','mille','monop','rogue','snake','trek','wump','zork'];
+/* the rest of /usr/games: all there, and the load is always too high */
+['aardvark','arithmetic','backgammon','battlestar','bcd','boggle','btlgammon','canfield','cfscores','chess','ching','cribbage','doctor','fish','fortune','hunt','mille','monop','quiz','rain','sail','snscore','teachgammon','trek','worms','zork'].forEach(function(n){
+  P.command({names:[n],hidden:true,noHelpFlag:true,run:function(){P.typeLine(n+': load average too high. try again after hours.')}});
+});
 P.command({names:['wargames'],path:'/usr/games',noHelpFlag:true,run:function(){
   var x;
   P.queue(function(){return P.readLine('Would you like to play a game? ').then(function(l){x=(l||'').trim()})});

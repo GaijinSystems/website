@@ -27,8 +27,8 @@ P.command({names:['who'],path:'/bin',
   man:{what:'who is on the system',syn:'who [ am i ]',desc:[
     'lists everyone logged in: name, terminal, and the time they arrived. who am i lists only you.']},
   run:function(a){
-    var me=P.st.user.padEnd(9)+'tty0     '+P.short(P.st.login);
-    if(a[0]==='am'&&a[1]==='i'){P.typeLine(me);return}
+    var me=P.st.user.padEnd(9)+(P.profile.csh?'tty02    ':'tty0     ')+P.short(P.st.login);
+    if(a[0]==='am'&&a[1]==='i'){P.typeLine((P.profile.perror?P.st.hostname+'!':'')+me);return}
     P.say([P.st.owner.slice(0,8).padEnd(9)+'console  '+P.short(P.fileDate),me]);
   }});
 

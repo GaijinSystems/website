@@ -13,24 +13,25 @@ function operands(a){return a.filter(function(x){return x.charAt(0)!=='-'})}
 function flags(a){return a.filter(function(x){return x.charAt(0)==='-'}).join('')}
 
 cmd('touch','make a file, or update its time','touch file ...','makes each file that does not exist, and marks the rest as changed now.',function(a){
-  a.forEach(function(x){if(!P.writeFile(x,[],true))P.typeLine('touch: cannot touch '+x,'err')});
+  a.forEach(function(x){if(!P.writeFile(x,[],true))P.oopsW('touch',x,'touch: cannot touch '+x)});
 });
 cmd('mkdir','make a folder','mkdir dir ...','makes each folder named.',function(a){
-  if(!operands(a).length){P.typeLine('mkdir: arg count','err');return}
+  if(!operands(a).length){P.typeLine(P.profile.perror?'usage: mkdir directory ...':'mkdir: arg count','err');return}
   operands(a).forEach(function(x){
     var abs=P.norm(x);
-    if(P.find(abs,true)||!P.canWrite(abs)){P.typeLine('mkdir: cannot make directory '+x,'err');return}
+    if(P.find(abs,true)&&P.profile.perror){P.typeLine('mkdir: '+x+': File exists','err');return}
+    if(P.find(abs,true)||!P.canWrite(abs)){P.oopsW('mkdir',x,'mkdir: cannot make directory '+x);return}
     P.put(abs,'d',{owner:P.st.user,date:P.now()});
   });
 });
 cmd('rmdir','remove an empty folder','rmdir dir ...','removes each folder named, if it is empty.',function(a){
-  if(!a.length){P.typeLine('rmdir: arg count','err');return}
+  if(!a.length){P.typeLine(P.profile.perror?'usage: rmdir directory ...':'rmdir: arg count','err');return}
   a.forEach(function(x){
     var n=P.find(x,true),at=n&&P.pathOf(n);
-    if(!n){P.typeLine('rmdir: '+x+' non-existent','err');return}
+    if(!n){P.oops('rmdir',x,n,'rmdir: '+x+' non-existent');return}
     if(n.type!=='d'){P.typeLine('rmdir: '+x+' not a directory','err');return}
     if(P.st.cwd===at||P.st.cwd.indexOf(at+'/')===0){P.typeLine('rmdir: cannot remove current directory','err');return}
-    if(Object.keys(n.kids).length){P.typeLine('rmdir: '+x+' not empty','err');return}
+    if(Object.keys(n.kids).length){P.typeLine(P.profile.perror?'rmdir: '+x+': Directory not empty':'rmdir: '+x+' not empty','err');return}
     if(n.prot||n===P.root||!P.canWrite(at)){P.typeLine('rmdir: '+x+' not removed','err');return}
     delete n.parent.kids[n.name];
   });
@@ -40,15 +41,15 @@ function target(to,from){ /* copying or moving into a folder keeps the name */
   return d&&d.type==='d'?P.norm(to)+'/'+nameOf(from):P.norm(to);
 }
 cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if it is a folder.',function(a){
-  if(a.length<2){P.typeLine('Usage: cp: f1 f2; or cp f1 ... fn d2');return}
+  if(a.length<2){P.typeLine(P.profile.perror?'Usage: cp [-ip] f1 f2; or: cp [-irp] f1 ... fn d2':'Usage: cp: f1 f2; or cp f1 ... fn d2');return}
   var n=P.find(a[0]);
-  if(!n||n.type==='d'||n.prot){P.typeLine('cp: cannot open '+a[0],'err');return}
-  if(!P.writeFile(target(a[1],a[0]),P.text(n),false))P.typeLine('cp: cannot create '+a[1],'err');
+  if(!n||n.type==='d'||n.prot){P.oops('cp',a[0],n,'cp: cannot open '+a[0]);return}
+  if(!P.writeFile(target(a[1],a[0]),P.text(n),false))P.oopsW('cp',a[1],'cp: cannot create '+a[1]);
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
-  if(a.length<2){P.typeLine('usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
+  if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
   var n=P.find(a[0],true),to=target(a[1],a[0]);
-  if(!n||n.prot||n===P.root||!P.canWrite(P.pathOf(n))||!P.canWrite(to)){P.typeLine('mv: cannot access '+a[0],'err');return}
+  if(!n||n.prot||n===P.root||!P.canWrite(P.pathOf(n))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(P.find(to,true)&&P.find(to,true)!==n&&P.find(to,true).type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(to.slice(0,to.lastIndexOf('/'))||'/'),name=to.split('/').pop();
@@ -56,10 +57,10 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   n.name=name;n.parent=parent;parent.kids[name]=n;
 });
 cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.',function(a){
-  if(a.length<2){P.typeLine('Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
+  if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
-    if(!n||!P.canWrite(P.pathOf(n))||n.prot){P.typeLine("chmod: can't access "+x,'err');return}
+    if(!n||!P.canWrite(P.pathOf(n))||n.prot){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
     var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
     if(/^[0-7]{3}$/.test(a[0])){
       m=t+a[0].split('').map(function(c){c=+c;return (c&4?'r':'-')+(c&2?'w':'-')+(c&1?'x':'-')}).join('');
@@ -135,8 +136,8 @@ cmd('tail','print the last lines','tail [ -n ] [ file ... ]','prints the last n 
 });
 cmd('tr','change characters','tr string1 string2','changes each character of string1 into the matching one of string2. ranges like a-z work.',function(a,raw,words){
   function span(s){return s.replace(/(.)-(.)/g,function(m,x,y){var o='';for(var c=x.charCodeAt(0);c<=y.charCodeAt(0);c++)o+=String.fromCharCode(c);return o})}
-  if(words.length<3){P.typeLine('usage: '+P.man.tr.syn);return}
-  var from=span(words[1]),to=span(words[2]);
+  if(words.length<3&&!P.profile.perror){P.typeLine('usage: '+P.man.tr.syn);return}
+  var from=span(words[1]||''),to=span(words[2]||'');
   P.input([],function(L){P.say(L.map(function(l){return l.split('').map(function(c){var i=from.indexOf(c);return i<0?c:to.charAt(Math.min(i,to.length-1))}).join('')}))});
 });
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
@@ -194,9 +195,10 @@ cmd('make','maintain program groups','make [ name ... ]','brings each name up to
 });
 cmd('true','succeed','true','does nothing, successfully.',function(){P.status(0)});
 cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1)});
-cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine('/dev/tty0')});
+cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine(P.profile.csh?'/dev/tty02':'/dev/tty0')});
 cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.',function(a){
   if(!a.length){
+    if(P.profile.perror){P.typeLine('new tty, speed '+(P.baud()||9600)+' baud; -tabs ff1 crt');return}
     P.typeLine('speed '+(P.baud()||9600)+' baud');
     if(P.profile.year<1980)P.say(["erase = '#'; kill = '@'",'even -nl echo -tabs cr2']);
     return;
@@ -206,12 +208,14 @@ cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, s
 });
 cmd('file','guess what a file is','file file ...','says what sort of thing each file seems to be.',function(a){
   a.forEach(function(x){
-    var n=P.find(x),k=!n?'cannot stat':n.type==='d'?'directory':n.dev?'character special ('+n.dev[0]+'/'+n.dev[1]+')':n.prot?'cannot open':n.bin?'pure executable':/\.c$/.test(n.name)?'c program text':'ascii text';
+    var n=P.find(x),k=!n?'cannot stat':n.type==='d'?'directory':n.dev?'character special ('+n.dev[0]+'/'+n.dev[1]+')':n.prot?'cannot open':n.bin?(P.profile.perror?'demand paged pure executable':'pure executable'):/\.c$/.test(n.name)?'c program text':'ascii text';
     P.typeLine(x+':\t'+k);
   });
 });
-cmd('sh','run a shell script','sh file','runs the commands in a file, one line at a time.',function(a){
+cmd('sh','run a shell script','sh file','runs the commands in a file, one line at a time.',function(a,raw){
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
+  var c=a[0]==='-c'&&/^\s*\S+\s+-c\s+(.*)$/.exec(raw||''); /* sh -c 'a command' */
+  if(c){P.runScript([P.unquote(c[1])]);return}
   var n=P.find(a[0]);
   if(!n||n.type==='d'||n.prot){P.typeLine(a[0]+': cannot open','err');return}
   P.runScript(P.text(n),a.slice());
@@ -269,6 +273,7 @@ builtin(['['],function(a,raw,words){
 });
 cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % and comparisons, spaces between everything.',function(a,raw,words){
   var w=words.slice(1),v=w[0];
+  if(P.profile.perror&&!w.length){P.typeLine('syntax error','err');return}
   for(var i=1;i<w.length;i+=2){
     var o=w[i],x=w[i+1],n=parseInt(v,10),m=parseInt(x,10);
     if(x===undefined||(/^[-+*\/%]$/.test(o)&&(isNaN(n)||isNaN(m)))){P.typeLine('expr: syntax error','err');return}
@@ -282,12 +287,15 @@ cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % 
 function showEnv(){
   P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
 }
-cmd('printenv','print the environment','printenv','prints the environment.',showEnv);
+cmd('printenv','print the environment','printenv [ name ]','prints the environment, or the one variable named.',function(a){
+  if(!a[0]){showEnv();return}
+  if(P.has(P.env,a[0]))P.typeLine(P.env[a[0]]);
+});
 cmd('set','print the shell variables','set','prints the variables the shell knows about.',function(){
   P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1='+(P.profile.csh?'% ':'$ '),'PS2=> '].concat(Object.keys(P.env).sort().map(function(k){return k+'='+P.env[k]})));
 });
 cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
-  if(!a.length){P.typeLine('Usage: ln target [ newname ]');return}
+  if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.find(a[0],true),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
   if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}

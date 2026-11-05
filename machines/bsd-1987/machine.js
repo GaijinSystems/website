@@ -12,6 +12,7 @@ case:      sensitive
 root password: vaxen
 mail notice: You have mail.
 csh:       yes
+perror:    yes
 prompt:    "% "
 not found: %s: Command not found.
 offline:   the arpanet is up, but your uucp neighbour is not answering.
@@ -29,10 +30,12 @@ KEYBOARD      | DETECTED (YOURS)  | 200
 >>> B/3 @300
 %% @200
 loading vmunix @400
-4.3 BSD UNIX #1: Fri Jun  6 19:55:00 PDT 1986 @100
+4.3 BSD UNIX #1: Fri Jun  6 19:55:29 PDT 1986 @100
+    karels@monet.Berkeley.EDU:/usr/src/sys/GENERIC
 real mem  = 8388608
-avail mem = 7077888
-using 204 buffers containing 819200 bytes of memory @200
+SYSPTSIZE limits number of buffers to 140
+avail mem = 7187456
+using 140 buffers containing 524288 bytes of memory @200
 mcr0 at tr1
 mcr1 at tr2
 uba0 at tr3
@@ -56,10 +59,12 @@ starting network daemons: routed named inetd printer. @250
 4.3 BSD UNIX ({hostname}) (tty02)
 
 == dmesg ==
-4.3 BSD UNIX #1: Fri Jun  6 19:55:00 PDT 1986
+4.3 BSD UNIX #1: Fri Jun  6 19:55:29 PDT 1986
+    karels@monet.Berkeley.EDU:/usr/src/sys/GENERIC
 real mem  = 8388608
-avail mem = 7077888
-using 204 buffers containing 819200 bytes of memory
+SYSPTSIZE limits number of buffers to 140
+avail mem = 7187456
+using 140 buffers containing 524288 bytes of memory
 mcr0 at tr1
 mcr1 at tr2
 uba0 at tr3
@@ -75,12 +80,12 @@ root on hp0
 
 == ps ==
 x    0  ?   7:41  swapper
-x    1  ?   0:18  /etc/init
+x    1  ?   0:18  init
 x    2  ?   1:02  pagedaemon
 x   61  ?   2:17  /etc/update
 x   66  ?   0:49  /etc/cron
 x   74  ?   0:31  /etc/syslogd
-x   83  ?   3:12  /usr/lib/sendmail -bd -q1h
+x   83  ?   3:12  /usr/lib/sendmail -bd -q30m
 x   91  ?   0:44  /etc/inetd
 a  112  co  0:12  -csh
 a  140  co  0:30  rogue

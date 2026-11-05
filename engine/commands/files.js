@@ -21,14 +21,30 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     '-d   for a folder, list the folder itself and not what is in it.',
     '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.']},
   run:function(a){
-    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),
+    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),typed=/F/.test(fl),blocks=/s/.test(fl),inodes=/i/.test(fl),
         want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
     if(!want.length)want=['.'];
+    function plain(name,n){ /* -i the inode, -s the size in kilobytes, -F a mark for what it is */
+      var h=0,i;
+      for(i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))%9973;
+      return (inodes?String(h+2).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/1024)).padStart(4)+' ':'')+name+
+        (!typed?'':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
+    }
+    function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
+      if(!P.profile.perror||P.piped()||!names.length)return names;
+      var w=names.reduce(function(m,x){return Math.max(m,x.length)},0)+2,c=Math.max(1,Math.floor(P.columns()/w)),rows=Math.ceil(names.length/c),R=[];
+      for(var r=0;r<rows;r++){
+        var l='';
+        for(var k=r;k<names.length;k+=rows)l+=k+rows<names.length?names[k].padEnd(w):names[k];
+        R.push(l);
+      }
+      return R;
+    }
     want.forEach(function(w){
       var n=P.find(w),shown;
       if(!n)L.push([w+' not found','err']);
-      else if(self&&n.type==='d')L.push(long?P.longRow(w,n):w);
-      else if(n.type!=='d'){shown=w.replace(/[^\/]*(\/\.?)*$/,n.name);L.push(long?P.longRow(shown,n):shown)}
+      else if(self&&n.type==='d')L.push(long?P.longRow(w,n):plain(w,n));
+      else if(n.type!=='d'){shown=w.replace(/[^\/]*(\/\.?)*$/,n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);
     });
@@ -38,7 +54,8 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
       if(want.length>1){if(L.length)L.push('');L.push(d[0]+':')}
       if(long){var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t)}
-      ents.forEach(function(e){L.push(long?P.longRow(e[0],e[1]):e[0])});
+      if(long)ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
+      else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])})));
     });
     P.say(L);
   }});
@@ -53,7 +70,7 @@ P.command({names:['cat'],core:true,help:'print a file',path:'/bin',
     if(!a.length){P.input([],function(L){P.say(L)});return} /* its pipe, or the keyboard until ^D */
     a.forEach(function(x){
       var n=P.find(x);
-      if(!n||n.prot||n.type==='d')P.typeLine("cat: can't open "+x,'err');
+      if(!n||n.prot||n.type==='d')P.oops('',x,n,"cat: can't open "+x);
       else if(n.bin)P.typeLine('^G^A^@^@^D^P^@^@^@^@^@^@^A^@'+n.name+'^@^H^@^@','dim');
       else if(n.body)P.say(P.body(n));
     });
@@ -66,7 +83,7 @@ P.command({names:['cd'],core:true,help:'change directory',
     'a locked folder is a bad directory.']},
   run:function(a){
     var t=a[0]||P.st.home,n=P.find(t);
-    if(!n||n.type!=='d'||n.prot){P.typeLine(t+': bad directory','err');return}
+    if(!n||n.type!=='d'||n.prot){P.oops('',t,n,t+': bad directory');return}
     P.st.cwd=P.pathOf(n);
   }});
 

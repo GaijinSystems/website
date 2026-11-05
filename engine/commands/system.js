@@ -32,7 +32,14 @@ P.command({names:['ps'],path:'/bin',
     var fl=a.join('').replace(/-/g,''),T=table(),R=[];
     if(!PSN)PSN=T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0)+5; /* each ps gets the next id */
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
-    R.push([String(PSN++),'0','0:00',('ps '+a.join(' ')).trim()]);
+    R.push([String(PSN++),P.profile.csh?'02':'0','0:00',('ps '+a.join(' ')).trim()]);
+    if(P.profile.csh&&/u/.test(fl)){ /* the long form, and everyone's name on it */
+      P.say(['USER       PID %CPU %MEM   SZ  RSS TT STAT  TIME COMMAND'].concat(R.map(function(p,i){
+        var mine=p[1]==='02',k=parseInt(p[0],10)||1;
+        return (mine?P.st.user:'root').padEnd(8)+p[0].padStart(5)+'  0.0'+((k*7%19)/10).toFixed(1).padStart(5)+String(40+k*3%140).padStart(5)+String(20+k*5%110).padStart(5)+' '+p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)+p[2].padStart(6)+' '+p[3];
+      })));
+      return;
+    }
     if(P.profile.csh){ /* Berkeley's columns */
       P.say(['  PID TT STAT  TIME COMMAND'].concat(R.map(function(p,i){return p[0].padStart(5)+' '+p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)+p[2].padStart(5)+' '+p[3]})));
       return;
@@ -47,8 +54,9 @@ P.command({names:['uptime'],path:'/bin',
     var now=P.now(),SD=P.systemDate,boot=now-SD>864e5?SD:new Date(now-(3*864e5+4*36e5+12*6e4)),
         m=Math.floor((now-boot)/6e4),d=Math.floor(m/1440),hr=now.getHours();
     function la(){return (Math.random()*.06).toFixed(2)}
-    P.typeLine((hr%12||12)+':'+P.p2(now.getMinutes())+(hr<12?'am':'pm')+' up '+(d?d+' day'+(d>1?'s':'')+', ':'')+
-      Math.floor(m%1440/60)+':'+P.p2(m%60)+', 2 users, load average: '+la()+', '+la()+', '+la());
+    var ws=P.profile.perror?'  ':' ';
+    P.typeLine((P.profile.perror?' ':'')+(hr%12||12)+':'+P.p2(now.getMinutes())+(hr<12?'am':'pm')+ws+'up '+(d?d+' day'+(d>1?'s':'')+', ':'')+
+      Math.floor(m%1440/60)+':'+P.p2(m%60)+','+ws+'2 users,'+ws+'load average: '+la()+', '+la()+', '+la());
   }});
 
 P.command({names:['hostname'],path:'/bin',
@@ -181,7 +189,7 @@ P.command({names:['rm'],path:'/bin',
     'removes each file named. -r also removes folders and everything in them. you can only remove what is in your own home folder or in /tmp, and only until the terminal is switched off: a reload puts it all back.']},
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
-    if(!f.length)return;
+    if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}
     f.forEach(function(x){
       var n=P.find(x,true),at=n&&P.pathOf(n),cwd=P.st.cwd;
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
