@@ -169,6 +169,7 @@ var PROFILE=(function(){
     else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
     else if(k==='root password')P.rootPassword=v;
     else if(k==='backdoor')P.backdoor=v.toLowerCase();    /* a login name that needs no password, and is root */
+    else if(k==='perror')P.perror=yes(v);                 /* name: reason, the way Berkeley's programs complain */
     else if(k==='csh')P.csh=yes(v);                       /* !! and history, finger, w */
     else if(k==='login')P.noLogin=!yes(v);                /* no login: it just boots */
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
@@ -434,6 +435,13 @@ function showPrompt(p,mode){
 }
 var promptFn=null; /* a machine whose prompt changes as you go */
 function prompt(p,mode){queue(function(){showPrompt(p,mode)},true)}
+function oops(who,x,n,old){ /* a file that would not open: the old wording, or Berkeley's where the machine asks for it */
+  typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(!n?'No such file or directory':n.prot?'Permission denied':n.type==='d'?'Is a directory':'Not a directory'),'err');
+}
+function oopsW(who,x,old){ /* the same for a file that could not be made: no such folder, or not allowed there */
+  var up=String(x).replace(/\/+[^\/]*$/,'')||'/';
+  typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
+}
 function readKey(p){ /* one keypress, no return needed. Call it from inside a queued step. */
   return new Promise(function(res){
     showPrompt(p==null?'':p,'read');
@@ -506,7 +514,7 @@ function input(names,done){ /* the lines a command works on: named files, else i
     var L=[];
     names.forEach(function(x){
       var n=find(x);
-      if(!n||n.type==='d'||n.prot)typeLine(CURRENT+": can't open "+x,'err');
+      if(!n||n.type==='d'||n.prot)oops('',x,n,CURRENT+": can't open "+x);
       else L=L.concat(textOf(n));
     });
     done(L);
@@ -714,10 +722,10 @@ function dropRoot(){
   RP.prot.forEach(function(n){n.prot=true});
   RP=null;
 }
-var ENV={PATH:':/bin:/usr/bin',TERM:'p9'};
+var ENV={PATH:':/bin:/usr/bin',TERM:'p9'},CSHV=Object.create(null); /* CSHV: csh's own variables, from set */
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
-  hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,
+  hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,oops:oops,oopsW:oopsW,shvars:CSHV,
   /* what a game keeps between visits, in this browser only; false or null when the browser refuses */
   saved:function(k){try{return JSON.parse(localStorage.getItem('phosphor-9/'+k))}catch(e){return null}},
   save:function(k,v){
@@ -819,7 +827,14 @@ function envOf(k){
   if(k==='$')return '23';
   if(k==='HOME')return ST.home;
   if(k==='USER'||k==='LOGNAME')return ST.user;
-  return has(ENV,k)?ENV[k]:'';
+  if(has(ENV,k))return ENV[k];
+  if(PROFILE.csh){
+    if(k in CSHV)return CSHV[k];
+    var v={status:String(STATUS),home:ST.home,user:ST.user,cwd:ST.cwd,path:(ENV.PATH||'').replace(/:/g,' '),term:ENV.TERM,shell:'/bin/csh',prompt:'% '}[k];
+    if(v!==undefined)return v;
+    if(!SCRIPTS)throw {undefinedVar:k}; /* sh scripts still get the empty string */
+  }
+  return '';
 }
 function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; no match leaves it as it is */
   if(!/[*?\[]/.test(w))return [w];
@@ -918,10 +933,10 @@ function runPipeline(stages){
       keepSink=SINK;keepIn=STDIN;
       if(st.in!==null){
         var n=find(st.in);
-        if(!n||n.type==='d'||n.prot){typeLine(st.in+(PROFILE.csh?': No such file or directory.':': cannot open'),'err');pipe=[];ok=false;return}
+        if(!n||n.type==='d'||n.prot){typeLine(st.in+(PROFILE.csh?': No such file or directory':': cannot open'),'err');pipe=[];ok=false;return}
         pipe=textOf(n);
       }
-      if(st.out!==null&&!writeFile(st.out,[],true)){typeLine(st.out+(PROFILE.csh?': Permission denied.':': cannot create'),'err');pipe=[];ok=false;return}
+      if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
       if(!last||st.out!==null)sink=[];
       if(sink)SINK=sink;
@@ -965,7 +980,10 @@ function execText(seg){
   queue(function(){
     var L;
     try{L=parseList(seg)}
-    catch(e){if(e!==NOMATCH)throw e;typeLine('No match.','err');return}
+    catch(e){
+      if(e&&e.undefinedVar){typeLine(e.undefinedVar+': Undefined variable.','err');return}
+      if(e!==NOMATCH)throw e;typeLine('No match.','err');return
+    }
     L.forEach(function(item){
       queue(function(){
         if(LOGOUT)return;
