@@ -136,7 +136,7 @@ function build(){
 /* ---------- content (parsed from every Phosphor.content block, in load order) ---------- */
 var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
 var PROFILE=(function(){
-  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
+  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
     cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:PH.machine&&PH.catalog[PH.machine].year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',
@@ -159,7 +159,13 @@ var PROFILE=(function(){
     else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8}
     else if(k==='mail notice')P.mailNotice=v;
     else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
-    else if(k==='shell')P.dos=/^dos$/i.test(v);           /* backslash paths; no quotes, $ or ; */
+    else if(k==='login prompt')P.loginPrompt=v+' ';
+    else if(k==='root login')P.rootName=v.toLowerCase();
+    else if(k==='also root'){var ar=v.split('/');P.alsoRoot=ar[0].toLowerCase();P.alsoRootWord=ar[1]||''} /* name/password */
+    else if(k==='root prompt')P.rootPrompt=v.replace(/^"(.*)"$/,'$1');
+    else if(k==='login failed')P.loginFailed=v;
+    else if(k==='closed door')P.closedDoor=yes(v);        /* only the accounts it knows may log in */
+    else if(k==='shell'){P.dos=/^(dos|dcl)$/i.test(v);P.dcl=/^dcl$/i.test(v)}           /* backslash paths; no quotes, $ or ; */
     else if(k==='unix')P.noUnix=!yes(v);                  /* leave out the Unix tools: the machine brings its own */
     else if(k==='root password')P.rootPassword=v;
     else if(k==='backdoor')P.backdoor=v.toLowerCase();    /* a login name that needs no password, and is root */
@@ -423,7 +429,7 @@ function showPrompt(p,mode){
   var d=document.createElement('div');d.className='line';
   if(MODE!=='read')HIDE=false;
   bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
-  d.appendChild(document.createTextNode(UP(p==null?(ST.user==='root'?'# ':promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
+  d.appendChild(document.createTextNode(UP(p==null?(RP?PROFILE.rootPrompt:promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
 var promptFn=null; /* a machine whose prompt changes as you go */
@@ -691,7 +697,7 @@ function manPage(n){ /* body text is indented 5 with a real margin, so wrapped l
 /* ---------- build the file tree ---------- */
 var LOGOUT=false;
 /* the super-user: nothing is locked, and # is the prompt. Put back at logout, or at exit from su. */
-var RP=null,PENDROOT=false,SYNCS=0;
+var RP=null,PENDROOT=null;
 function setRoot(viaSu){
   if(RP)return;
   RP={user:ST.user,home:ST.home,cwd:ST.cwd,su:viaSu,prot:[]};
@@ -699,7 +705,7 @@ function setRoot(viaSu){
     if(n.prot){RP.prot.push(n);n.prot=false}
     if(n.type==='d')Object.keys(n.kids).forEach(function(k){if(n.kids[k]!==n)walk(n.kids[k])});
   })(ROOT);
-  ST.user='root';ST.home='/';
+  ST.user=PROFILE.rootName;ST.home='/';
   if(!viaSu)ST.cwd='/';
 }
 function dropRoot(){
@@ -753,7 +759,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   logout:function(){ /* log out: clear the glass, replay the self-test, wait at login: */
     dropRoot();
     LOGOUT=true;PH.aliases=PROFILE.aliases.slice(); /* session aliases die with the shell */
-    PH.clear();pause(500);banner();prompt('login: ','login');
+    PH.clear();pause(500);banner();prompt(PROFILE.loginPrompt,'login');
   }
 });
 if(PH.saved('fill'))document.documentElement.classList.add('fill');
@@ -862,8 +868,8 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     var ch=s.charAt(i),two=s.substr(i,2),close;
     if(/\s/.test(ch)){endWord();if(!redir)st.raw+=ch;i++;continue}
     if(PROFILE.dos){ /* COMMAND.COM: pipes and redirection, and nothing else is special */
-      if(ch==='|'){endStage();i++;continue}
-      if(ch==='>'||ch==='<'){endWord();redir=two==='>>'?'>>':ch;i+=redir.length;continue}
+      if(!PROFILE.dcl&&ch==='|'){endStage();i++;continue}
+      if(!PROFILE.dcl&&(ch==='>'||ch==='<')){endWord();redir=two==='>>'?'>>':ch;i+=redir.length;continue}
       if(!redir)st.raw+=ch;
       w=(w||'')+ch;i++;
       continue;
@@ -1137,7 +1143,7 @@ function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of th
 function run(raw){
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
-    queue(function(){showPrompt()},true);
+    queue(function(){if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
     return;
   }
   if(compound(raw)){
@@ -1161,11 +1167,12 @@ function run(raw){
 /* ---------- login (after exit/logout) ---------- */
 function login(name){
   var n=name.trim().toLowerCase();
-  if(!n){prompt('login: ','login');return}
+  if(!n){prompt(PROFILE.loginPrompt,'login');return}
   var usr=find(PROFILE.homes);
   if(PROFILE.backdoor&&n===PROFILE.backdoor){setRoot(false);ST.login=now();welcome();prompt();return}
-  PENDROOT=n==='root'&&!!PROFILE.rootPassword;
-  if(n==='root'||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
+  PENDROOT=n===PROFILE.rootName&&PROFILE.rootPassword?{name:n,word:PROFILE.rootPassword}:n===PROFILE.alsoRoot?{name:n,word:PROFILE.alsoRootWord}:null;
+  if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)){prompt('Password:','password');return}
+  if(n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
   var h=usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
   if(h&&n!==ST.user){delete usr.kids[ST.user];h.name=n;usr.kids[n]=h}
   ST.user=n;ST.home=PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
@@ -1186,11 +1193,12 @@ function submit(){
   var cmd=buf;bufNode=null;setBuf('');
   if(MODE==='read'){var r=READ;READ=null;r(cmd);return}
   if(MODE==='login'){login(cmd);return}
-  if(MODE==='password'&&PENDROOT&&cmd===PROFILE.rootPassword){
-    PENDROOT=false;setRoot(false);ST.login=now();welcome();prompt();
+  if(MODE==='password'&&PENDROOT&&cmd.toLowerCase()===PENDROOT.word.toLowerCase()){
+    var who=PENDROOT.name;
+    PENDROOT=null;setRoot(false);ST.user=who;ST.login=now();welcome();prompt();
     return;
   }
-  if(MODE==='password'){PENDROOT=false;pause(1400);typeLine('Login incorrect');prompt('login: ','login');return}
+  if(MODE==='password'){PENDROOT=null;pause(1400);typeLine(PROFILE.loginFailed);prompt(PROFILE.loginPrompt,'login');return}
   if(PROFILE.csh&&/!/.test(cmd)){ /* !! the last command, !n that one, !word the last that began so */
     var bad=null,had=cmd;
     cmd=cmd.replace(/!(!|\d+|[a-zA-Z]\w*)/g,function(m,x){
@@ -1216,8 +1224,8 @@ kb.addEventListener('input',function(){
 });
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
   var k=e.key,d=k==='ArrowUp'||k==='PageUp'?-1:1;
-  if(PROFILE.dos&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
-  if(PROFILE.dos&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
+  if(PROFILE.dos&&!PROFILE.dcl&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
+  if(PROFILE.dos&&!PROFILE.dcl&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
   if(k==='Enter')submit();
   else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
   else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
@@ -1407,7 +1415,7 @@ function boot(){
     if(m)pause(+m[2]);
   });
   if(!PROFILE.noLogin){
-    typeLine(ST.user,'',null,{pre:'login: ',hold:700,speed:2.2}); /* first visit: auto-login as guest */
+    typeLine(ST.user,'',null,{pre:PROFILE.loginPrompt,hold:700,speed:2.2}); /* first visit: auto-login as guest */
     pause(450);
   }
   welcome();
