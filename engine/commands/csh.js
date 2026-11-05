@@ -42,6 +42,7 @@ function value(x){ /* a word as written: 'as is', "with $variables", or bare, wh
   return x.split(/(\\.)/).map(function(p,i){return i%2?P.unguard(p.charAt(1)):P.vars(P.unquote(p))}).join('');
 }
 builtin(['set'],function(){
+  P.status(P.lastStatus()); /* set s = $status: the one from before */
   var t=P.source().replace(/^\s*set\s*/,''),m;
   if(!t){
     var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
@@ -52,6 +53,7 @@ builtin(['set'],function(){
   try{
     while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
   }catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
+  P.status(0);
   if(t)P.typeLine('set: Syntax error.','err');
 });
 builtin(['unset'],function(a){if(!a.length){P.typeLine('unset: Too few arguments.','err');return}a.forEach(function(k){delete P.shvars[k]})});
@@ -87,7 +89,7 @@ function operator(e,ops){ /* [left,op,right] for the first of them, or by defaul
     else if(c===')')depth--;
     else if(depth)continue;
     else if(ops){if(two===ops)return [e.slice(0,i),two,e.slice(i+2)]}
-    else if(two==='=='||two==='!='){eq=[e.slice(0,i),two,e.slice(i+2)];i++}
+    else if(two==='=='||two==='!='||two==='=~'||two==='!~'){eq=[e.slice(0,i),two,e.slice(i+2)];i++}
     else if(two==='>='||two==='<='){rel=[e.slice(0,i),two,e.slice(i+2)];i++}
     else if(c==='>'||c==='<')rel=[e.slice(0,i),c,e.slice(i+1)];
   }
@@ -98,11 +100,20 @@ function operand(x){ /* a side of a comparison, as a string; null when there is 
   if(!x)return null;
   var inner=x.charAt(0)==='('&&closing(x,1)===x.length-1?x.slice(1,-1):null;
   if(inner!==null&&!operator(inner,'||')&&!operator(inner,'&&')&&!operator(inner))return operand(inner);
-  if(inner!==null||operator(x)||x.charAt(0)==='!'||/^-[edfrwx]\s/.test(x)){
+  if(inner!==null||operator(x)||x.charAt(0)==='!'||/^-[edfrwxz]\s/.test(x)){
     var t=truth(x);
     return t===null?null:t?'1':'0';
   }
-  return value(x);
+  return arith(value(x));
+}
+function arith(v){ /* 1 + 1, $x%2: whole numbers and + - * / %; a lone operator among other words makes no sense */
+  var t=v.replace(/\s+/g,''),i=0,bad=false;
+  if(!/^-?\d+([-+*\/%]-?\d+)+$/.test(t))return /(^|\s)[-+*\/%](\s|$)/.test(v.trim())?null:v;
+  function num(){var m=/^-?\d+/.exec(t.slice(i));i+=m[0].length;return +m[0]}
+  function term(){var x=num();while(i<t.length&&/[*\/%]/.test(t.charAt(i))){var o=t.charAt(i++),y=num();if(o!=='*'&&!y){bad=true;return 0}x=o==='*'?x*y:o==='/'?Math.trunc(x/y):x%y}return x}
+  var x=term();
+  while(i<t.length){var o=t.charAt(i++),y=term();x=o==='+'?x+y:x-y}
+  return bad?null:String(x);
 }
 function truth(e){ /* true, false, or null when it makes no sense */
   e=e.trim();
@@ -119,26 +130,31 @@ function truth(e){ /* true, false, or null when it makes no sense */
     if(l===null||r===null)return null;
     if(o[1]==='==')return l===r;
     if(o[1]==='!=')return l!==r;
+    if(o[1]==='=~'||o[1]==='!~'){var re;try{re=P.globRe(r)}catch(x){return null}return re.test(l)===(o[1]==='=~')}
     if(!/^-?\d+$/.test(l)||!/^-?\d+$/.test(r))return null;
     return o[1]==='>'?+l>+r:o[1]==='<'?+l<+r:o[1]==='>='?+l>=+r:+l<=+r;
   }
-  if((q=/^(!?)\s*-([edfrwx])\s+(\S+)$/.exec(e))){
-    var n=P.find(value(q[3]));
-    var yes=!!n&&(q[2]!=='d'||n.type==='d')&&(q[2]!=='f'||n.type!=='d');
+  if((q=/^(!?)\s*-([edfrwxz])\s+(\S+)$/.exec(e))){
+    var n=P.find(value(q[3])),L=q[2],at=n&&P.pathOf(n);
+    var yes=!!n&&(L==='d'?n.type==='d':L==='f'?n.type!=='d':L==='r'?!n.prot:L==='w'?!n.prot&&P.canWrite(n.type==='d'?at+'/x':at):
+      L==='x'?n.type==='d'||n.bin||/x/.test(n.mode||''):L==='z'?n.type!=='d'&&P.fsize(n)===0:true);
     return q[1]?!yes:yes;
   }
   if((q=/^!\s*(.+)$/.exec(e))&&!/^-?\d+$/.test(q[1])){var inner=truth(q[1]);return inner===null?null:!inner}
-  var w=value(e);
+  var w=arith(value(e));
+  if(w===null)return null;
   if((q=/^!\s*(-?\d+)$/.exec(w)))return +q[1]===0;
   return /^-?\d+$/.test(w)?+w!==0:null;
 }
 builtin(['if'],function(){ /* the one-line form: if (expr) command */
   var s=P.source(),m=/^\s*if\s*\(/.exec(s),end=m?closing(s,m[0].length):-1,cmd=end<0?'':s.slice(end+1).trim(),yes;
   if(end<0||/^then\b/.test(cmd)){P.typeLine('if: Expression syntax.','err');return}
+  P.status(P.lastStatus()); /* if ($status != 0) asks about the command before */
   try{yes=truth(s.slice(m[0].length,end).trim())}
   catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
   if(yes===null){P.typeLine('if: Expression syntax.','err');return}
-  if(yes&&cmd)P.exec(cmd); /* a command like any other: exit here logs you out */
+  if(yes&&cmd)P.exec(cmd); /* a command like any other: exit here logs you out. $status in it is still the one from before */
+  else P.status(0);
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});
