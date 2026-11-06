@@ -153,7 +153,7 @@ var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
     cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:PH.machine&&PH.catalog[PH.machine].year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
-    offline:'the network is down.',off:[],machine:'',machines:'',
+    offline:'the network is down.',off:[],machine:'',machines:'',effects:'auto',
     welcome:null,about:[],mail:[],commands:[],files:[],dirs:[],man:{},aliases:[],sec:{},raw:{},problems:[]};
   var secs=[];
   function yes(v){return !/^(no|false|off|0)$/i.test(v)}
@@ -168,6 +168,7 @@ var PROFILE=(function(){
     else if(k==='speed'){var n=parseFloat(v);if(n>0)P.speed=n}
     else if(k==='sound')P.sound=yes(v);
     else if(k==='uppercase')P.upper=yes(v);
+    else if(k==='effects'){var fx=v.toLowerCase();if(/^(auto|full|lite)$/.test(fx))P.effects=fx;else P.problems.push('effects: auto, full or lite')}
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
     else if(k==='not found')P.notFound=v;
     else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8;P.lsTight=lc[2]==='tight'}
@@ -274,6 +275,37 @@ function $(s){return document.querySelector(s)}
 var term=$('#term'),out=$('#out'),glow=$('#glow'),kb=$('#kb'),svg=$('#cable'),sway=$('#sway');
 var cursor=document.createElement('span');cursor.className='cursor';
 var calm=matchMedia('(prefers-reduced-motion:reduce)');
+/* effects: full, or lite (html.lite in engine/phosphor.css) for a browser that draws the page without a
+   graphics chip. auto: lite when WebGL is a software one or missing, or when the warm-up draws slowly. */
+var FX={mode:'auto',why:null}; /* why: what auto found ('' = nothing slow; null = not looked yet) */
+function fxApply(){document.documentElement.classList.toggle('lite',FX.mode==='lite'||FX.mode==='auto'&&!!FX.why)}
+function softGL(){ /* the software renderer's name, 'no WebGL', or '' for a graphics chip */
+  try{
+    var c=document.createElement('canvas'),g=c.getContext('webgl')||c.getContext('experimental-webgl'),x,r;
+    if(!g)return 'no WebGL';
+    r=String(g.getParameter(g.RENDERER)||'');
+    if(/^webkit webgl$/i.test(r)&&(x=g.getExtension('WEBGL_debug_renderer_info')))r=String(g.getParameter(x.UNMASKED_RENDERER_WEBGL)||r);
+    if((x=g.getExtension('WEBGL_lose_context')))x.loseContext();
+    r=r.match(/swiftshader|llvmpipe|softpipe|software|basic render/i);
+    return r?'software, '+r[0]:'';
+  }catch(e){return ''}
+}
+function fxDetect(){ /* once, for auto: the renderer, then 700 ms of frames, under 25 a second is slow */
+  if(FX.mode!=='auto'||FX.why!==null)return;
+  FX.why=softGL();
+  if(FX.why){fxApply();return}
+  var D=[],last=0,end=0,away=false,gone=function(){away=true};
+  document.addEventListener('visibilitychange',gone);
+  requestAnimationFrame(function f(t){ /* a hidden tab draws nothing: it starts when it shows */
+    if(!end)end=t+700;else D.push(t-last);
+    last=t;
+    if(t<end&&!away){requestAnimationFrame(f);return}
+    document.removeEventListener('visibilitychange',gone);
+    D=D.slice(2).sort(function(a,b){return a-b});
+    var med=D.length?D[D.length>>1]:1e3; /* not even three frames */
+    if(!away&&med>40&&!FX.why){FX.why='slow drawing, '+Math.round(1000/med)+' frames a second';fxApply()}
+  });
+}
 /* what screen readers hear: each line once it is finished, not every character of the typing */
 var log=document.createElement('div');log.id='log';log.setAttribute('role','log');log.setAttribute('aria-live','polite');
 document.body.appendChild(log);
@@ -339,7 +371,7 @@ function click(vol,freq){
 /* ---------- afterglow ---------- */
 var lastG=0;
 function afterglow(top,a,ms,force){
-  if(calm.matches)return;
+  if(calm.matches||!force&&document.documentElement.classList.contains('lite'))return; /* lite: only the fade at clear (scrolling ones cost a lot) */
   var n=performance.now();
   if(!force&&(n-lastG<90||glow.childElementCount>2))return;
   lastG=n;
@@ -885,6 +917,12 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
       });
     });
   },
+  effects:function(m){ /* auto, full or lite, remembered in this browser; none: what is in use, and why */
+    if(m===undefined)return {mode:FX.mode,lite:document.documentElement.classList.contains('lite'),why:FX.why||''};
+    FX.mode=m;PH.save('effects',m===PROFILE.effects?null:m);
+    fxApply();fxDetect();
+    return m;
+  },
   fillGlass:function(on){ /* the glass fills the window; remembered in this browser */
     if(on===undefined)return document.documentElement.classList.contains('fill');
     document.documentElement.classList.toggle('fill',on);
@@ -913,6 +951,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   }
 });
 if(PH.saved('fill'))document.documentElement.classList.add('fill');
+FX.mode=/^(auto|full|lite)$/.test(PH.saved('effects'))?PH.saved('effects'):PROFILE.effects;fxApply();
 PH.hooks.forEach(function(fn){
   try{fn(PH)}catch(e){PROFILE.problems.push('machine setup failed: '+e.message)}
 });
@@ -1758,6 +1797,7 @@ function problems(){ /* content mistakes, shown on the glass so they get fixed *
 }
 function boot(){
   setTimeout(function(){$('#crt').classList.add('lit')},1300);
+  requestAnimationFrame(function(){setTimeout(fxDetect)}); /* after the first frame, during the warm-up */
   if(!coarse)kb.focus({preventScroll:true});
   pause(900); /* tube warm-up */
   problems();

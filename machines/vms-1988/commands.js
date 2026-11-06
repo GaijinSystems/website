@@ -235,7 +235,7 @@ verb('show',2,function(a){
   }
   if(is('system',2)){
     var T=now();
-    say(['VAX/VMS V4.5  on node '+nodeName()+'  '+timeStr(T)+'   Uptime  12 04:17:08',
+    say(['VAX/VMS V4.6  on node '+nodeName()+'  '+timeStr(T)+'   Uptime  12 04:17:08',
       '  Pid    Process Name    State  Pri      I/O       CPU       Page flts Ph.Mem',
       '20200081 SWAPPER         HIB     16        0   0 00:00:41.22        0      0',
       '20200105 ERRFMT          HIB      8     1873   0 00:00:07.14       82     71',
@@ -251,7 +251,7 @@ verb('show',2,function(a){
     return;
   }
   if(is('memory',1)){say(['              System Memory Resources on '+timeStr(now()),'','Physical Memory Usage (pages):     Total        Free      In Use    Modified','  Main Memory (8.00Mb)             16384        9120        6912         352']);return}
-  if(is('device',3)){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSV045     41822   112   1']);return}
+  if(is('device',3)){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSRL4      41822   112   1']);return}
   if(is('quota',1)){P.typeLine('User ['+me+'] has 412 blocks used, 9588 available, of 10000 authorized');return}
   if(is('symbol',2)){err('%DCL-W-UNDSYM, undefined symbol - check validity and spelling');return}
   if(is('terminal',2)){say(['Terminal: _TXA2:      Device_Type: VT100        Owner: '+me,'','   Input:    9600      LFfill:  0      Width:  80      Parity: None','   Output:   9600      CRfill:  0      Page:   24']);return}
@@ -308,7 +308,7 @@ P.fallback=function(word,raw){
   return true;
 };
 /* real DCL HELP stands in for the terminal's: a list, and the topic you ask for */
-var TOPICS={DIRECTORY:'Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.',TYPE:'Prints a file. TYPE README.TXT.',COPY:'COPY from to. Makes a new version of to.',DELETE:'DELETE FILE.TXT;1. The version number is required.',PURGE:'Deletes all but the newest version of each file.',RENAME:'RENAME old new.',CREATE:'CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].',EDIT:'EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.',SET:'SET DEFAULT [.NAME] or [-] to move about.',SHOW:'SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.',RUN:'Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.',LOGOUT:'Ends your session.',MAIL:'Reads your mail.',ABOUT:'Who owns this machine.',CONNECT:'Plugs the terminal into another machine.',SOUND:'Keyclicks on or off.',FILL:'A bigger screen, on or off.',SOURCE:'Where to get this terminal.'};
+var TOPICS={DIRECTORY:'Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.',TYPE:'Prints a file. TYPE README.TXT.',COPY:'COPY from to. Makes a new version of to.',DELETE:'DELETE FILE.TXT;1. The version number is required.',PURGE:'Deletes all but the newest version of each file.',RENAME:'RENAME old new.',CREATE:'CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].',EDIT:'EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.',SET:'SET DEFAULT [.NAME] or [-] to move about.',SHOW:'SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.',RUN:'Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.',LOGOUT:'Ends your session.',MAIL:'Reads your mail.',ABOUT:'Who owns this machine.',CONNECT:'Plugs the terminal into another machine.',SOUND:'Keyclicks on or off.',FILL:'A bigger screen, on or off.',EFFECTS:'Tube effects. EFFECTS AUTO, FULL or LITE.',SOURCE:'Where to get this terminal.'};
 P.command({names:['help'],noHelpFlag:true,terminal:true,run:function(a,raw,w){
   var t=up(w[1]||'');
   function topic(q){
