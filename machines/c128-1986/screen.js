@@ -67,6 +67,29 @@ P.program(function(S){
     if(M.editing){M.editing.r=to.r;M.editing.c=to.c;M.editing.sc=to.scrolled;M.editing.scr=to}
     M.scr=to;M.scr.touch();layout();
   }
+  /* the 1985 ROM's hidden credits, SYS 32800,123,45,6 in C128 mode: clear, lower case, as it prints them (Herdware is the ROM's own pun) */
+  var CREDITS='\x93\x0e\x12   Brought to you by...   \r\rSoftware:\r Fred Bowen\r Terry Ryan\r Von Ertwine\r\rHerdware:\r Bil Herd\r Dave Haynie\r Frank Palaia\r\r\x12Link arms,don\'t make them.\r';
+  /* the terminal's own jokes, not Commodore's: other machines' commands typed at READY., which BASIC would only call a
+     ?SYNTAX ERROR, answered by a Commodore owner of 1985. Each: the line (spaces ignored), the mode (64, 128 or both),
+     and what it says. Keep each line under 40 characters. Not a BASIC keyword in that mode, and never inside a program. */
+  var RIVALS=[
+    [/^C(LOAD|SAVE)("[^"]*"?)?$/,0,['?TRASH-80  ERROR','THIS ONE LOADS ITS TAPES WITH LOAD.']],
+    [/^SYSTEM$/,0,["*?  (THAT'S WHAT A TRASH-80 WOULD SAY.)",'THIS ONE HAS COLOR, SOUND AND SPRITES.']],
+    [/^(TRASH-?80|TRS-?80)$/,0,['TRASH-80? NEVER HEARD OF IT.','FOR THE MASSES, NOT THE CLASSES.']],
+    [/^CLS$/,0,['CLS? SHIFT AND CLR/HOME. WE HAVE A KEY','FOR THAT.']],
+    [/^CALL-151$/,64,["CALL -151? THIS ISN'T AN APPLE. FOR THE",'PRICE OF ONE, YOU COULD BUY FIVE OF US.']],
+    [/^CALL-151$/,128,['CALL -151? NO NEED: TYPE MONITOR.','THE C128 HAS ONE BUILT IN, FOR FREE.']],
+    [/^CATALOG$/,64,["CATALOG? THIS ISN'T AN APPLE.",'LOAD"$",8 AND LIST, LIKE A GROWN-UP.']],
+    [/^PR#[0-7]$/,0,["PR#? THERE ARE NO SLOTS IN HERE. IT'S",'ALL ON THE BOARD, AND IT COST LESS.']],
+    [/^HGR2?$/,0,['HGR? WE HAVE SPRITES, SIXTEEN COLORS','AND A SID CHIP. IT EVEN SINGS.']],
+    [/^DOS$/,0,["DOS? THIS ISN'T AN ATARI. THE 1541",'DRIVE IS A COMPUTER ALL BY ITSELF.']],
+    [/^ATARI$/,0,["ATARI? JACK BOUGHT THE PLACE IN '84."]]
+  ];
+  function rival(t){
+    var w=t.replace(/ +/g,''),hit=RIVALS.filter(function(r){return (!r[1]||r[1]===M.mode)&&r[0].test(w)})[0];
+    if(!hit)return false;
+    say('\r'+hit[2].join('\r'));ok();return true;
+  }
   /* ---------- what BASIC sees ---------- */
   var machine={
     drive:drive,
@@ -93,9 +116,15 @@ P.program(function(S){
     ms:function(){return performance.now()},
     speed:function(){return M.mode===64?0.9:M.fast?0.55:1.1},
     peek:peek,poke:poke,
-    sys:function(a){
+    sys:function(a,R){
       if(M.mode===64&&(a===64738||a===64760)){S.after(0,function(){power(64)});M.basic.state='off';return false}
       if(M.mode===128&&(a===65341||a===57344||a===16384)){S.after(0,function(){power(128)});M.basic.state='off';return false}
+      if(M.mode!==128)return;
+      (R||[]).forEach(function(v,i){if(v!==undefined)M.ram[[6,7,8,5][i]]=v}); /* SYS takes A, X and Y from 6, 7 and 8 */
+      if(a===32800&&M.ram[6]===123&&M.ram[7]===45&&M.ram[8]===6){ /* the ROM's own credits, which its builders hid behind this key */
+        for(var i=0;i<CREDITS.length;i++){var c=CREDITS.charCodeAt(i);machine.out(c>=97&&c<=122?c-32:c>=65&&c<=90?c+128:c)}
+        M.ram[6]=0;M.ram[7]=200; /* where the routine leaves A and X, and SYS keeps them */
+      }
     },
     go64:function(){M.editing=null;M.basic.state='off';S.after(50,function(){power(64)})},
     boot:function(){if(drive.find('WELCOME','PRG'))boot();else M.basic.error(C.E.notfound)},
@@ -157,7 +186,7 @@ P.program(function(S){
     }
     if(t==='RESET'){M.editing=null;M.basic.state='off';S.after(200,function(){power(128)});return true}
     if(t==='HELP'&&M.mode===64){help();ok();return true}
-    return false;
+    return rival(t);
   }
   function ok(){M.basic.state='ready';M.basic.say('\rREADY.\r');machine.ready()}
   function help(){

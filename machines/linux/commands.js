@@ -11,16 +11,25 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
     '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'},
   loads:loads
 };
-var BOOT=null,OLD=null,SEQ=0;
+var BOOT=null,OLD=null,SEQ=0,SU=null,SUFROM=''; /* SU: the shell su started, 'exit' or (su -) 'logout', which it says as it ends */
 P.setup(function(){
   BOOT=new Date(P.st.login.getTime()-52e3); /* the machine came up as the terminal did */
-  P.setPrompt(function(){
-    var S=P.st,w=S.cwd===S.home?'~':S.cwd.indexOf(S.home+'/')===0?'~'+S.cwd.slice(S.home.length):S.cwd;
+  function ps1(){
+    var S=P.st;
+    if(S.user==='root'&&S.home==='/'){S.home='/root';if(S.cwd==='/')S.cwd='/root'} /* root logged in at the console: root's home */
+    var w=S.cwd===S.home?'~':S.cwd.indexOf(S.home+'/')===0?'~'+S.cwd.slice(S.home.length):S.cwd;
     return S.user+'@'+S.hostname+':'+w+(S.user==='root'?'# ':'$ ');
-  });
+  }
+  P.setPrompt(ps1);
+  Object.defineProperty(P.profile,'rootPrompt',{get:ps1,configurable:true}); /* root's prompt is the same PS1, ending in # */
   var bye=P.cmds.exit; /* a login shell says so as it goes */
   if(bye)P.cmds.exit=P.cmds.logout=function(a,raw,w){
-    if(!P.subshell()&&!P.inScript())P.typeLine('logout');
+    var su=P.st.user==='root'?SU:null;
+    if(!P.subshell()&&!P.inScript()){
+      if(su==='exit'&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
+      P.typeLine(su||'logout');
+      if(su)SU=null;
+    }
     bye(a,raw,w);
   };
   if(P.cmds.sh){var sh=P.cmds.sh;P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;sh(a,raw,w)};P.paths.bash='/usr/bin'} /* bash on its own: you are in one already */
@@ -176,14 +185,15 @@ cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION
 },{core:true,help:'the manual'});
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
   'asks for the password of the user named, root if none is, and starts a shell as that user.',function(a){
-  var who=a.filter(function(x){return x.charAt(0)!=='-'})[0]||'root';
+  var who=a.filter(function(x){return x.charAt(0)!=='-'})[0]||'root',login=a.some(function(x){return /^(-|-l|--login)$/.test(x)});
   if(['root',P.st.user,P.st.owner].indexOf(who)<0&&(/^\.\.?$|\//.test(who)||!P.find('/home/'+who,true))){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');return}
+  if(P.st.user==='root'&&who==='root'){if(login)P.st.cwd='/root';return} /* root is asked nothing: another root shell, as good as this one */
   P.ask('Password: ',function(l){
     if(l===null||l===P.INT)return;
     var word=P.profile.rootPassword;
-    if(who==='root'&&word&&l===word){P.su();return}
+    if(who==='root'&&word&&l===word){SUFROM=P.st.user;P.su();SU=login?'logout':'exit';P.st.home='/root';if(login)P.st.cwd='/root';return} /* su keeps the folder; su - goes to root's */
     P.pause(2200);
-    err('su: Authentication failure');
+    err('su: Authentication failure');P.status(1);
   },false,true);
 });
 cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] command [arg ...]',
@@ -191,6 +201,11 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] comman
   if(!a.length){P.say(['usage: sudo -h | -K | -k | -V','usage: sudo -v [-ABkNnS] [-g group] [-h host] [-p prompt] [-u user]','usage: sudo [-ABbEHkNnPS] [-u user] [VAR=value] [-i | -s] [command [arg ...]]']);P.status(1);return}
   if(a[0]==='-V'){P.typeLine('Sudo version 1.9.16p2');return}
   if(a[0]==='-k'||a[0]==='-K')return;
+  if(P.st.user==='root'){ /* root may do anything, and is not asked */
+    var c=a.slice();while(c.length&&c[0].charAt(0)==='-'){if(c[0]==='-u')c.shift();c.shift()}
+    if(c.length)P.exec(c.join(' '));
+    return;
+  }
   P.ask('[sudo] password for '+P.st.user+': ',function(l){
     if(l===null||l===P.INT)return;
     P.pause(1500);
@@ -200,9 +215,9 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] comman
 cmd('tty','/usr/bin','print the file name of the terminal connected to standard input','tty [OPTION]...','prints the name of the terminal you are typing on.',function(){P.typeLine('/dev/ttyS0')});
 cmd('id','/usr/bin','print real and effective user and group IDs','id [OPTION]... [USER]','prints who you are to the system: your user and group numbers, and the groups you are in.',function(){
   var u=P.st.user,n=u===P.st.owner?1000:1001;
-  P.typeLine('uid='+n+'('+u+') gid='+n+'('+u+') groups='+n+'('+u+'),100(users)');
+  P.typeLine(u==='root'?'uid=0(root) gid=0(root) groups=0(root)':'uid='+n+'('+u+') gid='+n+'('+u+') groups='+n+'('+u+'),100(users)');
 });
-cmd('groups','/usr/bin','print the groups a user is in','groups [OPTION]... [USERNAME]...','prints the groups you are in.',function(){P.typeLine(P.st.user+' users')});
+cmd('groups','/usr/bin','print the groups a user is in','groups [OPTION]... [USERNAME]...','prints the groups you are in.',function(){P.typeLine(P.st.user==='root'?'root':P.st.user+' users')});
 cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','less [options] [file ...]','shows each file, a screen at a time on a real terminal. this one has a long memory instead: PageUp goes back.',function(a){
   var f=a.filter(function(x){return x.charAt(0)!=='-'});
   if(!f.length){if(P.stdin()){lines(P.stdin());return}err('Missing filename ("less --help" for help)');return}
@@ -617,9 +632,26 @@ cmd(['systemctl'],'/usr/bin','Control the systemd system and service manager','s
   if(/^(reboot|poweroff|halt|suspend)$/.test(verb)){power(verb);return}
   err('Unknown command verb \''+verb+'\'.');P.status(1);
 });
-function power(v){err('Failed to '+(v==='poweroff'?'power off':v)+' system via logind: Interactive authentication required.');P.status(1)}
+function power(v){
+  if(P.st.user!=='root'||v==='suspend'){err('Failed to '+(v==='poweroff'?'power off':v)+' system via logind: Interactive authentication required.');P.status(1);return}
+  var T={halt:['systemd-halt.service - System Halt','halt.target - System Halt','System halted'],poweroff:['systemd-poweroff.service - System Power Off','poweroff.target - System Power Off','Power down'],
+    reboot:['systemd-reboot.service - System Reboot','reboot.target - System Reboot','Restarting system']}[v],s=since()/1000; /* since() counts from the boot */
+  P.powerOff(['         Stopping session-1.scope - Session 1 of User '+(SU?SUFROM:'root')+'...','[  OK  ] Stopped target multi-user.target - Multi-User System.',
+    '         Stopping cron.service - Regular background program processing daemon...','         Stopping ssh.service - OpenBSD Secure Shell server...','[  OK  ] Stopped cron.service - Regular background program processing daemon.',
+    '[  OK  ] Stopped ssh.service - OpenBSD Secure Shell server.','[  OK  ] Reached target shutdown.target - System Shutdown.','[  OK  ] Reached target final.target - Final Step.',
+    '[  OK  ] Finished '+T[0]+'.','[  OK  ] Reached target '+T[1]+'.','['+s.toFixed(6).padStart(12)+'] reboot: '+T[2]]);
+}
 ['reboot','poweroff','halt','shutdown'].forEach(function(v){
-  cmd(v,'/usr/sbin',(v==='shutdown'?'Halt, power off or reboot the machine':v==='reboot'?'Reboot the machine':v==='halt'?'Halt the machine':'Power off the machine'),v+' [OPTIONS...]','asks systemd to stop the machine. only an administrator may.',function(){power(v==='shutdown'?'poweroff':v)});
+  cmd(v,'/usr/sbin',(v==='shutdown'?'Halt, power off or reboot the machine':v==='reboot'?'Reboot the machine':v==='halt'?'Halt the machine':'Power off the machine'),v+' [OPTIONS...]','asks systemd to stop the machine. only an administrator may.',function(a){
+    if(v!=='shutdown'||P.st.user!=='root'){power(v==='shutdown'?'poweroff':v);return}
+    var r=a.indexOf('-r')>=0?'reboot':a.indexOf('-H')>=0||a.indexOf('--halt')>=0?'halt':'poweroff';
+    if(a.indexOf('now')<0&&a.indexOf('-c')<0){ /* a minute's grace, which this terminal does not wait out */
+      P.typeLine('Shutdown scheduled for '+stamp(new Date(P.now().getTime()+6e4))+', use \'shutdown -c\' to cancel.');
+      return;
+    }
+    if(a.indexOf('-c')>=0)return;
+    power(r);
+  });
 });
 cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journalctl [OPTIONS...] [MATCHES...]',[
   'prints the system journal, oldest first. ordinary users see only their own entries; the system\'s are for the groups adm and systemd-journal.'],function(a){

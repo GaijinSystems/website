@@ -16,6 +16,9 @@ hostname:     dec20
 login prompt: @LOGIN
 prompt:       @
 closed door:  yes
+root login:   operator
+root password: DEC-20
+root prompt:  $
 mail notice:   You have mail
 offline:      ?Host is not responding
 

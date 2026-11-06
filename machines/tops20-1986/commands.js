@@ -7,7 +7,8 @@
 'use strict';
 var MON=' DEC20, TOPS-20 Monitor 6.1(7030)',EXEC=' TOPS-20 Command processor 6.1(430)';
 var JOB=23,TTY=12,DIRNO=412;
-var S={on:true,last:null,read:false}; /* logged in; the last login; the letter read */
+var S={on:true,last:null,read:false,en:false,home:''}; /* logged in; the last login; the letter read; ENABLEd; the home of who is logged in */
+var GUEST={user:'guest',home:'/guest'}; /* who the terminal logs in as, from the setup */
 function up(s){return String(s).toUpperCase()}
 function say(L){P.say(L)}
 function err(s){P.typeLine(s,'err');P.status(1)}
@@ -96,6 +97,7 @@ function cmd(name,guide,arg,run,o){var c=Object.assign({name:name,guide:guide,ar
  'UNLOAD:(DEVICE):text','WDIRECTORY:(OF FILES):file'].forEach(function(x){
   var p=x.split(':');cmd(p[0],p[1],p[2]||'',null,{out:p[3]==='out'});
 });
+BYNAME.ENABLE.run=function(){enable()};BYNAME.DISABLE.run=function(){disable()};
 var ABBREV={c:'CONTINUE',d:'DEPOSIT',e:'EXAMINE',ex:'EXECUTE',g:'GET',log:'LOGIN',back:'BACKSPACE',dis:'DISABLE',pr:'PRINT',und:'UNDELETE'};
 function table(){ /* the commands there are now: fewer before LOGIN */
   return C.filter(function(c){return S.on?!c.login:c.out||c.login}).sort(function(a,b){return a.name<b.name?-1:1});
@@ -363,12 +365,20 @@ function info(a){
   if(K.length!==1&&K.indexOf(w)<0){err('?'+(K.length?'Ambiguous':'Does not match switch or keyword')+' - "'+w+'"');return}
   INFO[K.length===1?K[0]:w].run(a.slice(1));
 }
-function newMail(){return P.profile.mail.length>0&&!S.read}
+function newMail(){return myMail().length>0&&!S.read}
+function myMail(){return S.home===GUEST.home?P.profile.mail:[]} /* the site's letter is to the guest */
+/* OPERATOR has WHEEL and OPERATOR capabilities: ENABLE makes them work ($), DISABLE puts them away (@).
+   Anyone may ENABLE, as in the real EXEC; for anyone else the $ is all it changes. */
+function disable(){S.en=false;P.unsu()}
+function enable(){S.en=true;if(S.home==='/operator')P.su()}
 cmd('LOGOUT','','',function(){
   var n=P.now();
   if(!S.on){say(['Killed Job '+JOB+', TTY'+TTY+', at '+dt(n)]);return}
+  disable();
   say(['Killed Job '+JOB+', User '+me()+', Account '+me()+', TTY'+TTY+', at '+dt(n),' Used 0:00:'+P.p2(Math.min(59,1+Math.floor((n-P.st.login)/60000)))+' in '+hms(n-P.st.login),'',MON,'']);
-  S.on=false;S.last=P.st.login;P.st.cwd=P.st.home;
+  S.on=false;S.last=P.st.login;
+  var o=P.find('/operator',true);if(o)o.prot=true; /* OPERATOR's own directory is OPERATOR's alone */
+  P.st.user=GUEST.user;P.st.home=S.home=GUEST.home;P.st.cwd=P.st.home;
 },{out:true});
 cmd('LOGIN','','user',function(a){
   var u=(a[0]||'').toLowerCase();
@@ -376,8 +386,11 @@ cmd('LOGIN','','user',function(a){
   if(['guest','operator',P.profile.owner].indexOf(u)<0){err('?No such user name - "'+up(u)+'"');return}
   function go(word){
     if(word===null||word===P.INT)return;
-    if(u!=='guest'){P.pause(1400);err('?Invalid password');return}
-    var n=P.now();S.on=true;P.st.login=n;P.st.cwd=P.st.home;
+    var op=u==='operator',pw=P.profile.rootPassword;
+    if(u!=='guest'&&!(op&&pw&&up(word)===up(pw))){P.pause(1400);err('?Incorrect password');return} /* the EXEC's word for it; case does not matter */
+    var n=P.now();S.on=true;P.st.login=n;
+    if(op){var o=P.find('/operator',true);if(o)o.prot=false}
+    P.st.user=op?'operator':GUEST.user;P.st.home=S.home=op?'/operator':GUEST.home;P.st.cwd=P.st.home;
     say(jobLine(n).concat(WELCOME));
     if(newMail())P.typeLine(P.profile.mailNotice);
   }
@@ -433,9 +446,9 @@ PROG.finger=function(a){
   say([' User      Job Subsys    TTY'].concat(J.map(function(j){return ' '+j[3].padEnd(9)+String(j[0]).padStart(4)+' '+j[2].padEnd(8)+String(j[1]).padStart(5)})));
 };
 PROG.mail=PROG.rdmail=PROG.mm=function(){
-  var M=P.profile.mail,gone=false,n=M.length?1:0,sent=new Date(P.st.login.getTime()-36e5*3),from=up(P.profile.owner);
+  var M=myMail(),gone=false,n=M.length?1:0,sent=new Date(P.st.login.getTime()-36e5*3),from=up(P.profile.owner);
   function head(){return (gone?' D':S.read?'  ':' N')+'  1) '+sent.getDate()+'-'+MON3[sent.getMonth()]+' '+from.padEnd(16)+'Welcome ('+M.join('\n').length+' chars)'}
-  if(!n){P.typeLine(' No messages in '+dirName(P.st.home)+'MAIL.TXT.1')}
+  if(!n){P.typeLine(' No messages in '+dirName(S.home)+'MAIL.TXT.1')}
   else P.typeLine(head());
   function read(){
     if(!n||gone){P.typeLine(' No current message');return}
@@ -465,6 +478,7 @@ Phosphor.setup(function(Q){
   ['connect','fill','sound','effects','about','source'].forEach(function(k){if(P.has(P.cmds,k))TERM[k]=P.cmds[k]});
   ['FILL','SOUND','EFFECTS','SOURCE','ABOUT'].forEach(function(k){if(TERM[k.toLowerCase()])cmd(k,'','text',function(a){terminal(k.toLowerCase(),a)},{out:true,hide:true})});
   if(TERM.connect)P.cmds.connect=function(a,raw,w){go(BYNAME.CONNECT,a,raw)}; /* CONNECT <DIR> and connect bsd */
+  GUEST={user:Q.st.user,home:Q.st.home};S.home=GUEST.home;Q.setPrompt(function(){return S.en?'$':'@'});
   S.last=new Date(Q.now().getTime()-(26*60+43)*6e4-17e3);WELCOME=Q.profile.welcome;Q.profile.welcome=jobLine(Q.now()).concat(WELCOME);
   Object.keys(HLP).forEach(function(k){Q.put('/help/'+k.toLowerCase()+'.hlp.1','f',{owner:'operator',date:Q.systemDate,body:HLP[k]})});
 });
@@ -474,9 +488,9 @@ P.command({names:['mail'],noHelpFlag:true,terminal:true,run:function(a,raw){pars
 /* ---------- a line: the command, its guide words dropped, its fields; or a program in SYS: ---------- */
 function go(c,a,raw){
   if(c.run){c.run(a,raw);return}
-  if(/^(SET|TERMINAL|RECEIVE|REFUSE|REMARK|ENABLE|DISABLE|KMIC|BREAK|UNKEEP|RESET)$/.test(c.name))return; /* taken, and nothing to show for it */
+  if(/^(SET|TERMINAL|RECEIVE|REFUSE|REMARK|KMIC|BREAK|UNKEEP|RESET)$/.test(c.name))return; /* taken, and nothing to show for it */
   if(c.arg==='file'&&!a.length){err('?Missing file name');return}
-  err('?'+(S.on?'GUEST':'This')+' account may not use the '+c.name+' command');
+  err('?'+(S.on?me():'This')+' account may not use the '+c.name+' command');
 }
 function parseLine(raw){
   var line=raw.replace(/\([^)]*\)/g,' ').trim(),q=/\?$/.test(line);
