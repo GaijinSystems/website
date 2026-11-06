@@ -404,7 +404,7 @@ var HLP={
   SOURCE:['SOURCE: where to get this terminal.'],
   CONNECT:['CONNECT <DIR> moves you to a directory you own.','CONNECT on its own lists the other machines on the line; CONNECT name plugs into one.'],
   SOUND:['SOUND ON or SOUND OFF: the keyclicks.'],
-  FILL:['FILL: the glass fills the window. FILL again puts the monitor back.'],
+  FILL:['FILL: the monitor fills the window. FILL again puts it back.'],
   EFFECTS:['EFFECTS AUTO, FULL or LITE: how hard the tube works.']
 };
 function helpTopics(){return Object.keys(HLP).filter(function(k){return !(k==='CONNECT'&&P.allowed.length<2)&&!(k==='ABOUT'&&!P.profile.about.length)}).sort()}
