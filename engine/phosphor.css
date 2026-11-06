@@ -164,18 +164,16 @@ body{
   #bezel::after{bottom:-12px;width:28px;height:15px}
   .badge{display:none}
 }
-/* ---------- the fill command: just the glass, as wide as it can be at 4:3, with dark bars at the
-   sides when the window is wider than that ---------- */
-html.fill{--sw:min(100vw,calc(var(--app-h,100dvh) / .75));--sh:calc(var(--sw) * .75)}
-html.fill #bezel{padding:0;background:none;box-shadow:none;border-radius:0}
-html.fill #bezel::after,html.fill .badge,html.fill #cablewrap{display:none}
-html.fill #screen{border-radius:0}
-html.fill #stage{padding-top:0}
-html.fill body{background:#000}
+/* ---------- the fill command: the whole monitor, bezel and all, as big as the window allows (the
+   glass stays 4:3), with the cable put away. The bezel is 1.079 x 0.842 of the glass width ---------- */
+html.fill{--sw:min(calc(100vw / 1.079),calc(var(--app-h,100dvh) / .842));--sh:calc(var(--sw) * .75)}
+html.fill #bezel::after,html.fill #cablewrap{display:none}
+html.fill #stage{padding-top:0;justify-content:flex-start}
 @media (max-width:640px){
-  /* a phone: all the width, and whatever height the keyboard leaves */
-  html.fill{--sw:100vw;--sh:var(--app-h,100dvh)}
-  html.fill #stage{padding-top:0;justify-content:flex-start}
+  /* a phone: all the width and whatever height the keyboard leaves, less the bezel (12px at the
+     sides and top, 22px at the bottom) */
+  html.fill{--sw:calc(100vw - 24px);--sh:calc(var(--app-h,100dvh) - 34px - env(safe-area-inset-top,0px))}
+  html.fill #stage{padding-top:env(safe-area-inset-top,0px);justify-content:flex-start}
 }
 /* ---------- lite effects (the effects command; auto picks them for a browser that draws without a graphics
    chip): the same look for much less drawing. One small glow, the band stepped five times a second and not

@@ -127,8 +127,8 @@ P.command({names:['ping'],path:'/etc',
 
 /* fill: the terminal's own switch, on every machine. */
 P.command({names:['fill'],terminal:true,noHelpFlag:true,help:'bigger screen, on or off',
-  man:{what:'fill the window with the glass',syn:'fill',desc:[
-    'puts the monitor away and lets the glass fill the window. fill again brings the monitor back. this browser remembers which you chose.']},
+  man:{what:'make the monitor as big as the window',syn:'fill',desc:[
+    'puts the cable away and makes the monitor as big as the window allows. fill again puts it back. this browser remembers which you chose.']},
   run:function(){P.fillGlass(!P.fillGlass())}});
 
 /* effects: the terminal's other switch, on every machine. */
