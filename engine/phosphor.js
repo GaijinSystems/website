@@ -856,7 +856,7 @@ PH.defs.forEach(function(d){
   names.forEach(function(n){install(n,d.run,!!d.noHelpFlag,own)});
   if(d.path)PATHS[names[0]]=d.path; /* where its program file shows up in the file tree */
   if(d.help&&!d.hidden)HELP.push([names[0],d.help]);
-  if(d.man)page(names,d.man.what||'',d.man.syn||names[0],own?d.man.desc.concat(['',TERMSAYS]):d.man.desc,d.man.bugs);
+  if(d.man)page(names,d.man.what||'',d.man.syn||names[0],own?(d.man.desc||[]).concat(['',TERMSAYS]):d.man.desc,d.man.bugs);
 });
 /* Text commands (== command: NAME ==). They cannot take the name of a core command while
    it is running; switch it off first ("commands: -mail") and yours takes its place.

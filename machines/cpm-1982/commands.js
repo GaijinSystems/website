@@ -9,7 +9,7 @@ var user=0,SIZE=486; /* a double-sided eight-inch disk */
 function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n=P.root.kids[k];return n.type!=='d'&&k.charAt(0)!=='.'&&(n.user||0)===user})}
 function get(k){ /* a long name means its first eight and three, and so does a file kept under a longer name */
   var K=P.root.kids,c=P.fcb.cut(k),n=K[k]||K[c];
-  if(!n){var j=Object.keys(K).filter(function(x){return P.fcb.cut(x)===c&&(K[x].user||0)===user})[0];n=j&&K[j]}
+  if(!n){var j=Object.keys(K).filter(function(x){return K[x].type!=='d'&&P.fcb.cut(x)===c&&(K[x].user||0)===user})[0];n=j&&K[j]}
   return n&&(n.user||0)===user?n:undefined;
 }
 function write(k,L,full){ /* full: what to say when the name is another user area's (one name, one file here) */
