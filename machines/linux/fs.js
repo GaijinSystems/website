@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "linux-2025", its file system: the merged /usr, a small /etc, /proc, /var/log,
+/* PHOSPHOR-9 terminal: machine "linux", its file system: the merged /usr, a small /etc, /proc, /var/log,
    and what the administrator added to /usr/games.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
