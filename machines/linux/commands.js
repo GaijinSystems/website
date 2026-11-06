@@ -11,7 +11,7 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
     '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'},
   loads:loads
 };
-var BOOT=null,OLD=null,SEQ=0,STK=[]; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
+var BOOT=null,OLD=null,SEQ=0,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
 P.setup(function(){
   BOOT=new Date(P.st.login.getTime()-52e3); /* the machine came up as the terminal did */
   function ps1(){
@@ -24,6 +24,7 @@ P.setup(function(){
   Object.defineProperty(P.profile,'rootPrompt',{get:ps1,configurable:true}); /* root's prompt is the same PS1, ending in # */
   var bye=P.cmds.exit; /* a login shell says so as it goes */
   if(bye)P.cmds.exit=P.cmds.logout=function(a,raw,w){
+    if(RUN&&!P.subshell()&&!P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* in su -c's line: only that shell ends */
     if(!P.subshell()&&!P.inScript()){
       var top=STK[STK.length-1];
       if(top&&top.say==='exit'&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
@@ -190,22 +191,25 @@ function nest(who,login){ /* a shell started by root, as root or anyone: no pass
   STK.push({say:login?'logout':'exit',user:P.st.user,home:P.st.home,cwd:P.st.cwd});
   P.st.user=who;P.st.home=homeOf(who);if(login)P.st.cwd=P.st.home;P.relock(who!=='root');
 }
-function as(who,line,sudo){ /* one command line as another user, then back, ^C or not */
+function as(who,line,sudo,login){ /* one command line as another user, then back, ^C or not */
   var w0=line.trim().split(/\s+/)[0]||'';
-  if(/^(exit|logout)$/.test(w0)){if(sudo){err('sudo: '+w0+': command not found');P.status(1)}return} /* su's shell just ends; sudo finds no such program */
-  var n=STK.length,u=P.st.user,h=P.st.home,held=P.rootHeld();
+  if(sudo&&BUILTIN.indexOf(w0)>=0&&!/^(echo|false|kill|printf|pwd|test|true)$/.test(w0)){err('sudo: '+w0+': command not found');P.status(1);return} /* the shell's own commands are no programs sudo can find; these few are both */
+  if(/^(exit|logout)$/.test(w0))return; /* su's shell just ends */
+  var n=STK.length,u=P.st.user,h=P.st.home,c=P.st.cwd,held=P.rootHeld();
   if(held){P.st.user=who;P.relock(who!=='root')}
   else{P.su();P.st.home='/root'}
-  P.exec(line);
+  if(login)P.st.cwd=homeOf(who); /* su - starts in the user's home */
+  RUN++;P.exec(line);
   P.queue(function(){
-    STK.length=n; /* any shell the command started has ended with it */
+    RUN--;P.loop(null); /* an exit in the line ended that line only */
+    if(STK.length>n)STK.length=n; /* any shell the command started has ended with it */
     if(!held){P.unsu();return}
-    if(P.rootHeld()){P.st.user=u;P.st.home=h;P.relock(u!=='root')}
+    if(P.rootHeld()){P.st.user=u;P.st.home=h;P.st.cwd=c;P.relock(u!=='root')}
   },true);
 }
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
   'asks for the password of the user named, root if none is, and starts a shell as that user. -c runs one command instead.',function(a){
-  var A=[],who=null,login=false,run=null,m,i;
+  var A=[],who=null,login=false,run=null,grp=false,m,i;
   a.forEach(function(x){ /* -lc id is -l -c id */
     if(!/^-[^-]./.test(x)){A.push(x);return}
     for(var k=1;k<x.length;k++){var ch=x.charAt(k);A.push('-'+ch);if('csgG'.indexOf(ch)>=0){if(k+1<x.length)A.push(x.slice(k+1));break}}
@@ -216,22 +220,25 @@ cmd('su','/usr/bin','run a command with substitute user and group ID','su [optio
     else if(/^(-c|--command|-s|--shell|-g|--group|-G|--supp-group)$/.test(x)){
       if(i+1>=A.length){err("su: option requires an argument -- '"+(x.charAt(1)==='-'?x.charAt(2):x.charAt(1))+"'");err("Try 'su --help' for more information.");P.status(1);return}
       if(/^(-c|--command)$/.test(x))run=A[i+1];
+      else if(/^-[gG]|^--(group|supp)/.test(x))grp=true;
       i++;
     }
     else if((m=x.match(/^--command=(.*)$/)))run=m[1];
+    else if(/^--(group|supp-group)=/.test(x))grp=true;
     else if(x.charAt(0)==='-'&&x.length>1)continue;
     else if(who===null)who=x;
   }
   who=who||'root';
+  if(grp&&P.st.user!=='root'){err('su: only root can specify alternative groups');P.status(1);return}
   if(!known(who)){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');P.status(1);return}
-  if(P.st.user==='root'){if(run!=null)as(who,run);else nest(who,login);return} /* root is asked nothing */
+  if(P.st.user==='root'){if(run!=null)as(who,run,false,login);else nest(who,login);return} /* root is asked nothing */
   var piped=P.stdin(); /* a password piped in is read like a typed one */
   function tried(l){
     if(l===null||l===P.INT)return;
     var word=P.profile.rootPassword;
     if(who==='root'&&word&&P.fold(l)===P.fold(word)){
-      if(piped)P.typeLine('Password: '); /* the line stays open on a real one; every line ends here */
-      if(run!=null){as('root',run);return}
+      if(piped){err('Password: ');P.queue(function(){P.status(0)})} /* to the terminal, not the pipe. The line stays open on a real one; every line ends here */
+      if(run!=null){as('root',run,false,login);return}
       if(piped)return; /* the shell reads the rest of the pipe, finds nothing, and ends */
       if(P.rootHeld()){nest('root',login);return} /* under root already: one more shell */
       STK.push({say:login?'logout':'exit',base:true,from:P.st.user});
@@ -692,9 +699,10 @@ cmd(['systemctl'],'/usr/bin','Control the systemd system and service manager','s
   err('Unknown command verb \''+verb+'\'.');P.status(1);
 });
 function power(v){
-  if(P.st.user!=='root'){err('Failed to '+(v==='poweroff'?'power off':v==='hybrid-sleep'?'put system into hybrid sleep':v)+' system via logind: Interactive authentication required.');P.status(1);return}
+  var call='Call to '+{poweroff:'PowerOff',reboot:'Reboot',halt:'Halt',suspend:'Suspend',hibernate:'Hibernate','hybrid-sleep':'HybridSleep'}[v]+' failed: '; /* logind's D-Bus method */
+  if(v==='hibernate'||v==='hybrid-sleep'){err(call+'Not enough suitable swap space for hibernation available on compatible block devices and file systems.');P.status(1);return} /* it has no swap, and logind looks before it asks who you are */
+  if(P.st.user!=='root'){err(call+'Interactive authentication required.');P.status(1);return}
   var s=(since()/1000).toFixed(6).padStart(12); /* since() counts from the boot */
-  if(v==='hibernate'||v==='hybrid-sleep'){err('Failed to '+(v==='hibernate'?'hibernate':'put system into hybrid sleep')+' system via logind: Not enough suitable swap space for hibernation available on compatible block devices and file systems.');P.status(1);return} /* it has no swap */
   if(v==='suspend'){P.powerOff(['[  OK  ] Reached target sleep.target - Sleep.','         Starting systemd-suspend.service - System Suspend...','['+s+'] PM: suspend entry (deep)']);return} /* a key wakes it, as a reload */
   var T={halt:['systemd-halt.service - System Halt','halt.target - System Halt','System halted'],poweroff:['systemd-poweroff.service - System Power Off','poweroff.target - System Power Off','Power down'],
     reboot:['systemd-reboot.service - System Reboot','reboot.target - System Reboot','Restarting system']}[v];
