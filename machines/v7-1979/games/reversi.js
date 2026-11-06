@@ -135,8 +135,8 @@ P.command({names:['reversi'],run:function(a,raw,words){
       }
     }
     function number(s){var m=/^[ \t]*(-?[0-9]+)[ \t]*$/.exec(s);return m?parseInt(m[1],10):null}
-    io.onint=function(){io.print('\nMove: ');return true};
     for(;;){ /* a game */
+      io.onint=function(){io.print('\nMove: ');return true}; /* in play an interrupt asks again; at "Another game?" it ends the program, as under the simulator */
       fresh();
       if(restart){
         var S=file?P.saved('reversi/'+file):null;
@@ -211,6 +211,7 @@ P.command({names:['reversi'],run:function(a,raw,words){
         if(opening()?(CENTRE.indexOf(at)<0||B[at]):!flips(B,at>>3,at&7,YOU).length){io.print('Illegal!\n');continue}
         play(at);
       }
+      io.onint=null;
       for(;;){
         io.print('Another game? ');
         l=yield* io.gets();

@@ -26,7 +26,7 @@ P.program(function(S){
   var cv=document.createElement('canvas');paper.appendChild(cv);box.appendChild(paper);term.appendChild(box);
   var g=cv.getContext('2d'),img=null;
   var M={ /* the machine's state */
-    mode:128,vic:null,vdc:null,scr:null,basic:null,keys:[],stop:false,clock:0,t0:performance.now(),
+    mode:128,vic:null,vdc:null,scr:null,basic:null,keys:[],stop:false,stopAt:-1e9,clock:0,t0:performance.now(),
     border:13,bg:11,vdcBg:0,fast:false,blink:true,blinkAt:0,editing:null,ram:new Uint8Array(65536),sid:new Uint8Array(32),
     auto:''
   };
@@ -114,7 +114,7 @@ P.program(function(S){
       sc.r=keep[0];sc.c=keep[1];sc.rvs=keep[2];sc.quote=keep[3];
     },
     fast:function(on){M.fast=on;layout()},
-    sound:tone,
+    sound:tone,silence:function(){silence()},
     help:function(){help()}
   };
   function flushKeys(){ /* keys typed while BASIC was busy are typed now, as the real keyboard buffer does */
@@ -128,7 +128,7 @@ P.program(function(S){
     if(t==='FILL'){P.fillGlass(!P.fillGlass());ok();return true}
     if((m=/^SOUND (ON|OFF)$/.exec(t))){
       if(m[1]==='ON'&&!P.sound(true)){say('\r?NO SOUND HARDWARE\r');ok();return true}
-      if(m[1]==='OFF')P.sound(false);
+      if(m[1]==='OFF'){silence();P.sound(false)}
       say('\rKEYCLICKS '+m[1]+'.\r');ok();return true;
     }
     if((m=/^EFFECTS(?: (AUTO|FULL|LITE))?$/.exec(t))){
@@ -169,7 +169,7 @@ P.program(function(S){
       'DSAVE"NAME"      KEEP IT (IN THIS BROWSER)',
       'GO 64            BE A COMMODORE 64',
       'ESC THEN X       40 OR 80 COLUMNS',
-      'CTRL-C           RUN/STOP',
+      'CTRL-C (TWICE)   RUN/STOP (+RESTORE)',
       '',
       'FILL             BIGGER SCREEN',
       'SOUND ON|OFF     KEYCLICKS',
@@ -233,7 +233,7 @@ P.program(function(S){
     }
   }
   /* ---------- sound: SOUND, PLAY, and the SID registers as the type-ins poke them ---------- */
-  var AC=null,voices=[null,null,null],noise=null;
+  var AC=null,voices=[null,null,null],noise=null,tones=[]; /* tones: SOUND's and PLAY's, sounding or still to come */
   function audio(){
     if(!P.sound())return null;
     try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){return null}
@@ -257,6 +257,7 @@ P.program(function(S){
     gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(lv,t+.005);
     gn.gain.setValueAtTime(lv,t+Math.max(.006,secs-.02));gn.gain.linearRampToValueAtTime(0,t+secs);
     o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+secs+.05);
+    tones=tones.filter(function(x){return x.end>a.currentTime});tones.push({o:o,end:t+secs+.05});
   }
   function bell(){tone(1,1600,.12,2,15)}
   function sid(r){
@@ -273,7 +274,10 @@ P.program(function(S){
       o.connect(gn);gn.connect(a.destination);o.start();voices[vce]={o:o,g:gn,w:w};
     }else if(!gate&&cur){var c=cur;voices[vce]=null;try{c.g.gain.setTargetAtTime(0,AC.currentTime,.05);c.o.stop(AC.currentTime+.3)}catch(e){}}
   }
-  function silence(){voices.forEach(function(x,i){if(x){try{x.o.stop()}catch(e){}voices[i]=null}})}
+  function silence(){
+    voices.forEach(function(x,i){if(x){try{x.o.stop()}catch(e){}voices[i]=null}});
+    tones.forEach(function(x){try{x.o.stop()}catch(e){}});tones=[];
+  }
   /* ---------- the keyboard ---------- */
   function petscii(ch){ /* a typed character as the C64 keyboard would give it */
     var c=ch.charCodeAt(0),lower=M.scr.lower;
@@ -306,7 +310,12 @@ P.program(function(S){
   function key(k){ /* a key from the engine: characters, names, C-x */
     var p=-1;
     if(P.sound())P.click(.5);
-    if(k==='C-c'){var st=M.basic.state;if(st==='input')M.basic.stop();else M.stop=st==='run'||st==='wait';return}
+    if(k==='C-c'){ /* RUN/STOP; twice within a second, RUN/STOP and RESTORE: TRAP lets go */
+      var st=M.basic.state,now=performance.now();
+      if(now-M.stopAt<1000){M.basic.trap=M.basic.trap0=null;now=-1e9}
+      M.stopAt=now;
+      if(st==='input')M.basic.stop();else M.stop=st==='run'||st==='wait';return;
+    }
     if(/^C-[0-9]$/.test(k)){p=CTRLKEY[k.charAt(2)];}
     else if(k==='Enter')p=13;
     else if(k==='Backspace')p=20;

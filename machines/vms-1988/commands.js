@@ -62,6 +62,9 @@ function pick(spec){ /* the one file a spec means */
   if(!dir)return {S:S};
   return {S:S,dir:dir,e:versions(matches(S,dir),S)[0]};
 }
+function from(T,e){ /* an output spec: what it leaves out, or gives as *, is the input file's */
+  return Object.assign({},T,{name:!T.name||T.name==='*'?e.name:T.name,typ:!T.dot||T.typ==='*'?e.typ:T.typ,dot:true});
+}
 function fullSpec(S){return dirName(S.abs)+up(S.name+'.'+S.typ)+';'+(S.ver||'')}
 function nextVersion(dir,S){
   var v=0;
@@ -69,8 +72,9 @@ function nextVersion(dir,S){
   return v+1;
 }
 function writeNew(spec,lines){ /* a new version, never over the old one */
-  var S=parse(spec),dir=folder(S.abs);
+  var S=typeof spec==='string'?parse(spec):spec,dir=folder(S.abs);
   if(!dir){err('%RMS-F-DNF, directory not found');return false}
+  if(!S.name){err('%RMS-F-FNM, error in file name');return false} /* no name: a file DIR could not show */
   var v=S.ver&&S.ver!=='*'?+S.ver:nextVersion(dir,S),path=(S.abs==='/'?'':S.abs)+'/'+S.name+'.'+S.typ+';'+v;
   if(!P.writeFile(path,lines,false)){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return false}
   return v;
@@ -135,14 +139,14 @@ verb('copy',2,function(a){
   var r=pick(a[0]);
   if(!r.e){err('%COPY-E-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
   if(r.e.node.prot){err('%COPY-E-OPENIN, error opening '+fullSpec(r.S)+' as input',PRV);return}
-  writeNew(a[1],P.text(r.e.node));
+  writeNew(from(parse(a[1]),r.e),P.text(r.e.node));
 });
 verb('rename',3,function(a){
   if(a.length<2){P.typeLine('_From: ');return}
   var r=pick(a[0]);
   if(!r.e){err('%RENAME-E-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
-  var T=parse(a[1]),dir=folder(T.abs);
-  if(!dir||r.e.node.prot||!P.canWrite(P.pathOf(r.e.node))||!P.canWrite(P.pathOf(dir).replace(/\/$/,'')+'/x')){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
+  var T=from(parse(a[1]),r.e),dir=folder(T.abs);
+  if(!dir||r.e.node.prot||r.e.node.type==='d'||!P.canWrite(P.pathOf(r.e.node))||!P.canWrite(P.pathOf(dir).replace(/\/$/,'')+'/x')){err('%SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
   var v=nextVersion(dir,T),k=T.name+'.'+T.typ+';'+v,n=r.e.node;
   delete r.dir.kids[r.e.key];
   n.name=k;n.parent=dir;dir.kids[k]=n;

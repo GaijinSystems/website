@@ -1050,7 +1050,7 @@ P.command({names:['boggle'],run:function(a,raw,words){
     var r;
     try{r=G.next(v)}
     catch(e){
-      if(e!==EXIT)throw e;
+      if(e!==EXIT){stopTimer();throw e}
       finish();
       return;
     }

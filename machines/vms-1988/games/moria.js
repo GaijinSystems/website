@@ -268,7 +268,7 @@ function* shell_out(){$writeln('$ EOJ');put_qio()}
 var $fs=null;
 function $fsload(){
   if($fs)return $fs;
-  var v=P.saved('moria/files'),ok={};
+  var v=P.saved('moria/files'),ok=Object.create(null); /* no names from Object.prototype, whatever the storage holds */
   if(v&&typeof v==='object'&&!Array.isArray(v))
     Object.keys(v).forEach(function(k){
       var f=v[k];
@@ -277,7 +277,7 @@ function $fsload(){
     });
   return $fs=ok;
 }
-function $fssave(){P.save('moria/files',$fs)}
+function $fssave(){return P.save('moria/files',$fs)}
 /* a VMS file specification, as the file system would find it: no device or directory, no version, .DAT by default */
 function $fname(n){
   var s=String(n||'').trim().toUpperCase().replace(/^.*[:\]>]/,'').replace(/;.*$/,'');
@@ -314,9 +314,10 @@ function $fwrite(f,s,nl){
   f.w=true;f.st=0;
 }
 function $close(f){
+  var w=f.f&&f.w&&!f.del;
   if(f.f){
     if(f.del)delete $fs[f.name];
-    $fssave();
+    if(!$fssave()&&w){f.f=null;throw new $Fault('%PAS-F-ERRDURWRI, error during WRITE\n-RMS-F-FUL, device full (insufficient space for allocation)')} /* the browser's storage is full: said, not lost in silence */
   }
   f.f=null;f.st=0;
 }
@@ -22084,7 +22085,7 @@ P.command({names:['moria'],noHelpFlag:true,run:function(a,raw,words){
   },{tty:'moria',fit:[80,24]});
   P.queue(function(){
     if(last&&last.length)P.say(last);
-    if(fault)P.typeLine(fault,'err');
+    if(fault)fault.split('\n').forEach(function(l){P.typeLine(l,'err')});
   });
 }});
 })(window.Phosphor);

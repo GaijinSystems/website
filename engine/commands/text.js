@@ -245,7 +245,7 @@ function testExpr(w){
     var t=w[i];
     if(t==='!'){var r=one(i+1);return {v:!r.v,i:r.i}}
     if(/^-[frwdszn]$/.test(t)){
-      var x=w[i+1],n=x===undefined?null:P.find(x,true);
+      var x=w[i+1],n=x===undefined?null:P.named(x);
       if(t==='-z')return {v:!x,i:i+2};
       if(t==='-n')return {v:!!x,i:i+2};
       if(t==='-d')return {v:!!n&&n.type==='d',i:i+2};
@@ -301,7 +301,7 @@ cmd('set','print the shell variables','set','prints the variables the shell know
 });
 cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
-  var n=P.find(a[0],true),to=P.norm(a[1]||a[0].split('/').pop());
+  var n=P.named(a[0]),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
   if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
   var dir=P.find(P.dirOf(to),true);

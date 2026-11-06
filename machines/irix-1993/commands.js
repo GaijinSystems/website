@@ -6,8 +6,13 @@
 function cmd(name,what,syn,desc,run,where){
   P.command({names:[name],path:where||'/usr/bin',man:{what:what,syn:syn,desc:[desc]},run:run});
 }
-var count=0;
-P.setup(function(){P.setPrompt(function(){return P.st.hostname+' '+(++count)+'% '})});
+var count=0,seen=null;
+P.setup(function(){P.setPrompt(function(){ /* csh's \!: the next history event, so an empty line keeps the number */
+  var h=P.hist();
+  if(!seen||h.length!==seen.length||h.some(function(x,i){return x!==seen[i]}))count++;
+  seen=h;
+  return P.st.hostname+' '+count+'% ';
+})});
 
 cmd('uname','print the name of the system','uname [ -snrvma ]','prints what this machine calls itself. -a prints all of it.',function(a){
   var f=a.join(''),all={s:'IRIX',n:P.st.hostname,r:'4.0.5',v:'06151813',m:'IP17'},o=[];
@@ -16,7 +21,7 @@ cmd('uname','print the name of the system','uname [ -snrvma ]','prints what this
 },'/bin');
 cmd('hinv','hardware inventory','hinv','lists the hardware in this machine.',function(){
   P.say(['1 100 MHZ IP17 Processor','FPU: MIPS R4010 Floating Point Chip Revision: 0.0','CPU: MIPS R4000 Processor Chip Revision: 2.2',
-    'On-board serial ports: 2','On-board EPP/ECP parallel port','Data cache size: 8 Kbytes','Instruction cache size: 8 Kbytes','Secondary unified instruction/data cache size: 1 Mbyte','Main memory size: 256 Mbytes, 4-way interleaved',
+    'On-board serial ports: 2','Data cache size: 8 Kbytes','Instruction cache size: 8 Kbytes','Secondary unified instruction/data cache size: 1 Mbyte','Main memory size: 256 Mbytes, 4-way interleaved',
     'Integral Ethernet: ec0, version 1','Integral SCSI controller 0: Version WD33C93B, revision D','Disk drive: unit 1 on SCSI controller 0','Graphics board: VGX']);
 },'/bin');
 cmd('versions','list installed software','versions','lists the software installed on this machine.',function(){

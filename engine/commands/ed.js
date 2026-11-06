@@ -111,7 +111,7 @@ function Ed(name){
     else dot=Math.min(at,buf.length);
   }
   function loadFile(f){
-    var n=P.find(f,true);
+    var n=P.named(f);
     if(!n||n.type==='d'||n.prot)fail('cannot open input file');
     return P.text(n);
   }
@@ -235,6 +235,7 @@ function Ed(name){
       case 'w':case 'W':
         var to=arg||file;
         if(!to)fail('no current filename');
+        if(r.given)need(r,1,buf.length); /* 0,$w or 3,1w: no such lines */
         L=(r.given?buf.slice(r.a-1,r.b):buf).map(function(x){return x.t});
         if(!P.writeFile(to,L,c==='W'))fail('cannot open output file');
         if(!file)file=to;
@@ -295,7 +296,7 @@ function Ed(name){
     },true);
   }
   if(file){
-    var n0=P.find(file,true);
+    var n0=P.named(file);
     if(n0&&n0.type!=='d'&&!n0.prot){var T=P.text(n0);buf=wrap(T);dot=buf.length;P.typeLine(String(bytes(T)))}
     else{P.typeLine('?'+file);if(n0)lastErr='cannot open input file'}
   }

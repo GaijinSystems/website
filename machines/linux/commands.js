@@ -103,6 +103,7 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
   },{core:true,help:'change directory'});
 cmd('history','','display the command history','history [n]','lists the commands typed so far, numbered. with n, only the last n. !n runs number n again, and !! the last one.',function(a){
   var H=P.hist(),n=parseInt(a[0],10),from=n>=0?Math.max(0,H.length-n):0;
+  if(/^-[^-cdanrwps]/.test(a[0])){err('bash: history: '+a[0].slice(0,2)+': invalid option');err('history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]');P.queue(function(){P.status(2)});return} /* after the error lines, which set 1 as they go out */
   if(a[0]&&isNaN(n)){err('bash: history: '+a[0]+': numeric argument required');return}
   lines(H.slice(from).map(function(l,i){return String(from+i+1).padStart(5)+'  '+l}));
 });
@@ -156,7 +157,7 @@ cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
   'asks for the password of the user named, root if none is, and starts a shell as that user.',function(a){
   var who=a.filter(function(x){return x.charAt(0)!=='-'})[0]||'root';
-  if(['root',P.st.user,P.st.owner].indexOf(who)<0&&!P.find('/home/'+who,true)){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');return}
+  if(['root',P.st.user,P.st.owner].indexOf(who)<0&&(/^\.\.?$|\//.test(who)||!P.find('/home/'+who,true))){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');return}
   P.ask('Password: ',function(l){
     if(l===null||l===P.INT)return;
     var word=P.profile.rootPassword;
@@ -201,14 +202,18 @@ cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [
   var o=opts(a),num=o.has('n','number'),k=0,bad=false;
   function put(L){P.say(num?L.map(function(l){return String(++k).padStart(6)+'\t'+l}):L)}
   if(!o.ops.length){P.input([],put);return}
+  var kb=false; /* once - has read the keyboard, the rest waits for it */
   o.ops.forEach(function(x){
-    var n=x==='-'?null:P.find(x);
-    if(x==='-'){if(P.stdin())put(P.stdin());return}
-    if(!n||n.prot||n.type==='d'){err('cat: '+x+': '+why(n));bad=true;return}
-    if(n.bin)P.typeLine('\u007fELF^B^A^A^@^@^@^@^@^@^@^@^@^C^@>^@^A^@^@^@','dim');
-    else put(P.text(n));
+    function one(){
+      var n=P.find(x);
+      if(!n||n.prot||n.type==='d'){err('cat: '+x+': '+why(n));bad=true;return}
+      if(n.bin)P.typeLine('\u007fELF^B^A^A^@^@^@^@^@^@^@^@^@^C^@>^@^A^@^@^@','dim');
+      else put(P.text(n));
+    }
+    if(x==='-'){P.input([],put);if(!P.stdin())kb=true;return}
+    if(kb)P.queue(one);else one();
   });
-  if(bad)P.status(1);
+  if(kb)P.queue(function(){if(bad)P.status(1)});else if(bad)P.status(1);
 },{core:true,help:'print a file'});
 P.setup(function(){
   var rm=P.cmds.rm;
@@ -455,6 +460,7 @@ cmd('ip','/usr/bin','show / manipulate routing, network devices, interfaces and 
        '2: ens3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000','    link/ether '+D.mac+' brd ff:ff:ff:ff:ff:ff','    altname enp0s3']));
     return;
   }
+  if('neighbour'.indexOf(ob)===0||'neighbor'.indexOf(ob)===0){lines([D.gw+' dev ens3 lladdr 52:54:00:0d:3c:01 REACHABLE ']);return} /* the gateway: the only other host it has spoken to */
   if('route'.indexOf(ob)===0){lines(['default via '+D.gw+' dev ens3 proto static ','203.0.113.0/24 dev ens3 proto kernel scope link src '+D.ip4+' ']);return}
   err('Object "'+ob+'" is unknown, try "ip help".');P.status(1);
 });
@@ -642,7 +648,7 @@ function apt(a,get){
   if(!get&&verb==='list'){
     var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
-    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(/^(cowsay|fortunes|unattended)/.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
+    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
     return;
   }
   if(verb==='search'&&get!==true){
@@ -686,7 +692,7 @@ cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['i
   err('dpkg: error: need an action option');err('');err("Type dpkg --help for help about installing and deinstalling packages [*];");err("Use 'apt' or 'aptitude' for user-friendly package management;");err('Type dpkg -Dhelp for a list of dpkg debug flag values;');err('Type dpkg --force-help for a list of forcing options;');err('Type dpkg-deb --help for help about manipulating *.deb files;');err('');err("Options marked [*] produce a lot of output - pipe it through 'less' or 'more' !");P.status(2);
 });
 
-var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes-min)$/; /* packages that are the same on every architecture */
+var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes|fortunes-min)$/; /* packages that are the same on every architecture */
 /* fastfetch: trixie's system summary (neofetch is no longer packaged). The logo is drawn for this terminal */
 var SWIRL=['        .-""""""-.','      .\'  .--.   \'.','     /   /    \\    \\','    |   |   ()|    |','    |   |    .\'   /','     \\   \'--\'   .\'','      \'.      .\'','        \'-.  \'','           \'-.','              \'.'];
 cmd('fastfetch','/usr/bin','A fast and feature-rich system information tool similar to neofetch','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){

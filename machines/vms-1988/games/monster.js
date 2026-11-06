@@ -186,7 +186,7 @@ function $drive(G,onend){
 }
 function $program(){
 /* ---------- guts.pas, and the database files, by hand. Solo: nothing else writes to these. ---------- */
-var old_prompt='',line='',seed={v:0},$fresh=false,$dirty={},$files={},$warned=false,$ints=0,$gone=false,$leaving=false;
+var old_prompt='',line='',seed={v:0},$fresh=false,$dirty={},$files={},$last={},$warned=false,$ints=0,$gone=false,$leaving=false;
 function random(){return $mth_random(seed)}
 function rnd100(){return $round($mth_random(seed)*100)} // random int between 0 & 100, maybe
 function setup_guts(){seed.v=$clock();old_prompt=''}
@@ -265,6 +265,7 @@ function $open(f,name,kw){
   $files[f.key]=f;
   if(kw&&kw.history==='new'){f.text=[];return}
   var d=P.saved('monster/'+f.key);
+  $last[f.key]=d; /* what storage holds: put back if a flush fails, so it need not be read again at every prompt */
   if(d===null||d===undefined){$fresh=true;return}
   try{
     if(typeof d!=='object')throw 0;
@@ -279,16 +280,17 @@ function $open(f,name,kw){
 function $flush(){ /* all the changed files, or none: half a world, saved, would not load */
   var done=[],ok=true;
   for(var k in $dirty){
-    var f=$files[k],o={},was=P.saved('monster/'+k);
+    var f=$files[k],o={},was=P.has($last,k)?$last[k]:P.saved('monster/'+k);
     for(var n in f.recs)o[n]=$enc(f.recs[n]);
     if(!P.save('monster/'+k,o)){ok=false;break}
-    done.push([k,was]);
+    done.push([k,was,o]);
   }
   if(!ok){ /* put back what went, and keep it all to try again: never half a world */
     done.forEach(function(d){P.save('monster/'+d[0],d[1]===undefined?null:d[1])});
     if(!$warned){$warned=true;$writeln('%warning- this browser would not save the Monster world')}
     return;
   }
+  done.forEach(function(d){$last[d[0]]=d[2]});
   $dirty={};
 }
 function $roomfor(f,n){ /* how many more records this browser's storage can hold, with room to spare for everything else */

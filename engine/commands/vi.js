@@ -33,7 +33,8 @@ function Vi(name,S){
   function info(){return '"'+(file||'No file')+'"'+(dirty?' [Modified]':'')+' line '+(r+1)+' of '+L.length+' --'+Math.floor(100*(r+1)/L.length)+'%--'}
   function fileInfo(f){return '"'+f+'" '+L.length+' line'+(L.length===1?'':'s')+', '+L.reduce(function(a,t){return a+t.length+1},0)+' characters'}
   function load(f){
-    var n=P.find(f,true);
+    var n=P.named(f);
+    if(!n&&P.find(f,true))n={prot:true}; /* behind a locked folder: there, and not to be read */
     if(n&&n.type==='d'){msg='"'+f+'" Is a directory';return}
     if(n&&n.prot){msg='"'+f+'" Permission denied';return}
     if(!n){L=[''];r=c=top=0;dirty=false;file=f;msg='"'+f+'" [New file]';return}
@@ -296,7 +297,8 @@ function Vi(name,S){
   function insertKey(k){
     if(k==='Escape'||k==='C-['){
       mode='cmd';
-      if(insCount>1&&insKeys&&typed.length){
+      if(insCount>1&&insKeys&&typed.length*(insCount-1)>MAXTEXT)bell(); /* 99999i: the bell, and only what was typed */
+      else if(insCount>1&&insKeys&&typed.length){
         var more=typed.join('').repeat(insCount-1),t=line();
         L[r]=t.slice(0,c)+more+t.slice(c);c+=more.length;
       }
@@ -392,7 +394,7 @@ function Vi(name,S){
         if(dirty&&!bang){msg='No write since last change (:edit! overrides)';return}
         load(arg.trim()||file);return;
       case 'r':case 'read':{
-        var n=P.find(arg.trim()||file,true);
+        var n=P.named(arg.trim()||file);
         if(!n||n.type==='d'||n.prot){msg='"'+arg.trim()+'" No such file or directory';return}
         snap();
         var T=P.text(n);

@@ -124,7 +124,7 @@ function create(story,io,seed){
     if(mem[x+6]===o)wb(x+6,sib);
     else{
       x=mem[x+6];
-      while(x&&mem[obj(x)+5]!==o)x=mem[obj(x)+5];
+      for(var n=0;x&&mem[obj(x)+5]!==o;n++){if(n>255)throw bad('object tree loop');x=mem[obj(x)+5]} /* 255 objects at most: more is a loop */
       if(x)wb(obj(x)+5,sib);
     }
     wb(a+4,0);wb(a+5,0);

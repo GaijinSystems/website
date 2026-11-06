@@ -187,9 +187,9 @@ P.command({names:['su'],path:'/bin',
 
 /* the ways to stop a machine: Berkeley had halt; before that, you synced and threw the switch */
 P.command({names:['halt'],path:'/etc',enabled:function(p){return p.csh},
-  man:{what:'stopping the processor',syn:'halt [ -n ] [ -q ] [ -y ]',desc:['writes out what is in memory and stops the processor. only the super-user may do it.']},
+  man:{what:'stop the processor',syn:'halt [ -n ] [ -q ] [ -y ]',desc:['writes out what is in memory and stops the processor. only the super-user may do it.']},
   run:function(){
-    if(P.st.user!=='root'){P.typeLine('reboot: Not owner','err');return}
+    if(P.st.user!=='root'){P.typeLine("reboot: can't idle init",'err');return} /* 4.3BSD's halt.c: its first kill(1, SIGTSTP) is refused */
     P.powerOff(['syncing disks... done','halting']);
   }});
 var syncs=0;
@@ -201,7 +201,7 @@ P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<
   }});
 
 P.command({names:['rm'],path:'/bin',
-  man:{what:'remove files',syn:'rm [ -fri ] file ...',desc:[
+  man:{what:'remove files',syn:'rm [ -r ] file ...',desc:[
     'removes each file named. -r also removes folders and everything in them. you can only remove what is in your own home folder or in /tmp, and only until the terminal is switched off: a reload puts it all back.']},
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;

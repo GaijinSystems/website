@@ -15,7 +15,7 @@ P.command({names:['help'],core:true,terminal:true,
 
 P.command({names:['man'],core:true,help:'the manual',
   man:{what:'print the manual',syn:'man name',desc:[
-    'prints the manual page for name. with no name, the same as help.']},
+    'prints the manual page for name. with no name, lists the commands, as help does; berkeley\'s man just says how to use it.']},
   run:function(a){
     if(!a[0]){
       if(P.profile.perror){P.typeLine('Usage: man [ section ] name ...');return}
@@ -56,9 +56,9 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
   }});
 
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
-  man:{what:'echo arguments',syn:'echo [ arg ... ]',desc:[
-    'prints its arguments, separated by spaces.']},
-  run:function(a,raw,words){P.typeLine(words.slice(1).join(' '))}});
+  man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
+    'prints its arguments, separated by spaces. -n would leave the line open; here every line ends.']},
+  run:function(a,raw,words){P.typeLine(words.slice(words[1]==='-n'?2:1).join(' '))}});
 
 P.command({names:['clear'],core:true,help:'clear the screen',
   man:{what:'clear the screen',syn:'clear',desc:[

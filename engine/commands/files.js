@@ -14,7 +14,7 @@
 'use strict';
 
 P.command({names:['ls'],core:true,help:'list files',path:'/bin',
-  man:{what:'list contents of directory',syn:'ls [ -la ] [ name ... ]',desc:[
+  man:{what:'list contents of directory',syn:'ls [ -lad ] [ name ... ]',desc:[
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
     '-l   long listing: mode, links, owner, size in bytes and the time of last change.',

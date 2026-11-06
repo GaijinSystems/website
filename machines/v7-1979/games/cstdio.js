@@ -25,6 +25,7 @@ P.etcrand=function(){
 };
 /* run the program; body(io) is a generator. io.print writes (a line is sent when its newline comes); yield* io.getc()
    gives one character, or null at the end of the input; yield* io.gets() a line without its newline, or null.
+   io.drain() throws away whatever input is waiting.
    io.onint: what the interrupt does: return true to read on, false or nothing to stop. No handler stops the program. */
 P.cprog=function(body){
   var out='',line='',pos=0,pipe=P.stdin(),np=0,gen,io={
@@ -42,6 +43,7 @@ P.cprog=function(body){
       }
       return line.charAt(pos++);
     },
+    drain:function(){line='';pos=0;if(pipe)np=pipe.length}, /* 4.3BSD wump's drain(): what is waiting to be read is thrown away */
     gets:function*(){
       var s='',c;
       while((c=yield* io.getc())!==null&&c!=='\n')s+=c;
@@ -56,7 +58,7 @@ P.cprog=function(body){
   function wait(){ /* the part line goes up as the prompt; an interrupt the program survives leaves it waiting for the same line */
     var p=out;out='';
     P.ask(p,function(l){
-      if(l===P.INT){if(io.onint&&io.onint())wait();else finish();return}
+      if(l===P.INT){if(io.onint&&io.onint())wait();else{finish();P.status(130)}return} /* killed by the signal: the shell's 0200+2 */
       step(l);
     },true);
   }

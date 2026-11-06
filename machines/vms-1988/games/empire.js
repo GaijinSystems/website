@@ -156,7 +156,9 @@ OR FOR ANY CLAIM BY ANY OTHER PARTY.
 
    Differences from the source: 4.3BSD's rand and curses behaviour, as on the machines it was written for; make_map's
    count no longer reads one cell past its row (that read depends on memory layout); empsave.dat, empmovie.dat and the
-   map printout are records in this browser's storage or files on this machine, checked when read; screen colours
+   map printout are records in this browser's storage or files on this machine, checked when read (empsave.dat is
+   listed in [GUEST] as EMPSAVE.DAT;1, and deleting it starts a new game; the movie is written every tenth round and
+   at the end); -S below 1 is refused, where the source would divide by it; map making lets ^C in; screen colours
    (added in 2000) are left out; between auto-mode rounds it lets the keyboard in, where the source would spin; the two kermyt debugging logs are gone;
    ^C ends the game where it stands, as an uncaught interrupt does. The screen's size is taken at the start, as curses
    does, never less than 24 by 80; on a smaller glass what fits is shown from the top left corner.
@@ -408,7 +410,7 @@ function* getstr(){
     var c=yield {key:true,line:true};
     if(c==='\n')break;
     if(c==='\b'){
-      if(b){b=b.slice(0,-1);$cx--;$scr[$cy][$cx]=' ';$cur[$cy][$cx]=' '}
+      if(b){b=b.slice(0,-1);if($cx>0)$cx--;else if($cy>y){$cy--;$cx=COLS-1}$scr[$cy][$cx]=' ';$cur[$cy][$cx]=' '} /* back over a wrap too */
       $cury=$cy;$curx=$cx;$show();
       continue;
     }
@@ -485,11 +487,16 @@ function save_game(){
     rec.obj.push([i,o.owner,o.type,o.loc,o.func,o.hits,o.moved,o.count,o.range,o.ship?object.indexOf(o.ship):-1]);
   });
   if(!P.save('empire/save',rec)){topmsg(3,"Cannot save empsave.dat",0,0,0,0,0,0,0,0);return}
+  var n=P.find($SAVEAT,true),size=JSON.stringify(rec).length; /* the file in [GUEST] that stands for the record: DELETE it for a new game */
+  if(n){n.date=P.now();n.size=size}
+  else P.put($SAVEAT,'f',{owner:'guest',date:P.now(),bin:true,size:size});
   topmsg(3,"Game saved.",0,0,0,0,0,0,0,0);
 }
+var $SAVEAT='/guest/empsave.dat;1';
 function $int(v,lo,hi){return Number.isInteger(v)&&v>=lo&&v<=hi}
 function $restore(){
   var r=P.saved('empire/save'),i;
+  if(r&&!P.find($SAVEAT,true)){P.save('empire/save',null);return false} /* EMPSAVE.DAT was deleted */
   if(!r||typeof r!=='object')return false;
   function str(x){return typeof x==='string'&&x.length===MAP_SIZE}
   function seen(x){return Array.isArray(x)&&x.length===MAP_SIZE&&x.every(function(v){return Number.isInteger(v)})}
@@ -497,11 +504,11 @@ function $restore(){
   if(!Array.isArray(r.city)||r.city.length!==NUM_CITY||!Array.isArray(r.obj)||r.obj.length>LIST_SIZE)return false;
   for(i=0;i<NUM_CITY;i++){
     var c=r.city[i];
-    if(!Array.isArray(c)||!$int(c[0],0,MAP_SIZE-1)||!$int(c[1],0,2)||!Array.isArray(c[2])||c[2].length!==NUM_OBJECTS||!c[2].every(function(v){return Number.isInteger(v)})||!Number.isInteger(c[3])||!(c[4]===NOPIECE||$int(c[4],0,NUM_OBJECTS-1)))return false;
+    if(!Array.isArray(c)||!$int(c[0],0,MAP_SIZE-1)||!$int(c[1],0,2)||!Array.isArray(c[2])||c[2].length!==NUM_OBJECTS||!c[2].every(function(v){return $int(v,MOVE_NW,MAP_SIZE-1)})||!Number.isInteger(c[3])||!(c[4]===NOPIECE||$int(c[4],0,NUM_OBJECTS-1)))return false;
   }
   for(i=0;i<r.obj.length;i++){
     var o=r.obj[i];
-    if(!Array.isArray(o)||o.length!==10||!$int(o[0],0,LIST_SIZE-1)||!$int(o[1],0,2)||!$int(o[2],0,NUM_OBJECTS-1)||!$int(o[3],0,MAP_SIZE-1)||!Number.isInteger(o[4])||!$int(o[5],0,1000)||!Number.isInteger(o[6])||!$int(o[7],0,1000)||!Number.isInteger(o[8])||!$int(o[9],-1,LIST_SIZE-1))return false;
+    if(!Array.isArray(o)||o.length!==10||!$int(o[0],0,LIST_SIZE-1)||!$int(o[1],0,2)||!$int(o[2],0,NUM_OBJECTS-1)||!$int(o[3],0,MAP_SIZE-1)||!$int(o[4],MOVE_NW,MAP_SIZE-1)||!$int(o[5],0,1000)||!Number.isInteger(o[6])||!$int(o[7],0,1000)||!Number.isInteger(o[8])||!$int(o[9],-1,LIST_SIZE-1))return false;
   }
   if(!['date','automove','resigned','debug','win','save_movie','user_score','comp_score'].every(function(k){return Number.isInteger(+r[k])}))return false;
   for(i=0;i<MAP_SIZE;i++){
@@ -527,15 +534,24 @@ function save_movie_screen(){ /* one screen of the movie per round; old rounds g
     }
   }
   mapbuf=b;
-  var m=P.saved('empire/movie');
-  if(!Array.isArray(m))m=[];
+  var m=$movieGet();
   m.push(b.join(''));
-  if(m.length>200)m=m.slice(-200); /* the last 200 rounds: the storage is shared with every other game */
-  while(m.length&&!P.save('empire/movie',m))m.shift();
+  if(m.length>200)m.splice(0,m.length-200); /* the last 200 rounds: the storage is shared with every other game */
+  if(++$movieDirty>=10)$movieFlush(); /* written every tenth round, and when the game ends */
+}
+var $movie=null,$movieDirty=0;
+function $movieGet(){
+  if(!$movie){$movie=P.saved('empire/movie');if(!Array.isArray($movie))$movie=[]}
+  return $movie;
+}
+function $movieFlush(){
+  if(!$movieDirty)return;
+  $movieDirty=0;
+  while($movie.length&&!P.save('empire/movie',$movie))$movie.shift();
 }
 function* replay_movie(){ // Replay a movie.
-  var m=P.saved('empire/movie'),row_inc,col_inc,r,c,rd=0,i;
-  if(!Array.isArray(m))return;
+  var m=$movieGet(),row_inc,col_inc,r,c,rd=0,i;
+  if(!m.length)return;
   clear_screen();
   for(i=0;i<m.length;i++){
     if(typeof m[i]!=='string'||m[i].length!==MAP_SIZE)break;
@@ -579,6 +595,7 @@ function $mainargs(words){ /* main.c: its options, and its checks */
   if(w<10||w>90)return "empire: -w argument must be in the range 0..90.";
   if(s<0)return "empire: -s argument must be greater or equal to zero.";
   if(d<0||d>30000)return "empire: -d argument must be in the range 0..30000.";
+  if(Sf<1)return "empire: -S argument must be greater than zero."; /* the source has no check, and divides by it */
   SMOOTH=s;WATER_RATIO=w;delay_time=d;save_interval=Sf;
   /* compute min distance between cities */
   var land=$div(MAP_SIZE*(100-WATER_RATIO),100); /* available land */
@@ -2603,15 +2620,17 @@ function* init_game(){
       free_list=obj;
     };
   }
-  make_map();
+  (yield*make_map());
   /* make land and water */
   do{
+    (yield*napms(0));
+    /* a map with too little land can never be settled: let ^C in */
     for(i=0;i<MAP_SIZE;i++){
       /* remove cities */
       if(map[i].contents=='*')map[i].contents='+';
       /* land */
     }
-    place_cities();
+    (yield*place_cities());
     /* place cities on map */
   }while(!(yield*select_cities()));
   /* choose a city for each player */
@@ -2630,7 +2649,7 @@ at program start up.
 /* these arrays give some compilers problems when they are automatic */
 var height=$A(2,()=>$Z(MAP_SIZE));
 var height_count=$Z(MAX_HEIGHT + 1);
-function make_map(){
+function* make_map(){
   var from,to,k;var i,j,sum,loc;
   for(i=0;i<MAP_SIZE;i++)
   /* fill map with random sand */
@@ -2639,13 +2658,17 @@ function make_map(){
   to=1;
   for(i=0;i<SMOOTH;i++){
     /* smooth the map */
-    for(j=0;j<MAP_SIZE;j++){
-      sum=height[from][j];
-      for(k=0;k<8;k++){
+    if(i%50==49)(yield*napms(0));
+    /* a long smooth lets the glass and ^C in */
+    for(j=0;
+    j<MAP_SIZE;
+    j++){
+      sum=height[from][j];for(k=0;
+      k<8;
+      k++){
         loc=j+dir_offset[k];
         /* edges get smoothed in a wierd fashion */
-        if(loc<0||loc>=MAP_SIZE)loc=j;
-        sum+=height[from][loc];
+        if(loc<0||loc>=MAP_SIZE)loc=j;sum+=height[from][loc];
       }
       height[to][j]=$div(sum,9);
     }
@@ -2654,18 +2677,12 @@ function make_map(){
     to=from;from=k;
   }
   /* count the number of cells at each height */
-  for(i=0;
-  i<=MAX_HEIGHT;
-  i++)height_count[i]=0;
-  for(i=0;
-  i<MAP_SIZE;
-  i++)height_count[height[from][i]]++;
+  for(i=0;i<=MAX_HEIGHT;i++)height_count[i]=0;
+  for(i=0;i<MAP_SIZE;i++)height_count[height[from][i]]++;
   /* find the water line */
   loc=MAX_HEIGHT;
   /* default to all water */
-  sum=0;for(i=0;
-  i<=MAX_HEIGHT;
-  i++){
+  sum=0;for(i=0;i<=MAX_HEIGHT;i++){
     sum+=height_count[i];if($div(sum*100,MAP_SIZE)>WATER_RATIO&&sum>=NUM_CITY){
       loc=i;
       /* this is last height that is water */
@@ -2694,26 +2711,24 @@ for a city, we remove land cells which are too close to the city.
 */
 /* avoid compiler problems with large automatic arrays */
 var land=$Z(MAP_SIZE);
-function place_cities(){
+function* place_cities(){
   var placed,i,loc;var num_land;
   num_land=0;
   /* nothing in land array yet */
   placed=0;
   /* nothing placed yet */
   while(placed<NUM_CITY){
-    while(num_land==0)num_land=regen_land(placed);
+    while(num_land==0){
+      (yield*napms(0));num_land=regen_land(placed);
+    }
+    /* no land off the edge: it would look for ever */
     i=irand(num_land-1);
     /* select random piece of land */
-    loc=land[i];
-    city[placed].loc=loc;
-    city[placed].owner=UNOWNED;
-    city[placed].work=0;
-    city[placed].prod=NOPIECE;
-    for(i=0;i<NUM_OBJECTS;i++)city[placed].func[i]=NOFUNC;
+    loc=land[i];city[placed].loc=loc;city[placed].owner=UNOWNED;city[placed].work=0;city[placed].prod=NOPIECE;for(i=0;
+    i<NUM_OBJECTS;
+    i++)city[placed].func[i]=NOFUNC;
     /* no function */
-    map[loc].contents='*';
-    map[loc].cityp=(city[placed]);
-    placed++;
+    map[loc].contents='*';map[loc].cityp=(city[placed]);placed++;
     /* Now remove any land too close to selected land. */
     num_land=remove_land(loc,num_land);
   }
@@ -5536,12 +5551,13 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
   if(msg){P.say([msg]);return}
   P.program(function(S,done){
     var G,over=false,timer=null,waiting=null;
-    S0=S;
+    S0=S;$movie=null;$movieDirty=0;
     LINES=S.rows<24?24:S.rows;COLS=S.cols<80?80:S.cols;
     $scr=$blank();$cur=$blank();$cy=$cx=$cury=$curx=$oy=$ox=0;$qk=[];$echo=false;
     function quit(){
       if(over)return;
       over=true;
+      $movieFlush();
       if(timer)S.cancel(timer);
       S0=null;
       S.close();

@@ -73,12 +73,12 @@ C.disk=function(P){
   add('READ','PRG',prg(READER,false));
   var seen={};
   (pr.files||[]).forEach(function(f){
-    var n=pet(f.name.replace(/^\/+/,''),false).slice(0,16);
+    var n=pet(f.name.replace(/^\/+/,''),false).replace(/[,:*?=]/g,'-').slice(0,16); /* what a name on the disk cannot have */
     if(!n||seen[n])return;seen[n]=1;
     add(n,'SEQ',seq(f.body,lower));
   });
   (pr.protected||[]).forEach(function(p){
-    var n=pet(p.replace(/\/+$/,''),false).slice(0,16);
+    var n=pet(p.replace(/\/+$/,''),false).replace(/[,:*?=]/g,'-').slice(0,16);
     if(!n||seen[n])return;seen[n]=1;
     add(n,'SEQ',new Uint8Array(1800),{prot:true});
   });

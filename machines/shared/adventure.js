@@ -1011,10 +1011,15 @@ function Adventure(resume){
       write('Please answer the question.\n');
     }
   }
+  function fits(G){ /* a save this game can take up: its version, and every table the size it has now */
+    var T={place:place,prop:prop,links:links,atloc:atloc,fixed:fixed,hinted:hinted,dseen:dseen,dloc:dloc,odloc:odloc,tk:tk};
+    return G&&G.v===FORMAT&&Number.isFinite(G.when)&&Array.isArray(G.n)&&G.n.length===39&&
+      Object.keys(T).every(function(k){return Array.isArray(G[k])&&G[k].length===T[k].length});
+  }
   function* restore(name){ /* the wait, and the wizard who can waive it */
     var G=P.saved('adventure/'+name);
     if(!G){write("adventure: can't open file\n");exit()}
-    if(G.v!==FORMAT){rspeak(202);exit()}
+    if(!fits(G)){rspeak(202);P.save('adventure/'+name,null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
     var delay=Math.floor(Date.now()/60000)-Math.floor(G.when/60000); /* whole clock minutes, as datime() counts */
     if(delay<latency){
       write('This adventure was suspended a mere '+delay+' minute'+(delay===1?'':'s')+' ago.');

@@ -51,11 +51,15 @@ function out(c){ /* COUT through DOS: a control-D after a return starts a DOS co
   c&=0x7F;
   if(DOS.cap!==null){
     if(c===13){DOS.pend=DOS.cap;DOS.cap=null;DOS.lastCR=true}
-    else DOS.cap+=String.fromCharCode(c);
+    else if(DOS.cap.length<255)DOS.cap+=String.fromCharCode(c); /* the line buffer's length; past it the real DOS goes astray */
     return;
   }
   if(c===4&&DOS.lastCR&&DOS.on){DOS.cap='';return}
-  if(DOS.w){var f=DOS.w;f.d=(f.d||'')+(c===13?'\r':String.fromCharCode(c));DOS.lastCR=c===13;f.dirty=true;return}
+  if(DOS.w){
+    var f=DOS.w;
+    if((f.d||'').length%256===0&&used()+1>496){DOS.w=null;saveDisk();throw {dos:9}} /* a new sector, and none free */
+    f.d=(f.d||'')+(c===13?'\r':String.fromCharCode(c));DOS.lastCR=c===13;f.dirty=true;return;
+  }
   screenOut(c);
   DOS.lastCR=c===13;
 }
@@ -302,7 +306,7 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
   case 'BSAVE':
     if(D.opt.A===undefined||D.opt.L===undefined)throw {dos:11};
     var b=Array.prototype.slice.call(mem.subarray(D.opt.A,D.opt.A+D.opt.L));
-    if(f){if(f.l)throw {dos:10};if(f.t!=='B')throw {dos:13};f.d={a:D.opt.A,b:b}}
+    if(f){if(f.l)throw {dos:10};if(f.t!=='B')throw {dos:13};var kb=f.d;f.d={a:D.opt.A,b:b};if(used()>496){f.d=kb;throw {dos:9}}}
     else addFile({n:D.name,t:'B',l:false,d:{a:D.opt.A,b:b}});
     saveDisk();return 'ok';
   case 'OPEN':
@@ -544,7 +548,7 @@ function afterDos(r,inProg,then){ /* what a DOS command left to do: wait, run, b
   }
   then();
 }
-var slowUntil=0;
+var slowUntil=0,lastBrk=-1e9;
 function runBasic(){
   var sp=basic.speed();
   if(sp<255&&performance.now()<slowUntil)return;
@@ -590,7 +594,12 @@ function sleep(ms,f){sleepUntil=performance.now()+ms;sleepCb=f;mode='sleep'}
 /* the machine around BASIC */
 var MACH={
   out:out,ch:function(){return mem[CH]},tab:function(n){mem[CH]=Math.min(n,mem[WW]-1)},bell:bell,
-  broken:function(){if(brkFlag){brkFlag=false;if(kq[0]===3)kq.shift();return true}return false},
+  broken:function(){ /* a second ^C within a second gets past ONERR, as reset would */
+    if(!brkFlag)return false;
+    brkFlag=false;if(kq[0]===3)kq.shift();
+    var t=performance.now(),hard=t-lastBrk<1000;lastBrk=t;
+    return hard?'hard':true;
+  },
   home:home,
   htab:function(n){var x=n-1;while(x>=mem[WW]){x-=mem[WW];lf()}mem[CH]=x},
   vtab:function(n){mem[CV]=Math.max(mem[WT],Math.min(n-1,mem[WB]-1))},
@@ -716,7 +725,7 @@ function boot(){
     say('\r\r]');cr();
     var f=findFile('HELLO');
     if(f&&f.t==='A'){basic.load(f.d||[]);basic.run();mode='run';return}
-    if(f&&f.t==='B'){afterDos({cpu:f.d.a},false,prompt);return}
+    if(f){dosMessage(13);basicPrompt();return} /* DOS RUNs the greeting: a binary or text HELLO is a FILE TYPE MISMATCH */
     prompt();
   });
 }
