@@ -269,7 +269,7 @@ verb('logout',2,function(a,q){
   P.logout();
 });
 verb('run',2,function(a){
-  if(!a[0]){P.ask('_File: ',function(l){if(l&&l!==P.INT&&l.trim())V.run.run([l.trim()],[],l.trim())},true);return} /* DCL asks for what it needs */
+  if(!a[0]){(function again(){P.ask('_File: ',function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}V.run.run([l.trim()],[],l.trim())},true)})();return} /* DCL asks for what it needs, until it gets it */
   if(/[*%]/.test(a[0])){err('%DCL-W-ACTIMAGE, error activating image '+up(a[0]));err('-RMS-F-WLD, invalid wildcard operation');return}
   var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec.replace(/(;\d*)?$/,'.exe$1')); /* MORIA;1 is MORIA.EXE;1 */
   if(spec&&r.S.name&&r.e&&r.S.abs==='/games'){

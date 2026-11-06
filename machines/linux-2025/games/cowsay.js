@@ -47,7 +47,7 @@ P.command({names:['cowsay','cowthink'],run:function(a,raw,w){
     }
     if(x==='-n'){keep=true;continue}
     if(/^-[bdgpstwy]$/.test(x)){eyes=MODES[x.charAt(1)][0];tongue=MODES[x.charAt(1)][1];continue}
-    if(x==='-h'){P.typeLine('cow{say,think} version 3.03, (c) 1999 Tony Monroe');P.typeLine(P.man.cowsay.syn.replace(/^cowsay/,'Usage: cowsay'));return}
+    if(x==='-h'){P.typeLine('cow{say,think} version 3.03, (c) 1999 Tony Monroe');P.typeLine('Usage: cowsay [-bdgpstwy] [-h] [-e eyes] [-f cowfile] ');P.typeLine('          [-l] [-n] [-T tongue] [-W wrapcolumn] [message]');return}
     P.typeLine('Unknown option: '+x.slice(1),'err');return;
   }
   var pic=cow(file);

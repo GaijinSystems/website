@@ -4,7 +4,7 @@
 (function(P){
 'use strict';
 function usage(){
-  P.say(['FROTZ V2.54 - Interpreter for Infocom and Inform games.','Complies with standard 1.1 of the Z-Machine Specification.','',
+  P.say(['FROTZ V2.55 - Curses interface.  Audio output enabled.','An interpreter for all Infocom and other Z-Machine games.','Complies with standard 1.1 of the Z-Machine Specification.','',
     'Syntax: frotz [options] story-file','  -s #   random number seed','  -v     show version information','  -h #   screen height  -w #   screen width (accepted; the screen decides)','',
     'Story files are looked for in the working directory, then in the directories in INFOCOM_PATH.']);
 }
@@ -19,7 +19,7 @@ P.command({names:['frotz'],run:function(a,raw,w){
   var args=w.slice(1),file=null;
   for(var i=0;i<args.length;i++){
     var x=args[i];
-    if(x==='-v'){P.say(['FROTZ V2.54','Complies with standard 1.1 of the Z-Machine Specification.']);return}
+    if(x==='-v'){P.say(['FROTZ V2.55','Complies with standard 1.1 of the Z-Machine Specification.']);return}
     if(/^-[shw]$/.test(x)){i++;continue}
     if(/^-./.test(x)){P.typeLine('frotz: unknown option '+x,'err');usage();P.status(1);return}
     if(!file)file=x;

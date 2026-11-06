@@ -112,8 +112,15 @@ function pickMachine(){
   var want=(setting('machines')||'').split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean).filter(known);
   PH.allowed=want.length?want:all;
   var def=(setting('machine')||'').toLowerCase(),asked=(new URLSearchParams(location.search).get('machine')||'').toLowerCase();
+  if(def==='random')def=PH.allowed.indexOf(asked)>=0?'':randomMachine(); /* an address that names one wins, and leaves the pick alone */
   if(def&&PH.allowed.indexOf(def)<0){PH.early.push('machine: "'+def+'" is not one of the machines allowed');def=''}
   PH.machine=PH.allowed.indexOf(asked)>=0?asked:def||PH.allowed[0];
+  function randomMachine(){ /* machine: random. One pick per browser tab, so a reload is a reboot of the same machine */
+    var k='phosphor-9/machine',m=null;
+    try{m=sessionStorage.getItem(k)}catch(e){}
+    if(PH.allowed.indexOf(m)<0){m=PH.allowed[Math.floor(Math.random()*PH.allowed.length)];try{sessionStorage.setItem(k,m)}catch(e){}}
+    return m;
+  }
   return PH.machine;
 }
 function loadMachine(id,done){ /* in order; a file that fails to load is named on the glass later */
@@ -1359,6 +1366,7 @@ function runStmt(st){
 }
 function runScript(lines,args){ /* a script: a tree of statements, inside the current step */
   var keep=ARGS,keepSub=SUB,tree,ran=false;
+  if(PROFILE.bash)lines=lines.map(dollarParen); /* $(cmd) in a script too */
   if(!PROFILE.dos){
     try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
     catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
@@ -1509,8 +1517,10 @@ function submit(){
   if(MODE==='password'){PENDROOT=null;pause(1400);typeLine(PROFILE.loginFailed);prompt(PROFILE.loginPrompt,'login');return}
   if((PROFILE.csh||PROFILE.bash)&&/!/.test(cmd)){ /* !! the last command, !n that one, !word the last that began so */
     var bad=null,had=cmd;
-    cmd=cmd.replace(/!(!|\d+|[a-zA-Z]\w*)/g,function(m,x){
-      var v=x==='!'?hist[hist.length-1]:/^\d/.test(x)?hist[+x-1]:hist.slice().reverse().filter(function(h){return h.indexOf(x)===0})[0];
+    cmd=cmd.replace(/!(!|\$|-\d+|\d+|[a-zA-Z]\w*)/g,function(m,x,at,s){
+      if(PROFILE.bash&&(s.slice(0,at).match(/'/g)||[]).length%2)return m; /* bash leaves '...' alone */
+      var last=hist[hist.length-1];
+      var v=x==='!'?last:x==='$'?(last===undefined?undefined:last.trim().split(/\s+/).pop()):/^-/.test(x)?hist[hist.length+(+x)]:/^\d/.test(x)?hist[+x-1]:hist.slice().reverse().filter(function(h){return h.indexOf(x)===0})[0];
       if(v===undefined){bad=PROFILE.bash?'bash: '+m+': event not found':x+': Event not found.';return ''}
       return v;
     });
@@ -1525,22 +1535,25 @@ function submit(){
 var TABBED=null;
 function complete(){
   if(!bufNode||MODE!=='shell')return;
-  var m=buf.match(/^(.*?)([^\s;|&<>]*)$/),pre=m[1],w=m[2],dir='',base=w,L=[],k=w.lastIndexOf('/'),d;
-  if((!pre.trim()||/[;|&]\s*$/.test(pre))&&k<0){ /* a command: what has a program file, what help lists, and the aliases */
+  var m=buf.match(/^(.*?)([^\s;|&<>]*)$/),pre=m[1],w=m[2],q=/^['"]/.test(w)?w.charAt(0):'';
+  pre+=q;w=w.slice(q.length);
+  var dir='',base=w,L=[],k=w.lastIndexOf('/'),d;
+  function esc(n){return q?n:n.replace(/([\s'"\\$`;|&<>()])/g,'\\$1')} /* a name bash would have to quote */
+  if(!q&&(!pre.trim()||/[;|&]\s*$/.test(pre))&&k<0){ /* a command: what has a program file, what help lists, and the aliases */
     var C={};
     Object.keys(PATHS).concat(HELP.map(function(h){return h[0]}),PH.aliases.map(function(a){return a.from[0]})).forEach(function(n){if(has(CMDS,n)||PH.aliases.some(function(a){return a.from[0]===n}))C[n]=' '});
     L=Object.keys(C).filter(function(n){return n.indexOf(w)===0}).sort().map(function(n){return [n,' ']});
   }else{
     if(k>=0){dir=w.slice(0,k+1);base=w.slice(k+1)}
-    d=find(dir||'.');
+    d=find(dir.replace(/^(~|\$HOME)(?=\/|$)/,ST.home)||'.'); /* ~/ and $HOME/ look in the home folder; what was typed stays */
     if(d&&d.type==='d'&&!d.prot)L=Object.keys(d.kids).filter(function(n){return n.indexOf(PROFILE.fold(base))===0&&(n.charAt(0)!=='.'||base.charAt(0)==='.')}).sort()
-      .map(function(n){return [n,d.kids[n].type==='d'?'/':' ']});
+      .map(function(n){return [n,d.kids[n].type==='d'?'/':q?q+' ':' ']});
   }
   if(!L.length)return;
-  if(L.length===1){TABBED=null;setBuf(pre+dir+L[0][0]+L[0][1]);return}
+  if(L.length===1){TABBED=null;setBuf(pre+dir+esc(L[0][0])+L[0][1]);return}
   var c=L[0][0];
   L.forEach(function(x){while(x[0].indexOf(c)!==0)c=c.slice(0,-1)});
-  if(c.length>base.length){TABBED=null;setBuf(pre+dir+c);return}
+  if(c.length>base.length){TABBED=null;setBuf(pre+dir+esc(c));return}
   if(TABBED!==buf){TABBED=buf;return} /* the first tab only rings the bell */
   var keep=buf,names=L.map(function(x){return x[0]+(x[1]==='/'?'/':'')}),wd=names.reduce(function(a,x){return Math.max(a,x.length)},0)+2,
       n=Math.max(1,Math.floor(cols()/wd)),rows=Math.ceil(names.length/n),R=[];
@@ -1563,7 +1576,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
   if(PROFILE.dos&&!PROFILE.dcl&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
   if(PROFILE.dos&&!PROFILE.dcl&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
   if(k==='Enter')submit();
-  else if(k==='Tab'&&PROFILE.bash)complete();
+  else if(k==='Tab'&&PROFILE.bash&&!e.shiftKey)complete();
   else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
   else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
   else return false;
@@ -1614,7 +1627,7 @@ document.addEventListener('keydown',function(e){
   if(e.target===kb){if(!e.isComposing)navKey(e);return}
   if(e.key==='Enter'&&e.target.closest&&e.target.closest('a'))return; /* Enter on a focused link opens it */
   var k=e.key;
-  if(navKey(e)){if(k==='PageUp'||k==='PageDown')return} /* paging keeps focus where it is, on a link say */
+  if(k!=='Tab'&&navKey(e)){if(k==='PageUp'||k==='PageDown')return} /* Tab off the input moves focus, as it should */ /* paging keeps focus where it is, on a link say */
   else if(k==='Backspace'){e.preventDefault();setBuf(buf.slice(0,-1));click(.556)}
   else if(k&&k.length===1){e.preventDefault();setBuf(buf+k);click(.667)}
   else return;
@@ -1714,12 +1727,15 @@ function redraw(){cancelAnimationFrame(raf);raf=requestAnimationFrame(drawCable)
 
 /* visible height -> --app-h. On phones the soft keyboard shrinks the visual viewport but not
    100dvh, so without this the bottom of the monitor would sit behind the keyboard. */
-var vv=window.visualViewport;
+var vv=window.visualViewport,lastH=-1;
 function fitViewport(){
-  var h=vv?vv.height*(vv.scale||1):window.innerHeight; /* *scale: pinch-zoom must not shrink the rig */
-  if(h>0)document.documentElement.style.setProperty('--app-h',Math.round(h)+'px');
+  var h=Math.round(vv?vv.height*(vv.scale||1):window.innerHeight); /* *scale: pinch-zoom must not shrink the rig */
   if(vv&&vv.offsetTop)window.scrollTo(0,0);
-  term.scrollTop=term.scrollHeight; /* keep the prompt in view as the glass resizes */
+  if(h===lastH)return;
+  lastH=h;
+  var atEnd=term.scrollHeight-term.scrollTop-term.clientHeight<40; /* at the prompt, not reading back */
+  if(h>0)document.documentElement.style.setProperty('--app-h',h+'px');
+  if(atEnd)term.scrollTop=term.scrollHeight; /* keep the prompt in view as the glass resizes; leave a reader where they are */
   redraw();
 }
 fitViewport();

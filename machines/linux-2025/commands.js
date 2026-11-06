@@ -4,11 +4,11 @@
 (function(P){
 'use strict';
 var D=P.debian={ /* what the machine is, for this file and fs.js */
-  krel:'6.12.88+deb13-amd64',kbuild:'#1 SMP PREEMPT_DYNAMIC Debian 6.12.88-1 (2026-09-12)',debian:'13.7',systemd:'257.13-1~deb13u1',
+  krel:'6.12.111+deb13-amd64',kbuild:'#1 SMP PREEMPT_DYNAMIC Debian 6.12.111-1 (2026-09-28)',debian:'13.7',systemd:'257.13-1~deb13u1',
   ip4:'203.0.113.24',ip6:'2001:db8:4f2::24',gw:'203.0.113.1',mac:'52:54:00:3a:7c:1e',cpu:'AMD EPYC-Rome Processor',ncpu:2,
   mem:{MemTotal:2014976,MemFree:1352196,MemAvailable:1689556,Buffers:31220,Cached:409852,Shmem:1124,SReclaimable:25228},
   links:{'/bin':'usr/bin','/sbin':'usr/sbin','/lib':'usr/lib','/lib64':'usr/lib64','/etc/os-release':'../usr/lib/os-release',
-    '/vmlinuz':'boot/vmlinuz-6.12.88+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.88+deb13-amd64','/usr/games/cowthink':'cowsay'}
+    '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'}
 };
 var BOOT=null,OLD=null,SEQ=0;
 P.setup(function(){
@@ -22,7 +22,7 @@ P.setup(function(){
     if(!P.subshell()&&!P.inScript())P.typeLine('logout');
     bye(a,raw,w);
   };
-  if(P.cmds.sh){P.cmds.bash=P.cmds.sh;P.paths.bash='/usr/bin'}
+  if(P.cmds.sh){var sh=P.cmds.sh;P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;sh(a,raw,w)};P.paths.bash='/usr/bin'} /* bash on its own: you are in one already */
   var GNU={cat:['concatenate files and print on the standard output','cat [OPTION]... [FILE]...'],pwd:['print name of current/working directory','pwd [OPTION]...'],
     echo:['display a line of text','echo [SHORT-OPTION]... [STRING]...'],mkdir:['make directories','mkdir [OPTION]... DIRECTORY...'],rm:['remove files or directories','rm [OPTION]... [FILE]...'],
     rmdir:['remove empty directories','rmdir [OPTION]... DIRECTORY...'],cp:['copy files and directories','cp [OPTION]... SOURCE... DIRECTORY'],mv:['move (rename) files','mv [OPTION]... SOURCE... DIRECTORY'],
@@ -172,7 +172,7 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] comman
   P.ask('[sudo] password for '+P.st.user+': ',function(l){
     if(l===null||l===P.INT)return;
     P.pause(1500);
-    err(P.st.user+' is not in the sudoers file.');err('This incident has been reported to the administrator.');
+    err(P.st.user+' is not in the sudoers file.');
   },false,true);
 });
 cmd('tty','/usr/bin','print the file name of the terminal connected to standard input','tty [OPTION]...','prints the name of the terminal you are typing on.',function(){P.typeLine('/dev/ttyS0')});
@@ -181,7 +181,7 @@ cmd('id','/usr/bin','print real and effective user and group IDs','id [OPTION]..
   P.typeLine('uid='+n+'('+u+') gid='+n+'('+u+') groups='+n+'('+u+'),100(users)');
 });
 cmd('groups','/usr/bin','print the groups a user is in','groups [OPTION]... [USERNAME]...','prints the groups you are in.',function(){P.typeLine(P.st.user+' users')});
-cmd(['less','more'],'/usr/bin','opposite of more','less [options] [file ...]','shows each file, a screen at a time on a real terminal. this one has a long memory instead: PageUp goes back.',function(a){
+cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','less [options] [file ...]','shows each file, a screen at a time on a real terminal. this one has a long memory instead: PageUp goes back.',function(a){
   var f=a.filter(function(x){return x.charAt(0)!=='-'});
   if(!f.length){if(P.stdin()){lines(P.stdin());return}err('Missing filename ("less --help" for help)');return}
   f.forEach(function(x){
@@ -377,7 +377,7 @@ cmd('uptime','/usr/bin','tell how long the system has been running','uptime [opt
   var o=opts(a);
   if(o.has('p','pretty')){
     var m=Math.floor(since()/6e4),d=Math.floor(m/1440),h=Math.floor(m%1440/60),W=[];
-    if(d)W.push(d+' day'+(d>1?'s':''));if(h)W.push(h+' hour'+(h>1?'s':''));if(m%60||!W.length)W.push(m%60+' minute'+(m%60!==1?'s':''));
+    if(d)W.push(d+' day'+(d>1?'s':''));if(d||h)W.push(h+' hour'+(h!==1?'s':''));W.push(m%60+' minute'+(m%60!==1?'s':'')); /* procps 4 always says the minutes */
     P.typeLine('up '+W.join(', '));return;
   }
   if(o.has('s','since')){P.typeLine(ymd(BOOT)+' '+hms(BOOT));return}
@@ -610,14 +610,14 @@ var PKGS=[['apt','3.0.4','commandline package manager'],['base-files','13.8+deb1
   ['coreutils','9.7-3','GNU core utilities'],['cowsay','3.03+dfsg2-8','configurable talking cow'],['cmatrix','2.0-6','simulates the display from "The Matrix"'],['cron','3.0pl1-197','process scheduling daemon'],
   ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files'],
   ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],
-  ['linux-image-'+D.krel,'6.12.88-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['fastfetch','2.40.4+dfsg-1','Neofetch-like tool for fetching system information with Distribution Logo'],
+  ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information'],
   ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake'],
   ['sudo','1.9.16p2-3+deb13u2','Provide limited super user privileges to specific users'],['systemd','257.13-1~deb13u1','system and service manager'],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility'],
-  ['unattended-upgrades','2.12','automatic installation of security upgrades'],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities'],['vim-tiny','2:9.1.1230-2','Vi IMproved - enhanced vi editor - compact version']];
+  ['unattended-upgrades','2.12','automatic installation of security upgrades'],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities'],['vim-tiny','2:9.1.1230-2+deb13u1','Vi IMproved - enhanced vi editor - compact version']];
 PKGS.sort(function(x,y){return x[0]<y[0]?-1:x[0]>y[0]?1:0}); /* dpkg and apt list by name */
-var AVAIL=[['bsdgames','2.17-34','collection of classic textual unix games'],['cowsay-off','3.03+dfsg2-8','configurable talking cow (offensive cows)'],['curl','8.14.1-2','command line tool for transferring data with URL syntax'],
+var AVAIL=[['bsdgames','2.17-35','collection of classic textual unix games'],['cowsay-off','3.03+dfsg2-8','configurable talking cow (offensive cows)'],['curl','8.14.1-2+deb13u5','command line tool for transferring data with URL syntax'],
   ['fortunes','1:1.99.1-9','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
-  ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nethack-console','3.6.7-3','dungeon crawling game - text-based interface'],['nginx','1.26.3-3+deb13u1','small, powerful, scalable web/proxy server'],
+  ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nethack-console','3.6.7-1+b2','dungeon crawling game - text-based interface'],['nginx','1.26.3-3+deb13u7','small, powerful, scalable web/proxy server'],
   ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)'],['tmux','3.5a-3','terminal multiplexer']];
 function pkg(n){return PKGS.concat(AVAIL).filter(function(p){return p[0]===n})[0]}
 var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremove|autoclean|clean|reinstall|satisfy|build-dep|source|edit-sources|modernize-sources)$/;
@@ -629,7 +629,7 @@ function apt(a,get){
     return;
   }
   if(verb==='update'){
-    if(get)P.typeLine('Reading package lists... Done');
+    P.typeLine('Reading package lists...'); /* the lock fails before it gets to Done */
     err(E+'Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)');err(E+'Unable to lock directory /var/lib/apt/lists/');P.status(100);return;
   }
   if(NEED_ROOT.test(verb)){
@@ -649,7 +649,7 @@ function apt(a,get){
     if(get!==2)lines(['Sorting... Done','Full Text Search... Done']);
     PKGS.concat(AVAIL).sort().filter(function(p){return (p[0]+' '+p[2]).toLowerCase().indexOf(q)>=0}).forEach(function(p){
       if(get===2)P.typeLine(p[0]+' - '+p[2]);
-      else{P.typeLine(p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now':'')+' '+p[1]+' amd64'+(PKGS.indexOf(p)>=0?' [installed]':''));P.typeLine('  '+p[2]);P.typeLine('')}
+      else{P.typeLine(p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now':'')+' '+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':''));P.typeLine('  '+p[2]);P.typeLine('')}
     });
     return;
   }
@@ -658,8 +658,8 @@ function apt(a,get){
       var p=pkg(n),i=p&&PKGS.indexOf(p)>=0;
       if(!p){err(E+'No packages found');P.status(100);return}
       if(verb==='policy'){lines([n+':','  Installed: '+(i?p[1]:'(none)'),'  Candidate: '+p[1],'  Version table:',' '+(i?'***':'   ')+' '+p[1]+' 500','        500 http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['        100 /var/lib/dpkg/status']:[]));return}
-      lines(['Package: '+p[0],'Version: '+p[1],'Priority: optional','Section: '+(/game|cow|fortune|frotz|^sl$|nethack|matrix/.test(p[0])?'games':'admin'),'Maintainer: Debian maintainers','Installed-Size: '+(120+p[0].length*37)+' kB',
-        'Homepage: (see the package)','APT-Sources: http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['APT-Manual-Installed: yes']:[]).concat(['Description: '+p[2],'']));
+      lines(['Package: '+p[0],'Version: '+p[1],'Priority: optional','Section: '+(/game|cow|fortune|frotz|^sl$|nethack|matrix/.test(p[0])?'games':'admin'),'Installed-Size: '+(120+p[0].length*37)+' kB',
+        'APT-Sources: http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['APT-Manual-Installed: yes']:[]).concat(['Description: '+p[2],'']));
     });
     return;
   }
@@ -676,21 +676,22 @@ cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['i
     if(!L.length){err('dpkg-query: no packages found matching '+o.ops[0]);P.status(1);return}
     var nw=Math.max(14,L.reduce(function(m,p){return Math.max(m,p[0].length)},0)),vw=Math.max(12,L.reduce(function(m,p){return Math.max(m,p[1].length)},0));
     out(['Desired=Unknown/Install/Remove/Purge/Hold','| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend','|/ Err?=(none)/Reinst-required (Status,Err: uppercase=bad)',
-      '||/ '+'Name'.padEnd(nw)+' '+'Version'.padEnd(vw)+' Architecture Description','+++-'+'='.repeat(nw)+'-'+'='.repeat(vw)+'-============-'+'='.repeat(32)].concat(L.map(function(p){return 'ii  '+p[0].padEnd(nw)+' '+p[1].padEnd(vw)+' amd64        '+p[2]})));
+      '||/ '+'Name'.padEnd(nw)+' '+'Version'.padEnd(vw)+' Architecture Description','+++-'+'='.repeat(nw)+'-'+'='.repeat(vw)+'-============-'+'='.repeat(32)].concat(L.map(function(p){return 'ii  '+p[0].padEnd(nw)+' '+p[1].padEnd(vw)+' '+(ALL.test(p[0])?'all  ':'amd64')+'        '+p[2]})));
     return;
   }
   if(o.has('i','install')||o.has('r','remove')||o.has('P','purge')){err('dpkg: error: requested operation requires superuser privilege');P.status(2);return}
   if(o.L.version){P.typeLine("Debian 'dpkg' package management program version 1.22.22 (amd64).");return}
-  err('dpkg: error: need an action option');err('');err("Use --help for help about installing and deinstalling packages [*];");err("Use 'apt' or 'aptitude' for user-friendly package management;");P.status(2);
+  err('dpkg: error: need an action option');err('');err("Type dpkg --help for help about installing and deinstalling packages [*];");err("Use 'apt' or 'aptitude' for user-friendly package management;");err('Type dpkg -Dhelp for a list of dpkg debug flag values;');err('Type dpkg --force-help for a list of forcing options;');err('Type dpkg-deb --help for help about manipulating *.deb files;');err('');err("Options marked [*] produce a lot of output - pipe it through 'less' or 'more' !");P.status(2);
 });
 
+var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes-min)$/; /* packages that are the same on every architecture */
 /* fastfetch: trixie's system summary (neofetch is no longer packaged). The logo is drawn for this terminal */
 var SWIRL=['        .-""""""-.','      .\'  .--.   \'.','     /   /    \\    \\','    |   |   ()|    |','    |   |    .\'   /','     \\   \'--\'   .\'','      \'.      .\'','        \'-.  \'','           \'-.','              \'.'];
-cmd('fastfetch','/usr/bin','fast neofetch-like system information tool','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){
+cmd('fastfetch','/usr/bin','A fast and feature-rich system information tool similar to neofetch','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){
   var m=Math.floor(since()/6e4),M=D.mem,used=(M.MemTotal+M.Shmem-M.MemFree-M.Buffers-M.Cached-M.SReclaimable)/1048576,tot=M.MemTotal/1048576,id=P.st.user+'@'+P.st.hostname;
   var I=[id,'-'.repeat(id.length),'OS: Debian GNU/Linux 13 (trixie) x86_64','Host: KVM/QEMU Standard PC (i440FX + PIIX, 1996) (pc-i440fx-9.2)','Kernel: Linux '+D.krel,
     'Uptime: '+(m<60?m+' min'+(m!==1?'s':''):Math.floor(m/60)+' hour'+(m>=120?'s':'')+', '+m%60+' min'+(m%60!==1?'s':'')),'Packages: 412 (dpkg)','Shell: bash 5.2.37','Terminal: /dev/ttyS0',
-    'CPU: AMD EPYC-Rome ('+D.ncpu+') @ 2.79 GHz','GPU: Cirrus Logic GD 5446','Memory: '+used.toFixed(2)+' GiB / '+tot.toFixed(2)+' GiB ('+Math.round(used/tot*100)+'%)','Locale: C.UTF-8'];
+    'CPU: AMD EPYC-Rome ('+D.ncpu+') @ 2.79 GHz','GPU: Device 1234:1111','Memory: '+used.toFixed(2)+' GiB / '+tot.toFixed(2)+' GiB ('+Math.round(used/tot*100)+'%)','Locale: C.UTF-8'];
   var nologo=a.some(function(x,i){return (x==='-l'||x==='--logo')&&a[i+1]==='none'});
   var wide=I.reduce(function(x,l){return Math.max(x,l.length)},0)+24;
   if(nologo){lines(I);return}

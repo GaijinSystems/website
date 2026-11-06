@@ -4,7 +4,7 @@
 
    The default cow below is cowsay's default.cow, copyright (c) 1999 Tony Monroe, distributed under the same
    terms as Perl: the Artistic License or the GNU General Public License, version 1 or later. The fortunes are
-   quotations from works published before 1907, chosen for this terminal. */
+   quotations from works published before 1912, chosen for this terminal. */
 Phosphor.setup(function(P){
   'use strict';
   var D=P.debian,ST=P.st,OWNER=ST.owner,sys=P.sys,root=P.root;
@@ -24,15 +24,15 @@ Phosphor.setup(function(P){
   'The Analytical Engine has no pretensions whatever to originate anything.\nIt can do whatever we know how to order it to perform.\n\t\t-- Ada Lovelace, notes on Menabrea\'s memoir, 1843',
   'On two occasions I have been asked, "Pray, Mr. Babbage, if you put into\nthe machine wrong figures, will the right answers come out?" I am not\nable rightly to apprehend the kind of confusion of ideas that could\nprovoke such a question.\n\t\t-- Charles Babbage, "Passages from the Life of a Philosopher"',
   'I like work: it fascinates me. I can sit and look at it for hours.\n\t\t-- Jerome K. Jerome, "Three Men in a Boat"',
-  'Patience, n. A minor form of despair, disguised as a virtue.\n\t\t-- Ambrose Bierce, "The Cynic\'s Word Book"',
+  'Patience, n. A minor form of despair, disguised as a virtue.\n\t\t-- Ambrose Bierce, "The Devil\'s Dictionary"',
   'Future, n. That period of time in which our affairs prosper, our\nfriends are true and our happiness is assured.\n\t\t-- Ambrose Bierce, "The Cynic\'s Word Book"',
   'The report of my death was an exaggeration.\n\t\t-- Mark Twain, 1897',
   'Early to bed and early to rise, makes a man healthy, wealthy, and wise.\n\t\t-- Benjamin Franklin',
   'If you have built castles in the air, your work need not be lost; that\nis where they should be. Now put the foundations under them.\n\t\t-- Henry David Thoreau, "Walden"',
   'It was the best of times, it was the worst of times.\n\t\t-- Charles Dickens, "A Tale of Two Cities"'
   ];
-  var COW=['##','## The default cow!','##','$the_cow = <<"EOC";','        $thoughts   ^__^','         $thoughts  ($eyes)\\\\_______','            (__)\\\\       )\\\\/\\\\','             $tongue ||----w |','                ||     ||','EOC'];
-  var UPG=new Date(2026,9,14,6,25,11); /* the last unattended upgrade, which brought 13.7 */
+  var COW=['$the_cow = <<"EOC";','        $thoughts   ^__^','         $thoughts  ($eyes)\\\\_______','            (__)\\\\       )\\\\/\\\\','             $tongue ||----w |','                ||     ||','EOC'];
+  var UPG=new Date(2026,9,14,6,25,11); /* the last unattended upgrade: a new kernel */
   P.env.PATH='/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games';
   P.env.TERM='vt220';P.env.SHELL='/bin/bash';P.env.LANG='C.UTF-8';P.env.MAIL='/var/mail/'+ST.user;
   P.env.INFOCOM_PATH='/usr/local/share/games/zork';
@@ -52,16 +52,16 @@ Phosphor.setup(function(P){
   sys('/usr/bin/sudo','f',{bin:true,size:277936,mode:'-rwsr-xr-x'});
   sys('/usr/bin/su','f',{bin:true,size:84360,mode:'-rwsr-xr-x'});
   sys('/usr/bin/ls','f',{bin:true,size:151344});
-  /* the games the administrator installed: real sizes, more or less */
-  var GAMES={'/usr/games/frotz':231344,'/usr/games/sl':22856,'/usr/games/cowsay':4608,'/usr/games/fortune':31056,'/usr/bin/cmatrix':39576};
+  /* the games the administrator installed, at Debian 13's sizes */
+  var GAMES={'/usr/games/frotz':139152,'/usr/games/sl':26568,'/usr/games/cowsay':4608,'/usr/games/fortune':35664,'/usr/bin/cmatrix':22608};
   Object.keys(GAMES).forEach(function(f){if(P.find(f,true))sys(f,'f',{bin:true,size:GAMES[f],date:new Date(2025,10,2,19,4)})});
   if(P.find('/usr/games/cowsay',true))P.find('/usr/games',true).kids.cowthink=P.find('/usr/games/cowsay',true);
 
   var V=['/boot/vmlinuz-'+D.krel,'/boot/initrd.img-'+D.krel];
-  sys(V[0],'f',{bin:true,size:11829952,date:UPG});
-  sys(V[1],'f',{bin:true,size:33415023,date:UPG});
-  sys('/boot/config-'+D.krel,'f',{size:282231,date:UPG,body:['#','# Automatically generated file; DO NOT EDIT.','# Linux/x86 6.12.88 Kernel Configuration','#','CONFIG_CC_VERSION_TEXT="x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"','CONFIG_CC_IS_GCC=y','CONFIG_64BIT=y','CONFIG_X86_64=y','CONFIG_HZ_250=y','CONFIG_PREEMPT_DYNAMIC=y','CONFIG_KVM_GUEST=y','CONFIG_VIRTIO_BLK=m','CONFIG_VIRTIO_NET=m','CONFIG_EXT4_FS=y']});
-  sys('/boot/System.map-'+D.krel,'f',{size:83,date:UPG,prot:true,mode:'-rw-------'});
+  sys(V[0],'f',{bin:true,size:11829952,date:UPG,mode:'-rw-r--r--'});
+  sys(V[1],'f',{bin:true,size:33415023,date:UPG,mode:'-rw-r--r--'});
+  sys('/boot/config-'+D.krel,'f',{size:282231,date:UPG,mode:'-rw-r--r--',body:['#','# Automatically generated file; DO NOT EDIT.','# Linux/x86 6.12.111 Kernel Configuration','#','CONFIG_CC_VERSION_TEXT="x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"','CONFIG_CC_IS_GCC=y','CONFIG_64BIT=y','CONFIG_X86_64=y','CONFIG_HZ_250=y','CONFIG_PREEMPT_DYNAMIC=y','CONFIG_KVM_GUEST=y','CONFIG_VIRTIO_BLK=m','CONFIG_VIRTIO_NET=m','CONFIG_EXT4_FS=m']});
+  sys('/boot/System.map-'+D.krel,'f',{size:83,date:UPG,mode:'-rw-r--r--',body:['ffffffffffffffff B The real System.map is in the linux-image-<version>-dbg package']});
   sys('/boot/grub','d');sys('/boot/efi','d',{mode:'drwx------',prot:true});
   root.kids.vmlinuz=P.find(V[0],true);root.kids['initrd.img']=P.find(V[1],true);
 
@@ -77,7 +77,7 @@ Phosphor.setup(function(P){
   sys('/etc/shells','f',{body:['# /etc/shells: valid login shells','/bin/sh','/usr/bin/sh','/bin/bash','/usr/bin/bash','/bin/rbash','/usr/bin/rbash','/usr/bin/dash']});
   sys('/etc/timezone','f',{body:['Etc/UTC']});
   sys('/etc/machine-id','f',{body:['3f9c2e4b7a1d48e6b5c0d9a2e7f1c843'],mode:'-r--r--r--'});
-  sys('/etc/resolv.conf','f',{body:['# managed by systemd-networkd; edits here do not last','nameserver 192.0.2.53','nameserver 192.0.2.54']});
+  sys('/etc/resolv.conf','f',{body:['# written by the DHCP client; edits here do not last','nameserver 192.0.2.53','nameserver 192.0.2.54']});
   sys('/etc/fstab','f',{body:['# <file system>                           <mount point>  <type>  <options>          <dump> <pass>','UUID=7d3c51e2-0b4f-4a8e-9c61-2f5e8a90d1b7 /              ext4    errors=remount-ro  0      1','UUID=4E1A-93C2                            /boot/efi      vfat    umask=0077         0      1']});
   sys('/etc/apt/sources.list.d/debian.sources','f',{body:['Types: deb','URIs: http://deb.debian.org/debian','Suites: trixie trixie-updates','Components: main non-free-firmware','Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp','',
     'Types: deb','URIs: http://security.debian.org/debian-security','Suites: trixie-security','Components: main non-free-firmware','Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp']});
@@ -90,7 +90,7 @@ Phosphor.setup(function(P){
   sys('/etc/passwd','f',{body:function(){
     return ['root:x:0:0:root:/root:/bin/bash','daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin','bin:x:2:2:bin:/bin:/usr/sbin/nologin','sys:x:3:3:sys:/dev:/usr/sbin/nologin','sync:x:4:65534:sync:/bin:/bin/sync',
       'games:x:5:60:games:/usr/games:/usr/sbin/nologin','man:x:6:12:man:/var/cache/man:/usr/sbin/nologin','lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin','mail:x:8:8:mail:/var/mail:/usr/sbin/nologin',
-      'news:x:9:9:news:/var/spool/news:/usr/sbin/nologin','www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin','backup:x:34:34:backup:/var/backups:/usr/sbin/nologin','_apt:x:42:65534::/nonexistent:/usr/sbin/nologin',
+      'news:x:9:9:news:/var/spool/news:/usr/sbin/nologin','uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin','proxy:x:13:13:proxy:/bin:/usr/sbin/nologin','www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin','backup:x:34:34:backup:/var/backups:/usr/sbin/nologin','list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin','irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin','_apt:x:42:65534::/nonexistent:/usr/sbin/nologin',
       'nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin','systemd-network:x:998:998:systemd Network Management:/:/usr/sbin/nologin','systemd-timesync:x:997:997:systemd Time Synchronization:/:/usr/sbin/nologin',
       'messagebus:x:100:101::/nonexistent:/usr/sbin/nologin','sshd:x:101:65534::/run/sshd:/usr/sbin/nologin',
       OWNER+':x:1000:1000:'+P.profile.name.toLowerCase()+',,,:/home/'+OWNER+':/bin/bash',ST.user+':x:1001:1001:guest,,,:/home/'+ST.user+':/bin/bash'];
@@ -146,15 +146,14 @@ Phosphor.setup(function(P){
   sys('/var/log/apt','d');
   sys('/var/log/apt/term.log','f',{mode:'-rw-r-----',group:'adm',prot:true,size:48211,date:UPG});
   sys('/var/log/apt/history.log','f',{date:UPG,body:['','Start-Date: 2025-11-02  19:03:40','Commandline: apt install frotz sl cowsay fortune-mod cmatrix','Requested-By: '+OWNER+' (1000)',
-    'Install: frotz:amd64 (2.55+dfsg-2), sl:amd64 (5.02-1+b1), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-9), fortunes-min:amd64 (1:1.99.1-9, automatic), cmatrix:amd64 (2.0-6), librecode0:amd64 (3.6-26, automatic)',
-    'End-Date: 2025-11-02  19:04:02','','Start-Date: 2026-10-14  06:24:31','Commandline: /usr/bin/unattended-upgrade','Upgrade: linux-image-amd64:amd64 (6.12.74-2, 6.12.88-1), base-files:amd64 (13.8+deb13u6, 13.8+deb13u7), libsystemd0:amd64 (257.12-1~deb13u1, 257.13-1~deb13u1), systemd:amd64 (257.12-1~deb13u1, 257.13-1~deb13u1)',
+    'Install: frotz:amd64 (2.55+dfsg-2), sl:amd64 (5.02-1+b1), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-9), fortunes-min:amd64 (1:1.99.1-9, automatic), cmatrix:amd64 (2.0-6), librecode3:amd64 (3.7.15-1, automatic)',
+    'End-Date: 2025-11-02  19:04:02','','Start-Date: 2026-10-14  06:24:31','Commandline: /usr/bin/unattended-upgrade','Install: linux-image-'+D.krel+':amd64 (6.12.111-1, automatic)','Upgrade: linux-image-amd64:amd64 (6.12.107-1, 6.12.111-1)',
     'End-Date: 2026-10-14  06:25:11']});
-  sys('/var/log/dpkg.log','f',{date:UPG,body:['2026-10-14 06:24:33 startup archives unpack','2026-10-14 06:24:34 upgrade base-files:amd64 13.8+deb13u6 13.8+deb13u7','2026-10-14 06:24:34 status half-configured base-files:amd64 13.8+deb13u6',
-    '2026-10-14 06:24:35 status installed base-files:amd64 13.8+deb13u7','2026-10-14 06:24:41 install linux-image-'+D.krel+':amd64 <none> 6.12.88-1','2026-10-14 06:24:58 status installed linux-image-'+D.krel+':amd64 6.12.88-1',
-    '2026-10-14 06:25:02 upgrade systemd:amd64 257.12-1~deb13u1 257.13-1~deb13u1','2026-10-14 06:25:09 status installed systemd:amd64 257.13-1~deb13u1','2026-10-14 06:25:11 trigproc man-db:amd64 2.13.1-1 <none>']});
+  sys('/var/log/dpkg.log','f',{date:UPG,body:['2026-10-14 06:24:33 startup archives unpack','2026-10-14 06:24:41 install linux-image-'+D.krel+':amd64 <none> 6.12.111-1','2026-10-14 06:24:58 status installed linux-image-'+D.krel+':amd64 6.12.111-1',
+    '2026-10-14 06:25:02 upgrade linux-image-amd64:amd64 6.12.107-1 6.12.111-1','2026-10-14 06:25:09 status installed linux-image-amd64:amd64 6.12.111-1','2026-10-14 06:25:11 trigproc man-db:amd64 2.13.1-1 <none>']});
   sys('/var/log/unattended-upgrades','d');
   sys('/var/log/unattended-upgrades/unattended-upgrades.log','f',{date:UPG,body:['2026-10-14 06:24:19,412 INFO Starting unattended upgrades script','2026-10-14 06:24:19,413 INFO Allowed origins are: origin=Debian,codename=trixie,label=Debian, origin=Debian,codename=trixie,label=Debian-Security, origin=Debian,codename=trixie-security,label=Debian-Security',
-    '2026-10-14 06:24:30,871 INFO Packages that will be upgraded: base-files libsystemd0 linux-image-amd64 systemd','2026-10-14 06:24:30,872 INFO Writing dpkg log to /var/log/unattended-upgrades/unattended-upgrades-dpkg.log','2026-10-14 06:25:12,604 INFO All upgrades installed']});
+    '2026-10-14 06:24:30,871 INFO Packages that will be upgraded: linux-image-amd64','2026-10-14 06:24:30,872 INFO Writing dpkg log to /var/log/unattended-upgrades/unattended-upgrades-dpkg.log','2026-10-14 06:25:12,604 INFO All upgrades installed']});
 
   /* /usr/games and what goes with it */
   sys('/usr/share/games','d');
@@ -168,10 +167,10 @@ Phosphor.setup(function(P){
   /* home */
   sys('/home/'+OWNER,'d',{owner:OWNER,date:P.fileDate,prot:true,mode:'drwx------'});
 
-  /* what login prints: the kernel, the message of the day, the last login, and then the site's own welcome */
+  /* what login prints: the kernel, the message of the day, and then the site's own welcome */
   var MOTD=['','The programs included with the Debian GNU/Linux system are free software;','the exact distribution terms for each program are described in the','individual files in /usr/share/doc/*/copyright.','',
     'Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent','permitted by applicable law.'];
-  var last=P.fileDate,head=['Linux '+ST.hostname+' '+D.krel+' '+D.kbuild+' x86_64'].concat(MOTD,['Last login: '+P.ctime(last)+' '+last.getFullYear()+' on ttyS0','']),WEL=head.length;
+  var head=['Linux '+ST.hostname+' '+D.krel+' '+D.kbuild+' x86_64'].concat(MOTD,['']),WEL=head.length; /* no Last login: a stock Debian 13 does not print one */
   P.profile.welcome=head.concat(P.profile.welcome);
 });
 

@@ -6,7 +6,7 @@
 function game(files,names,man,o){
   P.later(files,Object.assign({names:[].concat(names),path:'/usr/games',man:man,hidden:true},o||{}));
 }
-game(['../shared/zmachine.js','games/frotz.js'],'frotz',{what:'interpreter for Infocom and other Z-Machine games',syn:'frotz [options] file',desc:[
+game(['../shared/zmachine.js','games/frotz.js'],'frotz',{what:'interpreter for Infocom and other Z-Machine games',syn:'frotz [options] file [blorb_file]',desc:[
   'plays the story files of Infocom\'s text adventures, and of the games written since for the Z-machine. type your commands in plain words; the game answers, and the line at the top says where you are and how you are doing.',
   'a story file that is not in the working directory is looked for in the directories named in INFOCOM_PATH. on this machine the administrator has put zork1.z3 and zork2.z3 there, so frotz zork1.z3 starts Zork I.','',
   'save and restore keep your game in this browser, under a name you choose. ctrl-c leaves at once.']});
@@ -22,12 +22,12 @@ game('games/cowsay.js',['cowsay','cowthink'],{what:'configurable speaking/thinki
   '-e   the eyes, two characters. -T the tongue, also two.',
   '-b -d -g -p -s -t -w -y   borg, dead, greedy, paranoid, stoned, tired, wired and youthful.',
   '-f   another cow, from /usr/share/cowsay/cows. -l lists them.']});
-game('games/fortune.js','fortune',{what:'print a random, hopefully interesting, adage',syn:'fortune [-acefilosw] [-n length] [-m pattern] [[n%] file/dir/all]',desc:[
+game('games/fortune.js','fortune',{what:'print a random, hopefully interesting, adage',syn:'fortune [-acefilosuw] [-n length] [-m pattern] [[n%] file/dir/all]',desc:[
   'prints one of the sayings in /usr/share/games/fortunes, chosen at random.','',
   '-s   only short ones; -l only long ones; -n the length that divides them, 160 characters by default.',
   '-c   say which file it came from. -f lists the files.',
   '-m   print every saying that matches the pattern.']});
-game('games/cmatrix.js','cmatrix',{what:'simulates the display from "The Matrix"',syn:'cmatrix [-abBflohnsVx] [-u delay] [-C color]',desc:[
+game('games/cmatrix.js','cmatrix',{what:'simulates the display from "The Matrix"',syn:'cmatrix [-abBflohnsmVx] [-u update] [-C color]',desc:[
   'fills the screen with falling columns of characters, until q or ctrl-c. this glass shows them in the only colour it has, which happens to be the right one.','',
   '-s   screensaver: any key stops it.',
   '-u   delay between updates, 0 to 10. 4 by default.']},{path:'/usr/bin'});
