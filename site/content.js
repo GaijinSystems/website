@@ -25,7 +25,7 @@ here is what is on the bench:
 ~ tap or click a title to visit.
 
 spellsign: ars signorum       coming soon -> https://spellsign.gaijin.systems
-phosphor-9          ~~2026-11-01~~ {year}-01-01 -> https://phosphor.gaijin.systems
+phosphor-9          ~~2026-11-01~~ {year}-11-01 -> https://phosphor.gaijin.systems
 
 ~ no terminal should be without one!
 
