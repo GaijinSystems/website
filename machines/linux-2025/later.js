@@ -31,6 +31,12 @@ game('games/cmatrix.js','cmatrix',{what:'simulates the display from "The Matrix"
   'fills the screen with falling columns of characters, until q or ctrl-c. this glass shows them in the only colour it has, which happens to be the right one.','',
   '-s   screensaver: any key stops it.',
   '-u   delay between updates, 0 to 10. 4 by default.']},{path:'/usr/bin'});
-/* nethack: written separately, in games/nethack.js. When it is there:
-game('games/nethack.js','nethack',{what:'Exploring The Mazes of Menace',syn:'nethack [ options ]',desc:[...]});  */
+game('games/nethack.js','nethack',{what:'Exploring The Mazes of Menace',syn:'nethack [ -d directory ] [ -n ] [ -p profession ] [ -r race ] [ -[DX] ] [ -u playername ] [ -dec ] [ -ibm ] [ --showpaths ] [ --version[:paste] ]',desc:[
+  'nethack is a display oriented dungeons & dragons(tm) - like game. the standard tty display and command structure resemble rogue.',
+  'to get started you really only need to know two commands. the command ? will give you a list of the available commands (as well as other information) and the command / will identify the things you see on the screen.',
+  'to win the game (as opposed to merely playing to beat other people\'s high scores) you must locate the amulet of yendor which is somewhere below the 20th level of the dungeon and get it out. few people achieve this; most never do.',
+  'when the game ends, whether by your dying, quitting, or escaping from the caves, nethack will give you (a fragment of) the list of top scorers. nethack -s [ -v ] [ -p profession ] [ -r race ] [ playernames ] shows the list without playing.',
+  'the environment variable NETHACKOPTIONS can be used to initialize many run-time options. the ? command provides a description of these options and syntax. options may also be put in a configuration file, .nethackrc in your home directory.',
+  '-u playername supplies the answer to the question "who are you?". -p and -r choose the profession and race. -D asks for debug mode, which only root may have here. -dec and -ibm are the decgraphics and ibmgraphics options.','',
+  'on this machine saved games, bones files and the list of top scorers are kept in this browser. closing the page hangs up the terminal, and nethack saves the game as it does when a line drops. ctrl-c asks whether you really want to quit. the arrow keys move as h j k l do.']},{noHelpFlag:true});
 })(window.Phosphor);
