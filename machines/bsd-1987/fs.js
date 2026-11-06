@@ -36,7 +36,7 @@ Phosphor.setup(function(P){
     L.push(ST.user+'::9:20::/usr/'+ST.user+':/bin/csh');
     return L;
   }});
-  sys('/etc/rc.old','f',{body:['# old rc, kept in case the new one fails','/etc/update','# reminder: root is vaxen until the auditors have gone','/etc/cron']});
+  if(P.profile.rootPassword)sys('/etc/rc.old','f',{body:['# old rc, kept in case the new one fails','/etc/update','# reminder: root is '+P.profile.rootPassword+' until the auditors have gone','/etc/cron']}); /* the root password, wherever it is set */
   sys('/tmp','d',{mode:'drwxrwxrwx'});
   sys('/vmunix','f',{bin:true,size:501862});
   if(OWNER!==ST.user)sys('/usr/'+OWNER,'d',{owner:OWNER,date:P.fileDate,prot:true});

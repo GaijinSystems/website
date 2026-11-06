@@ -179,7 +179,7 @@ P.command({names:['su'],path:'/bin',
     if(a[0]&&a[0]!=='root'&&a[0]!==P.st.owner&&a[0]!==P.st.user){P.typeLine('Unknown id: '+a[0]);return}
     if(P.st.user==='root')return;
     P.ask('Password:',function(line){
-      if(word&&line===word){P.su();return}
+      if(word&&P.fold(line)===P.fold(word)){P.su();return} /* case counts where the machine's does */
       P.pause(900);
       P.typeLine('Sorry','err');
     },false,true);

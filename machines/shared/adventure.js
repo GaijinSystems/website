@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: the game adventure, on 4.3BSD and VMS.
+/* PHOSPHOR-9 terminal: the game adventure, on 4.3BSD, VMS and TOPS-20.
    Ported to JavaScript for this terminal from the C in NetBSD's games/adventure, with the
    labels kept. It keeps this notice, and may be used under its terms.
 

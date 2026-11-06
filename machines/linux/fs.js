@@ -88,8 +88,8 @@ Phosphor.setup(function(P){
   sys('/etc/sudoers.d','d',{prot:true,mode:'drwxr-x---'});
   /* cron's own placeholder, and the administrator's backup job: cron.d is for everyone to read, and so is this */
   sys('/etc/cron.d/.placeholder','f',{body:['# DO NOT EDIT OR REMOVE','# This file is a simple placeholder to keep dpkg from removing this directory'],date:new Date(2025,7,21,10,14)});
-  sys('/etc/cron.d/home-backup','f',{date:new Date(2025,10,3,21,12),body:['# /etc/cron.d/home-backup: a tarball of /home every night at 02:30, for the',
-    '# backup box to collect from /var/backups.','# if it has not run, log in on the console as root (hunter2) and run the',
+  if(P.profile.rootPassword)sys('/etc/cron.d/home-backup','f',{date:new Date(2025,10,3,21,12),body:['# /etc/cron.d/home-backup: a tarball of /home every night at 02:30, for the',
+    '# backup box to collect from /var/backups.','# if it has not run, log in on the console as root ('+P.profile.rootPassword+') and run the',
     '# line below by hand. a better password before the auditors come.','SHELL=/bin/sh','PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin','',
     '30 2 * * *\troot\ttar -czf /var/backups/home.tar.gz /home 2>/dev/null']});
   sys('/etc/motd','f',{body:function(){return MOTD.slice(1).concat([''],P.profile.welcome.slice(WEL))}});
