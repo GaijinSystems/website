@@ -23,10 +23,10 @@ PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07
 ~ serial console ttyS0, 115200 baud
 
 == boot ==
-Loading Linux 6.12.88+deb13-amd64 ... @200
+Loading Linux 6.12.111+deb13-amd64 ... @200
 Loading initial ramdisk ... @500
-[    0.000000] Linux version 6.12.88+deb13-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.88-1 (2026-09-12) @100
-[    0.000000] Command line: BOOT_IMAGE=/boot/vmlinuz-6.12.88+deb13-amd64 root=UUID=7d3c51e2-0b4f-4a8e-9c61-2f5e8a90d1b7 ro console=tty0 console=ttyS0,115200n8 @100
+[    0.000000] Linux version 6.12.111+deb13-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.111-1 (2026-09-28) @100
+[    0.000000] Command line: BOOT_IMAGE=/boot/vmlinuz-6.12.111+deb13-amd64 root=UUID=7d3c51e2-0b4f-4a8e-9c61-2f5e8a90d1b7 ro console=tty0 console=ttyS0,115200n8 @100
 [    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014 @100
 [    0.003120] Hypervisor detected: KVM @100
 [    0.081544] Memory: 1951204K/2096632K available @150
