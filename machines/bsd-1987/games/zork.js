@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1987", zork, which on the 4.3BSD tape was Dungeon. Translated to JavaScript for this terminal,
+/* PHOSPHOR-9 terminal: machine "bsd-1987", zork, which on the 4.3BSD tape was Dungeon (TOPS-20's DUNGEON loads it too). Translated to JavaScript for this terminal,
    statement by statement and by a script, from the FORTRAN of Dungeon 2.5.6 (actors.f, ballop.f, clockr.f, demons.f, dgame.f, dmain.f,
    dso.f, dsub.f, dverb1.f, dverb2.f, gdt.f, machdep.f, nobjs.f, np.f, np2.f, objcts.f, rooms.f, sverbs.f, verbs.f, villns.f), with its text
    from TEXTDATA.DAT and its index from DINDX.DAT. Every one of those source files keeps this notice:

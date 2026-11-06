@@ -990,6 +990,8 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   },
   inUse:function(p){return [ST.cwd].concat(RP?(RP.su?[RP.cwd,RP.home]:[RP.home]):[]).some(function(x){return x===p||x.indexOf(p+'/')===0})},
   su:function(){setRoot(true)},unsu:function(){if(RP&&RP.su){dropRoot();return true}return false},
+  rootHeld:function(){return !!RP}, /* root is held, by su or a root login, whoever the shell says it is now */
+  relock:function(on){if(RP)RP.prot.forEach(function(n){n.prot=!!on})}, /* a shell root starts as someone else: root's locks back on, and off again */
   powerOff:function(lines){ /* the end: the picture collapses to a dot, and any key starts it again */
     say(lines||[]);
     queue(function(){

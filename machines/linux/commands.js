@@ -28,7 +28,8 @@ P.setup(function(){
       var top=STK[STK.length-1];
       if(top&&top.say==='exit'&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
       P.typeLine(top?top.say:'logout');
-      if(top){STK.pop();if(!top.base){P.st.user=top.user;P.st.home=top.home;P.st.cwd=top.cwd;return}} /* back to the shell that ran su */
+      if(top&&!top.base){STK.pop();P.st.user=top.user;P.st.home=top.home;P.st.cwd=top.cwd;P.relock(top.user!=='root');return} /* back to the shell that ran su */
+      STK.length=0;
     }
     bye(a,raw,w);
   };
@@ -184,43 +185,63 @@ cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION
   });
 },{core:true,help:'the manual'});
 function homeOf(u){return u==='root'?'/root':'/home/'+u}
-function nest(who,login){ /* a shell started by root, as root or anyone: no password, and exit comes back */
+function known(u){return u==='root'||u===P.st.owner||u===P.st.user||/^[a-z_][a-z0-9_-]*$/.test(u)&&!!P.find('/home/'+u,true)}
+function nest(who,login){ /* a shell started by root, as root or anyone: no password, and exit comes back. Anyone else is kept out of root's files */
   STK.push({say:login?'logout':'exit',user:P.st.user,home:P.st.home,cwd:P.st.cwd});
-  P.st.user=who;P.st.home=homeOf(who);if(login)P.st.cwd=P.st.home;
+  P.st.user=who;P.st.home=homeOf(who);if(login)P.st.cwd=P.st.home;P.relock(who!=='root');
 }
-function as(who,line){ /* one command line as another user, then back */
-  if(who==='root'&&P.st.user!=='root'){P.su();P.st.home='/root';P.exec(line);P.queue(function(){P.unsu()});return}
-  var u=P.st.user;P.st.user=who;P.exec(line);P.queue(function(){P.st.user=u});
+function as(who,line,sudo){ /* one command line as another user, then back, ^C or not */
+  var w0=line.trim().split(/\s+/)[0]||'';
+  if(/^(exit|logout)$/.test(w0)){if(sudo){err('sudo: '+w0+': command not found');P.status(1)}return} /* su's shell just ends; sudo finds no such program */
+  var n=STK.length,u=P.st.user,h=P.st.home,held=P.rootHeld();
+  if(held){P.st.user=who;P.relock(who!=='root')}
+  else{P.su();P.st.home='/root'}
+  P.exec(line);
+  P.queue(function(){
+    STK.length=n; /* any shell the command started has ended with it */
+    if(!held){P.unsu();return}
+    if(P.rootHeld()){P.st.user=u;P.st.home=h;P.relock(u!=='root')}
+  },true);
 }
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
   'asks for the password of the user named, root if none is, and starts a shell as that user. -c runs one command instead.',function(a){
-  var who=null,login=false,run=null,m;
-  for(var i=0;i<a.length;i++){
-    var x=a[i];
+  var A=[],who=null,login=false,run=null,m,i;
+  a.forEach(function(x){ /* -lc id is -l -c id */
+    if(!/^-[^-]./.test(x)){A.push(x);return}
+    for(var k=1;k<x.length;k++){var ch=x.charAt(k);A.push('-'+ch);if('csgG'.indexOf(ch)>=0){if(k+1<x.length)A.push(x.slice(k+1));break}}
+  });
+  for(i=0;i<A.length;i++){
+    var x=A[i];
     if(/^(-|-l|--login)$/.test(x))login=true;
-    else if(x==='-c'||x==='--command'){run=a[++i];if(run===undefined){err("su: option requires an argument -- 'c'");err("Try 'su --help' for more information.");P.status(1);return}}
-    else if((m=x.match(/^(?:--command=|-c)(.+)$/)))run=m[1];
-    else if(x.charAt(0)==='-'&&who===null)continue;
+    else if(/^(-c|--command|-s|--shell|-g|--group|-G|--supp-group)$/.test(x)){
+      if(i+1>=A.length){err("su: option requires an argument -- '"+(x.charAt(1)==='-'?x.charAt(2):x.charAt(1))+"'");err("Try 'su --help' for more information.");P.status(1);return}
+      if(/^(-c|--command)$/.test(x))run=A[i+1];
+      i++;
+    }
+    else if((m=x.match(/^--command=(.*)$/)))run=m[1];
+    else if(x.charAt(0)==='-'&&x.length>1)continue;
     else if(who===null)who=x;
   }
   who=who||'root';
-  if(['root',P.st.user,P.st.owner].indexOf(who)<0&&(/^\.\.?$|\//.test(who)||!P.find('/home/'+who,true))){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');P.status(1);return}
+  if(!known(who)){err('su: user '+who+' does not exist or the user entry does not contain all the required fields');P.status(1);return}
   if(P.st.user==='root'){if(run!=null)as(who,run);else nest(who,login);return} /* root is asked nothing */
+  var piped=P.stdin(); /* a password piped in is read like a typed one */
   function tried(l){
     if(l===null||l===P.INT)return;
     var word=P.profile.rootPassword;
-    if(who==='root'&&word&&l===word){
+    if(who==='root'&&word&&P.fold(l)===P.fold(word)){
+      if(piped)P.typeLine('Password: '); /* the line stays open on a real one; every line ends here */
       if(run!=null){as('root',run);return}
       if(piped)return; /* the shell reads the rest of the pipe, finds nothing, and ends */
+      if(P.rootHeld()){nest('root',login);return} /* under root already: one more shell */
       STK.push({say:login?'logout':'exit',base:true,from:P.st.user});
       P.su();P.st.home='/root';if(login)P.st.cwd='/root'; /* su keeps the folder; su - goes to root's */
       return;
     }
     P.pause(2200);
-    err('su: Authentication failure');P.status(1);
+    err((piped?'Password: ':'')+'su: Authentication failure');P.status(1);
   }
-  var piped=P.stdin(); /* a password piped in is read like a typed one */
-  if(piped){P.typeLine('Password: ');tried(String([].concat(piped)[0]||''));return}
+  if(piped){tried(String([].concat(piped)[0]||''));return}
   P.ask('Password: ',tried,false,true);
 });
 cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] command [arg ...]',
@@ -234,9 +255,9 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] comman
       line=line.slice(m[0].length);
       if(m[1])u=m[1];else if(m[2])sh=/i|login/.test(m[2])?2:1;else if(m[3])break;
     }
-    if(u!=='root'&&!P.find('/home/'+u,true)&&u!==P.st.user){err('sudo: unknown user '+u);err('sudo: error initializing audit plugin sudoers_audit');P.status(1);return}
+    if(!known(u)){err('sudo: unknown user '+u);err('sudo: error initializing audit plugin sudoers_audit');P.status(1);return}
     if(!line.trim()){if(sh)nest(u,sh===2);else P.say(['usage: sudo -h | -K | -k | -V','usage: sudo -v [-ABkNnS] [-g group] [-h host] [-p prompt] [-u user]','usage: sudo [-ABbEHkNnPS] [-u user] [VAR=value] [-i | -s] [command [arg ...]]']);return}
-    as(u,line);
+    as(u,line,true);
     return;
   }
   P.ask('[sudo] password for '+P.st.user+': ',function(l){
@@ -657,7 +678,7 @@ cmd(['systemctl'],'/usr/bin','Control the systemd system and service manager','s
     var x=names[0]?(/\.\w+$/.test(names[0])?names[0]:names[0]+'.service'):'';
     if(P.st.user==='root'){ /* root is obeyed, quietly; this terminal keeps its services as they were */
       if(verb!=='daemon-reload'&&!x){err('Too few arguments.');P.status(1);return}
-      if(x&&!unit(x)){err(/able|mask/.test(verb)?'Failed to '+verb+' unit: Unit file '+x+' does not exist.':'Failed to '+verb+' '+x+': Unit '+x+' not found.');P.status(/able|mask/.test(verb)?1:5)}
+      if(x&&!unit(x)){err(/able|mask/.test(verb)?'Failed to '+verb+' unit: Unit file '+x+' does not exist.':'Failed to '+verb+' '+x+': Unit '+x+' not found.');if(!/able|mask/.test(verb))P.queue(function(){P.status(5)})} /* after the line, which sets 1 */
       return;
     }
     if(verb==='daemon-reload'){err('Failed to reload daemon: Interactive authentication required.');P.status(1);return}
@@ -699,6 +720,7 @@ function power(v){
       }
     }
     if(when===null)when=6e4;
+    if(isNaN(new Date(now.getTime()+when).getTime())){err('Failed to parse time specification: '+a.filter(function(x){return x.charAt(0)!=='-'})[0]);P.status(1);return} /* past the end of time */
     if(!when){power(r);return}
     P.typeLine((r==='reboot'?'Reboot':'Shutdown')+' scheduled for '+stamp(new Date(now.getTime()+when))+', use \'shutdown -c\' to cancel.'); /* which this terminal does not wait out */
   });

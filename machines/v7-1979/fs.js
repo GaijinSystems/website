@@ -21,7 +21,7 @@ Phosphor.setup(function(P){
     L.push(ST.user+'::9:2::/usr/'+ST.user+':');
     return L;
   }});
-  sys('/etc/rc.old','f',{body:[': old rc, kept in case the new one fails','/etc/update',': reminder: root is p1green until the auditors have gone','/etc/cron']});
+  if(P.profile.rootPassword)sys('/etc/rc.old','f',{body:[': old rc, kept in case the new one fails','/etc/update',': reminder: root is '+P.profile.rootPassword+' until the auditors have gone','/etc/cron']}); /* the root password, wherever it is set */
   sys('/usr/src/v6/ken/slp.c','f',{body:[
     '/* the old system, kept for reference. from swtch() in the sixth edition. */',
     '	/*',
