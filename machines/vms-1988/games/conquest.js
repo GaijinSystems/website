@@ -23,7 +23,8 @@
    NEW CODE, not from the source, and marked so where it stands below: the terminal (a VT100 fed by the program's own
    termcap output, in place of the VMS terminal driver and QIOs), the Software Tools library the source links with
    (strcpy, prints, getlin and the like, written to their documented behaviour), the VMS services (timers, the
-   section file, process creation), and the scheduler. Conquest is a game for many players on one VAX: each
+   section file, process creation), and the scheduler; that new code is Copyright (C) 2026 Gaijin Systems, GNU AGPL v3
+   or later (see LICENSE). Conquest is a game for many players on one VAX: each
    player's process and a driver process (conqdriv) share the universe in a global section, and the driver moves it
    on ten times a second. Here there is one player, and the driver's main loop, rewritten from conqdriv's, is called
    ten times a second by a timer in this page while the game runs; the one-second AST (astservice) runs while the

@@ -1377,15 +1377,19 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
     if(!PROFILE.dos)ARGS=keep;
   },true);
 }
+var KEPT=[]; /* child shells not yet undone: a ^C can end their program before it calls back() */
 function keep(){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes */
   var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV);
-  return function back(){
+  KEPT.push(back);
+  return back;
+  function back(){
+    var i=KEPT.indexOf(back);if(i<0)return;KEPT.splice(i,1);
     if(find(cwd,true))ST.cwd=cwd;
     Object.keys(ENV).forEach(function(k){if(!has(env,k))delete ENV[k]});Object.assign(ENV,env);
     Object.keys(CSHV).forEach(function(k){if(!has(vars,k))delete CSHV[k]});Object.assign(CSHV,vars);
-  };
+  }
 }
-function child(lines){var back=keep();runScript(lines);queue(back,true)} /* one command, as a child process */
+function child(lines){var back=keep(),st=STATUS;runScript(lines);queue(function(){back();STATUS=st},true)} /* one command, as a child process: its status is not the program's */
 var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^foreach$/;
 function compound(line){
   if(PROFILE.dos)return false;
@@ -1426,7 +1430,7 @@ function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of th
   return s.replace(/^(\s*)([a-z0-9]+)(?=[\\\/.])/i,function(m,sp,c){return has(CMDS,c.toLowerCase())?sp+c+' ':m});
 }
 function nextPrompt(pre){
-  queue(function(){if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
+  queue(function(){while(KEPT.length)KEPT[KEPT.length-1]();if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
 }
 function dollarParen(s){ /* bash: $(command) is `command`, outside single quotes. Not nested; $(( )) is left alone */
   var o='',sq=false,dq=false,j,c,in_;

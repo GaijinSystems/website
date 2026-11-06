@@ -3,7 +3,8 @@
    commands, the messages, the rules and the score are the original's. How the machine chooses is this file's own: a plain
    search to the lookahead asked for, and a weighted board. It will not choose the original's moves every time.
    Differences: a lookahead over 6 is held at 6; a time limit forfeits the turn when the late answer arrives, not before;
-   the file named on the command line is kept in the browser, not in the terminal's file system. */
+   the file named on the command line is kept in the browser, not in the terminal's file system.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
 var YOU=1,IT=2,MARK=['-','*','@'],MAXLOOK=6,DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];

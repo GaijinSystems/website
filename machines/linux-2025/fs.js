@@ -146,7 +146,7 @@ Phosphor.setup(function(P){
   sys('/var/log/apt','d');
   sys('/var/log/apt/term.log','f',{mode:'-rw-r-----',group:'adm',prot:true,size:48211,date:UPG});
   sys('/var/log/apt/history.log','f',{date:UPG,body:['','Start-Date: 2025-11-02  19:03:40','Commandline: apt install frotz sl cowsay fortune-mod cmatrix','Requested-By: '+OWNER+' (1000)',
-    'Install: frotz:amd64 (2.54+dfsg-1), sl:amd64 (5.02-1+b2), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-7.3), fortunes-min:amd64 (1:1.99.1-7.3, automatic), cmatrix:amd64 (2.0-6), librecode0:amd64 (3.6-26, automatic)',
+    'Install: frotz:amd64 (2.55+dfsg-2), sl:amd64 (5.02-1+b1), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-9), fortunes-min:amd64 (1:1.99.1-9, automatic), cmatrix:amd64 (2.0-6), librecode0:amd64 (3.6-26, automatic)',
     'End-Date: 2025-11-02  19:04:02','','Start-Date: 2026-10-14  06:24:31','Commandline: /usr/bin/unattended-upgrade','Upgrade: linux-image-amd64:amd64 (6.12.74-2, 6.12.88-1), base-files:amd64 (13.8+deb13u6, 13.8+deb13u7), libsystemd0:amd64 (257.12-1~deb13u1, 257.13-1~deb13u1), systemd:amd64 (257.12-1~deb13u1, 257.13-1~deb13u1)',
     'End-Date: 2026-10-14  06:25:11']});
   sys('/var/log/dpkg.log','f',{date:UPG,body:['2026-10-14 06:24:33 startup archives unpack','2026-10-14 06:24:34 upgrade base-files:amd64 13.8+deb13u6 13.8+deb13u7','2026-10-14 06:24:34 status half-configured base-files:amd64 13.8+deb13u6',

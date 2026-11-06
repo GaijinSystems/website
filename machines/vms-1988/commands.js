@@ -205,9 +205,9 @@ verb('edit',2,function(a){ /* EDT, in its line mode */
   })();
 });
 verb('set',3,function(a,q,raw){
-  var w=(a[0]||'').toLowerCase().split('=')[0]; /* SET PROMPT="$ " */
+  var w=(a[0]||'').toLowerCase().split('=')[0],val=(a[0]||'').indexOf('=')>0?a[0].slice(a[0].indexOf('=')+1):a[1]; /* SET PROMPT="$ ", SET DEF=[GAMES] */
   if('default'.indexOf(w)===0&&w.length>=3){
-    var S=parse(a[1]||'[]'),dir=folder(S.abs);
+    var S=parse(val||'[]'),dir=folder(S.abs);
     if(dir&&dir.prot){err('%DCL-E-INVDEF, cannot set default');return} /* with no such folder, VMS takes your word for it */
     P.st.cwd=S.abs;
     return;
@@ -269,6 +269,8 @@ verb('logout',2,function(a,q){
   P.logout();
 });
 verb('run',2,function(a){
+  if(!a[0]){P.ask('_File: ',function(l){if(l&&l!==P.INT&&l.trim())V.run.run([l.trim()],[],l.trim())},true);return} /* DCL asks for what it needs */
+  if(/[*%]/.test(a[0])){err('%DCL-W-ACTIMAGE, error activating image '+up(a[0]));err('-RMS-F-WLD, invalid wildcard operation');return}
   var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec.replace(/(;\d*)?$/,'.exe$1')); /* MORIA;1 is MORIA.EXE;1 */
   if(spec&&r.S.name&&r.e&&r.S.abs==='/games'){
     var image=r.e.name.replace(/\..*$/,'');

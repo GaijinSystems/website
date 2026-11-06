@@ -4,7 +4,8 @@
    is this file's own: a search six plies deep and a count of the pieces. It will not choose the original's moves every time.
    Not done: phone, draw and scale, which drove devices that this terminal doesn't have, and do nothing here; set-up, whose
    input format is not known, says "what?" as the original does to anything it doesn't follow, until an interrupt; the timer,
-   after which the original moves for you if you take too long; input and output, kept in the browser. */
+   after which the original moves for you if you take too long; input and output, kept in the browser.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
 var HELP=[['help','this list'],['reverse','reverse position'],['move','make move for person'],['phone','get input from phone'],['restart','reset board to saved position'],['reset','reset board to set-up position'],['set-up','input position from teletype'],['save','put position into initialization table'],['backup','backup through list of moves'],['list','list moves since initialization'],['print','print board'],['draw','draw board on vt0'],['scale','change draw scale'],['input','input position from a file'],['output','output position to a file'],['search','print search depth'],['time','change timer'],['branch','change branching'],['resign','give up'],['/','comment']];

@@ -13,7 +13,8 @@
 
    DDL's compiler and interpreter survive only as VAX binaries, ddlcomp and ddlrun. What follows is not a translation of them: it is a new
    compiler and interpreter for the language, written from that manual, games/ddl/doc/wishlist, the words in the ddlrun binary, and how
-   the real one behaves, run on 4.3BSD under SIMH with the shipped lib/aard, the program it was compared against.
+   the real one behaves, run on 4.3BSD under SIMH with the shipped lib/aard, the program it was compared against. That
+   compiler and interpreter are Copyright (C) 2026 Gaijin Systems, GNU AGPL v3 or later; see LICENSE.
 
    Differences:
    - The source is compiled when the game starts. The real ddlcomp's file is not used.
