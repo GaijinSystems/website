@@ -5563,8 +5563,7 @@ function hasattr(y,x,n){
   return false;
 }
 function wrapped(y,cols,need){ /* the pieces of a long line, at least need of them */
-  var s=textrow(y).replace(/ +$/,''),n=Math.max(1,Math.ceil(s.length/cols),need);
-  return n;
+  return Math.max(1,Math.ceil(textrow(y).replace(/ +$/,'').length/cols),need);
 }
 function render(){
   if(!glass)return;

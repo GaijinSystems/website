@@ -66,7 +66,7 @@ function validBoard(x){
 P.command({names:['reversi'],run:function(a,raw,words){
   var argv=words.slice(1),restart=false,file=null;
   if(argv[0]==='-r'){restart=true;argv=argv.slice(1)}
-  if(argv.length&&argv[0].charAt(0)!=='-')file=P.norm?P.norm(argv[0]):argv[0];
+  if(argv.length&&argv[0].charAt(0)!=='-')file=P.norm(argv[0]);
   P.cprog(function*(io){
     var B,turn,placed,look,print,limit,started;
     function fresh(){

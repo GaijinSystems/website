@@ -33,15 +33,16 @@ P.command({names:['ps'],path:'/bin',
     if(!PSN)PSN=T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0)+5; /* each ps gets the next id */
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
     R.push([String(PSN++),P.profile.csh?'02':'0','0:00',('ps '+a.join(' ')).trim()]);
+    function tt(p,i){return p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)} /* Berkeley's TT and STAT: this ps runs, the rest sleep, idle when they have no terminal */
     if(P.profile.csh&&/u/.test(fl)){ /* the long form, and everyone's name on it */
       P.say(['USER       PID %CPU %MEM   SZ  RSS TT STAT  TIME COMMAND'].concat(R.map(function(p,i){
         var mine=p[1]==='02',k=parseInt(p[0],10)||1;
-        return (mine?P.st.user:'root').padEnd(8)+p[0].padStart(5)+'  0.0'+((k*7%19)/10).toFixed(1).padStart(5)+String(40+k*3%140).padStart(5)+String(20+k*5%110).padStart(5)+' '+p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)+p[2].padStart(6)+' '+p[3];
+        return (mine?P.st.user:'root').padEnd(8)+p[0].padStart(5)+'  0.0'+((k*7%19)/10).toFixed(1).padStart(5)+String(40+k*3%140).padStart(5)+String(20+k*5%110).padStart(5)+' '+tt(p,i)+p[2].padStart(6)+' '+p[3];
       })));
       return;
     }
     if(P.profile.csh){ /* Berkeley's columns */
-      P.say(['  PID TT STAT  TIME COMMAND'].concat(R.map(function(p,i){return p[0].padStart(5)+' '+p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)+p[2].padStart(5)+' '+p[3]})));
+      P.say(['  PID TT STAT  TIME COMMAND'].concat(R.map(function(p,i){return p[0].padStart(5)+' '+tt(p,i)+p[2].padStart(5)+' '+p[3]})));
       return;
     }
     P.say(['   PID TTY TIME CMD'].concat(R.map(function(p){return p[0].padStart(6)+' '+p[1].slice(0,2).padEnd(2)+p[2].padStart(6)+' '+p[3]})));
@@ -217,13 +218,13 @@ P.command({names:['rm'],path:'/bin',
       var n=P.find(x,true),at=n&&P.pathOf(n);
       if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
       if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
-      var abs=P.norm(x),locked=lockedIn(n,abs,[],P.find(P.dirOf(abs),true));
+      var abs=P.norm(x),up=P.find(P.dirOf(abs),true),locked=lockedIn(n,abs,[],up);
       if(n===P.root||locked||!P.canWrite(abs)||P.inUse(at)){
         denied=denied||!P.canWrite(locked||abs);
         P.typeLine('rm: '+x+' not removed','err');
         return;
       }
-      delete P.find(P.dirOf(abs),true).kids[abs.split('/').pop()]; /* by the name given: a link has its own */
+      delete up.kids[abs.split('/').pop()]; /* by the name given: a link has its own */
     });
     if(denied)P.typeLine('nice try.','dim');
   }});

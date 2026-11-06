@@ -69,6 +69,16 @@ function val(s){ /* VAL: as much of a number as the string starts with, spaces i
 function int16(x){x=Math.floor(x);if(x<-32768||x>32767)err(E.qty);return x}
 function s2b(s){var a=[];for(var i=0;i<s.length;i++)a.push(s.charCodeAt(i)&255);return a}
 function b2s(a,i,j){var s='';for(var k=i;k<j;k++)s+=String.fromCharCode(a[k]);return s}
+var NUMBER=/^[+-]?(\d+\.?\d*|\.\d+)(E[+-]?\d+)?$/; /* what INPUT and READ take as a number */
+function linked(base,lines){ /* lines {n,b} as a program file at base: load address, then the lines with their links */
+  var o=[base&255,base>>8],a=base;
+  lines.forEach(function(l){
+    var next=a+4+l.b.length+1;
+    o.push(next&255,next>>8,l.n&255,l.n>>8);for(var i=0;i<l.b.length;i++)o.push(l.b[i]);o.push(0);a=next;
+  });
+  o.push(0,0);
+  return new Uint8Array(o);
+}
 
 /* ---------- crunching a line into tokens, and LIST's way back ---------- */
 function crunch(s,seven){
@@ -142,15 +152,7 @@ B.store=function(n,bytes){
   else this.prog.splice(x.i,0,{n:n,b:bytes});
   this.clr();this.cont=null;
 };
-B.prg=function(){ /* the program as a file: load address, then the lines with their links */
-  var base=this.v7?0x1c01:0x801,o=[base&255,base>>8],a=base;
-  this.prog.forEach(function(l){
-    var next=a+4+l.b.length+1;
-    o.push(next&255,next>>8,l.n&255,l.n>>8);for(var i=0;i<l.b.length;i++)o.push(l.b[i]);o.push(0);a=next;
-  });
-  o.push(0,0);
-  return new Uint8Array(o);
-};
+B.prg=function(){return linked(this.v7?0x1c01:0x801,this.prog)}; /* the program as a file */
 B.loadPrg=function(u){ /* false if it is not a BASIC program */
   var L=[],i=2;
   while(i+3<u.length){
@@ -412,13 +414,13 @@ B.rnd=function(x){
 /* ---------- output ---------- */
 B.out=function(s){ /* to the screen, or wherever CMD sends it */
   if(this.cmdLfn&&this.files[this.cmdLfn]){this.fileOut(this.cmdLfn,s);return}
-  for(var i=0;i<s.length;i++)this.m.out(s.charCodeAt(i));
+  this.say(s);
 };
 B.say=function(s){for(var i=0;i<s.length;i++)this.m.out(s.charCodeAt(i))}; /* always the screen */
 B.fileOut=function(lfn,s){
   var f=this.files[lfn];
   if(!f)err(E.notopen);
-  if(f.dev===3){for(var i=0;i<s.length;i++)this.m.out(s.charCodeAt(i));return}
+  if(f.dev===3){this.say(s);return}
   if(f.dev===0)err(E.notoutput);
   if(f.dev!==8)err(E.device);
   for(var j=0;j<s.length;j++)if(!this.m.drive.put(f.sa,s.charCodeAt(j)&255))err(E.notoutput);
@@ -454,14 +456,14 @@ B.error=function(n,where){
   this.cmdLfn=0;
   var ln=this.li>=0&&(this.state==='run'||this.state==='input'||this.state==='wait')?this.line():-1;
   this.erN=n;this.elN=ln<0?65535:ln;
-  if(n===E.brk){}
-  else if(ln>=0){this.errLine={n:ln,at:this.stmt};this.cont=null}
-  else this.errLine=null;
   if(n===E.brk){
     this.say((this.v7?'\r\r':'\r')+'BREAK'+(ln>=0?' IN '+ln:''));
     if(ln>=0)this.cont={li:this.li,p:this.stmt,buf:this.buf};
+  }else{
+    if(ln>=0){this.errLine={n:ln,at:this.stmt};this.cont=null}
+    else this.errLine=null;
+    this.say('\r?'+ERR[n]+(this.v7?' ':'  ')+'ERROR'+(ln>=0?' IN '+ln:''));
   }
-  else this.say('\r?'+ERR[n]+(this.v7?' ':'  ')+'ERROR'+(ln>=0?' IN '+ln:''));
   this.stack=[];
   this.ready();
 };
@@ -568,7 +570,7 @@ B.afterThen=function(){ /* THEN 100, or the statements that follow */
 };
 /* ---------- statements: BASIC V2 ---------- */
 var st2={};
-st2[0x80]=function(){this.cont=this.li>=0?{li:this.li,p:this.p,buf:this.buf}:null;this.ready();return false}; /* END */
+st2[0x80]=function(){this.cont=this.li>=0?this.here():null;this.ready();return false}; /* END */
 st2[0x81]=function(){ /* FOR */
   var c=this.at();if(c<65||c>90)err(E.syntax);
   var n=this.name();if(/[$%]$/.test(n)||this.at()===40)err(E.syntax);
@@ -608,7 +610,7 @@ st2[0x87]=function(){do{var v=this.lvalue();v.set(this.readData(v.name||''))}whi
 st2[0x88]=function(){this.let()};
 st2[0x89]=function(){var n=this.lineNum();if(n<0)err(E.syntax);this.goLine(n);return false}; /* GOTO */
 st2[0x8A]=function(){ /* RUN */
-  if(this.v7&&this.at()===34||this.v7&&this.at()===40){this.dload(true);return false}
+  if(this.v7&&(this.at()===34||this.at()===40)){this.dload(true);return false}
   var n=this.lineNum();this.clr();this.cont=null;
   if(n>=0)this.goLine(n);
   else{if(!this.prog.length){this.ready();return false}this.li=0;this.buf=this.prog[0].b;this.p=0}
@@ -644,7 +646,7 @@ st2[0x8C]=function(){ /* RESTORE */
 };
 st2[0x8D]=function(){ /* GOSUB */
   var n=this.lineNum();if(n<0)err(E.syntax);
-  var back=this.here();this.toEndOfStatement();back=this.here();
+  this.toEndOfStatement();var back=this.here();
   if(this.stack.length>=24)err(E.mem);
   this.goLine(n);
   this.stack.push({t:'gosub',at:back});
@@ -850,7 +852,7 @@ B.gotInput=function(text){
       if(/\$$/.test(v.name||'')||(v.name===undefined&&typeof v.get()==='string'))v.set(s);
       else{
         var t=s.replace(/ /g,'');
-        if(t!==''&&!/^[+-]?(\d+\.?\d*|\.\d+)(E[+-]?\d+)?$/.test(t)&&!/^[+-]?\.?$/.test(t)){this.say('?REDO FROM START\r');this.inputAt=0;this.say('? ');this.askInput();return}
+        if(t!==''&&!NUMBER.test(t)&&!/^[+-]?\.?$/.test(t)){this.say('?REDO FROM START\r');this.inputAt=0;this.say('? ');this.askInput();return}
         v.set(val(t));
       }
       this.inputAt++;
@@ -865,16 +867,16 @@ B.gotInput=function(text){
 };
 /* ---------- READ and DATA ---------- */
 B.readData=function(name){
-  var keep={li:this.li,p:this.p,buf:this.buf};
+  var keep=this.here();
   if(!this.nextDatum()){this.jump(keep);err(E.data)}
-  var s='',q=false,c,b=this.dataBuf,p=this.dataP;
+  var s='',c,b=this.dataBuf,p=this.dataP;
   while(p<b.length&&b[p]===32)p++;
   if(b[p]===34){p++;while(p<b.length&&b[p]!==34)s+=String.fromCharCode(b[p++]);if(p<b.length)p++;while(p<b.length&&b[p]===32)p++}
-  else{while(p<b.length&&(c=b[p])!==44&&c!==58){s+=String.fromCharCode(c);p++}if(!q)s=s.replace(/ +$/,'')}
+  else{while(p<b.length&&(c=b[p])!==44&&c!==58){s+=String.fromCharCode(c);p++}s=s.replace(/ +$/,'')}
   this.dataP=p;
   if(/\$$/.test(name))return s;
   var t=s.replace(/ /g,'');
-  if(t!==''&&!/^[+-]?(\d+\.?\d*|\.\d+)(E[+-]?\d+)?$/.test(t)){this.li=this.dataLi;this.buf=this.prog[this.dataLi].b;err(E.syntax)} /* the error is in the DATA line */
+  if(t!==''&&!NUMBER.test(t)){this.li=this.dataLi;this.buf=this.prog[this.dataLi].b;err(E.syntax)} /* the error is in the DATA line */
   return val(t);
 };
 B.nextDatum=function(){ /* the data pointer onto the next item, past commas and into the next DATA */
@@ -908,7 +910,7 @@ B.range=function(){ /* LIST 10-20, DELETE -50 and so on */
 B.list=function(){
   var r=this.range(),self=this;
   this.need58();
-  var x=this.index(r[0]).i,first=true;
+  var x=this.index(r[0]).i;
   if(this.v7)this.out('\r');
   this.task=function(){
     for(var k=0;k<4;k++){
@@ -916,7 +918,6 @@ B.list=function(){
       if(x>=self.prog.length||self.prog[x].n>r[1]){if(x<self.prog.length)self.out('\r');self.ready();return true} /* stopped short of the end: one more line */
       var l=self.prog[x++];
       self.out((self.v7?'':'\r')+l.n+' '+detok(l.b,self.v7)+(self.v7?'\r':''));
-      first=false;
     }
     return false;
   };
@@ -989,7 +990,7 @@ B.dArgs=function(){
     var c=this.at();
     if(c===68){this.p++;this.int(0,1)}
     else if(c===85){this.p++;dev=this.int(4,30)}
-    else if(this.at()===0xB0){this.p++;this.int(4,30)}
+    else if(c===0xB0){this.p++;this.int(4,30)}
     else err(E.syntax);
   }
   if(dev!==8)err(E.device);
@@ -1020,7 +1021,6 @@ B.diskLoad=function(name,shown,run,quietly){ /* SEARCHING FOR, LOADING, and the 
       if(!u){self.state='run';self.li=direct?-1:self.li;self.error(E.notfound);return false}
       self.got=u;if(direct&&!quietly)self.say('\rLOADING');t0=self.m.ms();return false}
     if(self.m.ms()-t0<120+C.blocks({data:self.got})*30)return false;
-    var prog=/^\$/.test(name);
     self.loadPrg(self.got);self.got=null;
     if(run){self.state='run';if(!self.prog.length){self.ready();return false}self.li=0;self.buf=self.prog[0].b;self.p=0;if(!quietly)self.say('\r');return false}
     if(direct){self.cont=null;self.ready();return false}
@@ -1111,8 +1111,9 @@ st7[0xE0]=function(){ /* CHAR colour,column,row,"text"[,reverse] */
 st7[0xE7]=function(){var s=this.int(0,6);this.need(44);var c=this.int(1,16);this.m.color(s,c-1)}; /* COLOR */
 st7[0xE8]=function(){this.out('\u0093')}; /* SCNCLR */
 st7[0xEA]=function(){ /* HELP: the line of the last error, from the statement that failed */
-  if(!this.errLine||!this.index(this.errLine.n).hit){this.m.help();return}
-  var l=this.prog[this.index(this.errLine.n).i],t=detok(l.b.slice(0,this.errLine.at),true),u=detok(l.b.slice(this.errLine.at),true);
+  var x=this.errLine&&this.index(this.errLine.n);
+  if(!x||!x.hit){this.m.help();return}
+  var l=this.prog[x.i],t=detok(l.b.slice(0,this.errLine.at),true),u=detok(l.b.slice(this.errLine.at),true);
   this.say('\r'+l.n+' '+t+'\u0012'+u+'\u0092\r');
 };
 st7[0xEB]=function(){ /* DO */
@@ -1123,11 +1124,14 @@ st7[0xEB]=function(){ /* DO */
 };
 B.truth=function(){var v=this.expr();return v!==0&&v!==''};
 B.skipCond=function(){if(this.is(0xFD)||this.is(0xFC))this.expr()};
-st7[0xEC]=function(){ /* LOOP */
+B.doAt=function(){ /* the DO that LOOP and EXIT close, past any FOR inside it */
   var i=this.stack.length-1;
   while(i>=0&&this.stack[i].t==='for')i--;
   if(i<0||this.stack[i].t!=='do')err(E.loopwo);
-  var f=this.stack[i],again=true;
+  return i;
+};
+st7[0xEC]=function(){ /* LOOP */
+  var i=this.doAt(),f=this.stack[i],again=true;
   if(this.is(0xFD))again=this.truth();else if(this.is(0xFC))again=!this.truth();
   this.need58();
   this.stack.length=i;
@@ -1135,10 +1139,7 @@ st7[0xEC]=function(){ /* LOOP */
   return false;
 };
 st7[0xED]=function(){ /* EXIT */
-  var i=this.stack.length-1;
-  while(i>=0&&this.stack[i].t==='for')i--;
-  if(i<0||this.stack[i].t!=='do')err(E.loopwo);
-  this.stack.length=i;
+  this.stack.length=this.doAt();
   this.scan(0xEB,0xEC,E.loopnf);this.skipCond();
 };
 st7[0xEE]=function(){this.directory();return false}; /* DIRECTORY */
@@ -1300,8 +1301,9 @@ B.renumber=function(start,inc,old){
   if(missing)err(E.undef);
 };
 /* ---------- the machine language monitor: enough to look and leave ---------- */
+var REGS='    PC  SR AC XR YR SP\r; FB000 00 00 00 00 F8\r';
 B.monitor=function(){
-  this.say('\rMONITOR\r    PC  SR AC XR YR SP\r; FB000 00 00 00 00 F8\r');
+  this.say('\rMONITOR\r'+REGS);
   this.monLoop();
 };
 B.monLoop=function(){
@@ -1319,10 +1321,10 @@ B.monLoop=function(){
         self.say('>'+(a).toString(16).toUpperCase().padStart(5,'0')+' '+h.join(' ')+':'+t+'\r');a+=8;
       }
     }
-    else if(/^R/.test(l))self.say('    PC  SR AC XR YR SP\r; FB000 00 00 00 00 F8\r');
+    else if(/^R/.test(l))self.say(REGS);
     else if(l.trim())self.say('?\r');
     self.monLoop();
   });
 };
-C.Basic=Basic;C.crunch=crunch;C.detok=detok;C.num=num;C.ERR=ERR;C.E=E;C.WAIT=WAIT;
+C.Basic=Basic;C.crunch=crunch;C.linked=linked;C.E=E;C.WAIT=WAIT;
 })(window.Phosphor);

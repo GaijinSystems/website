@@ -190,7 +190,7 @@ P.program(function(S){
     if((i=cell(a,55296))>=0)return s.co[i]|240;
     if(a===53280)return M.border|240;
     if(a===53281)return M.bg|240;
-    if(a===53272)return M.vic.lower?23:21;
+    if(a===53272)return s.lower?23:21;
     if(a>=54272&&a<54301)return a===54299?Math.floor(Math.random()*256):0; /* the SID: only voice 3's noise reads back */
     if(a===160||a===161||a===162){var j=Math.floor(machine.jiffies());return [(j>>16)&255,(j>>8)&255,j&255][a-160]}
     if(M.mode===64){
@@ -253,9 +253,9 @@ P.program(function(S){
   }
   function tone(v,hz,secs,wave,vol,delay){
     var a=audio();if(!a||!secs||!hz)return;
-    var t=a.currentTime+(delay||0),o=osc(a,hz,wave||0),gn=a.createGain();
-    gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(.05*(vol===undefined?15:vol)/15,t+.005);
-    gn.gain.setValueAtTime(.05*(vol===undefined?15:vol)/15,t+Math.max(.006,secs-.02));gn.gain.linearRampToValueAtTime(0,t+secs);
+    var t=a.currentTime+(delay||0),o=osc(a,hz,wave||0),gn=a.createGain(),lv=.05*(vol===undefined?15:vol)/15;
+    gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(lv,t+.005);
+    gn.gain.setValueAtTime(lv,t+Math.max(.006,secs-.02));gn.gain.linearRampToValueAtTime(0,t+secs);
     o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+secs+.05);
   }
   function bell(){tone(1,1600,.12,2,15)}
@@ -344,7 +344,7 @@ P.program(function(S){
     if(v&&k*8<6)k=.75; /* 80 columns on a phone: readable, and the glass follows the cursor */
     paper.style.width=pw*k+'px';paper.style.height=ph*k+'px';
     if(cv.width!==s.cols*8){cv.width=s.cols*8;cv.height=s.rows*8;img=g.createImageData(cv.width,cv.height)}
-    var pal=v?PAL.vdc:PAL.vic,bc=v?pal[M.vdcBg]:M.fast?pal[M.border]:pal[M.border],tc=pal[s.colour];
+    var pal=v?PAL.vdc:PAL.vic,bc=pal[v?M.vdcBg:M.border],tc=pal[s.colour];
     box.style.background='rgb('+bc.join(',')+')';
     html.style.setProperty('--phos-rgb',tc.join(','));
     html.style.setProperty('--c128-glow','rgba('+tc.join(',')+',.55)');

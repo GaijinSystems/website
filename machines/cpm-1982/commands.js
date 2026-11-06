@@ -18,20 +18,28 @@ function bdos(d,why){ /* the classic: a drive that is not there, and a key, ctrl
   P.typeLine('BDOS ERR ON '+d+': '+(why||'SELECT'));
   P.queue(function(){return P.readKey('')});
 }
-function drive(x){var m=/^([b-p]):/i.exec(x||'');return m&&m[1].toUpperCase()}
+function elsewhere(x){ /* a name on a drive that is not there: the error, and true */
+  var m=/^([b-p]):/i.exec(x||'');
+  if(m)bdos(m[1].toUpperCase());
+  return !!m;
+}
 function arg(w,i){return (w[i]||'').toLowerCase()}
-function used(){return Object.keys(P.root.kids).filter(function(k){return P.root.kids[k].type!=='d'}).reduce(function(a,k){return a+Math.ceil((P.fsize(P.root.kids[k])||1)/1024)},0)}
+function free(){ /* K left on the disk */
+  var used=Object.keys(P.root.kids).filter(function(k){return P.root.kids[k].type!=='d'}).reduce(function(a,k){return a+Math.ceil((P.fsize(P.root.kids[k])||1)/1024)},0);
+  return Math.max(0,SIZE-used);
+}
+function assign(raw){return raw.replace(/^\s*\S+\s*/,'').toLowerCase().match(/^(\S+)=(\S+)$/)} /* REN and PIP: NEW=OLD */
 P.setup(function(){P.setPrompt(function(){return (user?user:'')+'A>'});P.env={}});
 
 cmd(['dir'],'list files',function(a,raw,w){
-  if(drive(w[1])){bdos(drive(w[1]));return}
+  if(elsewhere(w[1]))return;
   var m=matcher(arg(w,1)||'*.*'),F=files().filter(m);
   if(!F.length){P.typeLine('NO FILE');return}
   P.say(P.chunk(F.map(function(k){return fcb(k)}),4).map(function(r){return 'A: '+r.join(' : ')}));
 });
 cmd(['type'],'print a file',function(a,raw,w){
   if(!w[1]){P.typeLine('TYPE?');return}
-  if(drive(w[1])){bdos(drive(w[1]));return}
+  if(elsewhere(w[1]))return;
   var n=get(arg(w,1).replace(/^a:/,''));
   if(!n||n.type==='d'||n.prot){P.typeLine('NO FILE');return}
   if(n.bin){P.typeLine('\u00c3\u0000\u0001\u00cd\u0005\u0000\u00c9');return}
@@ -49,7 +57,7 @@ cmd(['era'],null,function(a,raw,w){
   eraseAll(m);
 });
 cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD */
-  var q=raw.replace(/^\s*\S+\s*/,'').toLowerCase().match(/^(\S+)=(\S+)$/);
+  var q=assign(raw);
   if(!q){P.typeLine((raw.trim()+'?').toUpperCase());return}
   var n=get(q[2]);
   if(!n){P.typeLine('NO FILE');return}
@@ -67,19 +75,19 @@ cmd(['save'],null,function(a,raw,w){
   write(arg(w,2),[]);
 });
 cmd(['stat'],null,function(a,raw,w){
-  if(drive(w[1])){bdos(drive(w[1]));return}
+  if(elsewhere(w[1]))return;
   if(w[1]){
     var m=matcher(arg(w,1)),F=files().filter(m);
     if(!F.length){P.typeLine('FILE NOT FOUND');return}
-    P.say([' RECS  BYTES  EXT ACC'].concat(F.map(function(k){var sz=P.fsize(P.root.kids[k]);return String(Math.ceil(sz/128)).padStart(5)+String(Math.ceil(sz/1024)).padStart(6)+'K   1 R/W A:'+fcb(k).replace(/ +/,'.').replace(/\.$/,'')}),['BYTES REMAINING ON A: '+Math.max(0,SIZE-used())+'K']));
+    P.say([' RECS  BYTES  EXT ACC'].concat(F.map(function(k){var sz=P.fsize(P.root.kids[k]);return String(Math.ceil(sz/128)).padStart(5)+String(Math.ceil(sz/1024)).padStart(6)+'K   1 R/W A:'+fcb(k).replace(/ +/,'.').replace(/\.$/,'')}),['BYTES REMAINING ON A: '+free()+'K']));
     return;
   }
-  P.typeLine('A: R/W, SPACE: '+Math.max(0,SIZE-used())+'K');
+  P.typeLine('A: R/W, SPACE: '+free()+'K');
 });
 cmd(['pip'],null,function(a,raw){ /* the one that moves everything: PIP DEST=SOURCE */
-  var q=raw.replace(/^\s*\S+\s*/,'').toLowerCase().match(/^(\S+)=(\S+)$/);
+  var q=assign(raw);
   if(!q){P.typeLine('ERROR: NEEDS DEST=SOURCE');return}
-  if(drive(q[1])||drive(q[2])){bdos(drive(q[1])||drive(q[2]));return}
+  if(elsewhere(q[1])||elsewhere(q[2]))return;
   if(q[2]==='con:'){P.input([],function(L){write(q[1],L)});return}
   var n=get(q[2].replace(/^a:/,''));
   if(!n||n.type==='d'||n.prot){P.typeLine('NO FILE: =A:'+q[2].toUpperCase());return}

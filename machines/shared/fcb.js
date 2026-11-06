@@ -8,10 +8,10 @@ P.fcb={
   split:split,
   name:function(k){var s=split(k);return s[0].slice(0,8).toUpperCase().padEnd(8)+' '+s[1].slice(0,3).toUpperCase().padEnd(3)},
   matcher:function(pat){ /* *.* and ?, the way COMMAND.COM reads them: name and extension apart */
-    var p=split(pat.toLowerCase()),one=function(x,y){
-      return new RegExp('^'+x.replace(/[.+^${}()|\\\[\]]/g,'\\$&').replace(/\*.*$/,'.*').replace(/\?/g,'.?')+'$').test(y);
-    };
-    return function(k){var s=split(k);return one(p[0],s[0])&&one(p[1],s[1])};
+    var re=split(pat.toLowerCase()).map(function(x){
+      return new RegExp('^'+x.replace(/[.+^${}()|\\\[\]]/g,'\\$&').replace(/\*.*$/,'.*').replace(/\?/g,'.?')+'$');
+    });
+    return function(k){var s=split(k);return re[0].test(s[0])&&re[1].test(s[1])};
   }
 };
 P.setup(function(){}); /* nothing to do at start: this notes the file as loaded */

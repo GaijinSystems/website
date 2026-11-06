@@ -7,7 +7,7 @@
 function old(){return P.profile.year<1990} /* n, h and H came later */
 function Ed(name){
   var buf=[],dot=0,file=name||'',dirty=false,warned=false,undo=null,lastRe=null,lastErr='',verbose=false,marks={},lastRep=null,done=false;
-  function bytes(L){return L.reduce(function(n,x){return n+x.t.length+1},0)}
+  function bytes(T){return T.reduce(function(n,t){return n+t.length+1},0)} /* the size ed reports: the text and its newlines */
   function wrap(L){return L.map(function(t){return {t:t}})}
   function fail(why){var e=new Error(why);e.ed=true;throw e}
   function snapshot(){return {buf:buf.slice(),texts:buf.map(function(x){return x.t}),dot:dot}}
@@ -239,7 +239,7 @@ function Ed(name){
         if(!P.writeFile(to,L,c==='W'))fail('cannot open output file');
         if(!file)file=to;
         if(!r.given)dirty=false;
-        P.typeLine(String(bytes(wrap(L))));
+        P.typeLine(String(bytes(L)));
         return;
       case 'r':
         var from=arg||file;
@@ -247,7 +247,7 @@ function Ed(name){
         L=loadFile(from);
         save();
         insert(r.given?r.b:buf.length,L);
-        P.typeLine(String(bytes(wrap(L))));
+        P.typeLine(String(bytes(L)));
         return;
       case 'e':case 'E':
         if(c==='e'&&dirty&&!warned){warned=true;fail('warning: file modified')}
@@ -255,7 +255,7 @@ function Ed(name){
         if(!en)fail('no current filename');
         L=loadFile(en);
         buf=wrap(L);dot=buf.length;file=en;dirty=false;marks={};undo=null;
-        P.typeLine(String(bytes(buf)));
+        P.typeLine(String(bytes(L)));
         return;
       case 'f':
         if(arg)file=arg;
@@ -296,7 +296,7 @@ function Ed(name){
   }
   if(file){
     var n0=P.find(file,true);
-    if(n0&&n0.type!=='d'&&!n0.prot){buf=wrap(P.text(n0));dot=buf.length;P.typeLine(String(bytes(buf)))}
+    if(n0&&n0.type!=='d'&&!n0.prot){var T=P.text(n0);buf=wrap(T);dot=buf.length;P.typeLine(String(bytes(T)))}
     else{P.typeLine('?'+file);if(n0)lastErr='cannot open input file'}
   }
   loop();

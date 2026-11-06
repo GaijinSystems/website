@@ -10,10 +10,9 @@ P.command({names:['cmatrix'],run:function(a,raw,w){
     if(args[i]==='-u'){var d=parseInt(args[++i],10);if(!(d>=0&&d<=10)){P.typeLine(' Argument for -u must be between 0 and 10','err');return}delay=d}
   }
   P.program(function(S,done){
-    var drops=[],cells=[],over=false,t;
+    var drops=[],cells=[],over=false;
     function reset(){
-      drops=[];cells=[];
-      for(var r=0;r<S.rows;r++)cells.push(new Array(S.cols).fill(' '));
+      drops=[];cells=S.grid();
       for(var c=0;c<S.cols;c+=2)drops.push(fresh(c,true));
     }
     function fresh(c,first){return {c:c,y:first?-Math.floor(Math.random()*S.rows):-1-Math.floor(Math.random()*S.rows/2),len:3+Math.floor(Math.random()*(S.rows*.6)),slow:Math.random()<.4,tick:0}}
@@ -29,10 +28,10 @@ P.command({names:['cmatrix'],run:function(a,raw,w){
       });
       draw();
     }
-    function draw(){S.drawGrid(cells.map(function(r){return r.slice()}),-1,0)}
+    function draw(){S.drawGrid(cells,-1,0)}
     function stop(){if(over)return;over=true;S.close();done()}
     reset();
-    t=S.every(Math.max(10,delay*10+10),step);
+    S.every(Math.max(10,delay*10+10),step);
     draw();
     return {feed:function(k){if(saver||k==='q'||k==='Q'||k==='C-c'||k==='Escape')stop()},draw:draw,resize:function(){reset();draw()}};
   },{tty:'cmatrix'});

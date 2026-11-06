@@ -50,6 +50,7 @@ function cpu(io){
   function push(v){W(0x100+C.s,v&255);C.s=(C.s-1)&255}
   function pull(){C.s=(C.s+1)&255;return R(0x100+C.s)}
   function rw(a){return R(a)|R((a+1)&65535)<<8}
+  function rts(){var a=pull();a|=pull()<<8;C.pc=(a+1)&65535}
   function zw(a){return R(a&255)|R((a+1)&255)<<8}
   function adr(m){
     var pc=C.pc,lo=R(pc+1),w=lo|R(pc+2)<<8;
@@ -113,13 +114,12 @@ function cpu(io){
     case 'BCC':br(!(C.p&1));return;case 'BCS':br(C.p&1);return;case 'BNE':br(!(C.p&2));return;case 'BEQ':br(C.p&2);return;
     case 'JMP':C.pc=adr(m);return;
     case 'JSR':a=pc+2;push(a>>8);push(a);C.pc=adr(m);return;
-    case 'RTS':a=pull();a|=pull()<<8;C.pc=(a+1)&65535;return;
+    case 'RTS':rts();return;
     case 'RTI':C.p=pull()|0x30;a=pull();a|=pull()<<8;C.pc=a;return;
     }
     C.pc=(pc+n)&65535;
   }
-  C.step=step;C.push=push;C.pull=pull;
-  C.rts=function(){var a=pull();a|=pull()<<8;C.pc=(a+1)&65535};
+  C.step=step;C.push=push;C.pull=pull;C.rts=rts;
   return C;
 }
 P.a2cpu={cpu:cpu,disasm:disasm,h2:h2,h4:h4};

@@ -510,9 +510,8 @@ function tooSmall(S,done,last,msg){ /* leave at once, once the program is under 
 }
 function fullProgram(name,make){
   return function(a,raw,w){
-    if(P.piped()){P.typeLine(name+': needs a terminal','err');return}
     var last=[];
-    P.program(function(S,res){return make(S,res,w.slice(1),last)});
+    P.program(function(S,res){return make(S,res,w.slice(1),last)},{tty:name});
     P.queue(function(){P.say(last)}); /* its parting words, once the glass is back */
   };
 }

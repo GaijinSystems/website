@@ -29,20 +29,13 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
         (!typed?'':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
     }
     function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
-      if(!P.profile.perror||P.piped()||!names.length)return names;
-      var w=names.reduce(function(m,x){return Math.max(m,x.length)},0)+2,c=Math.max(1,Math.floor(P.columns()/w)),rows=Math.ceil(names.length/c),R=[];
-      for(var r=0;r<rows;r++){
-        var l='';
-        for(var k=r;k<names.length;k+=rows)l+=k+rows<names.length?names[k].padEnd(w):names[k];
-        R.push(l);
-      }
-      return R;
+      return !P.profile.perror||P.piped()||!names.length?names:P.inColumns(names);
     }
     want.forEach(function(w){
       var n=P.find(w),shown;
       if(!n)L.push([w+' not found','err']);
       else if(self&&n.type==='d')L.push(long?P.longRow(w,n):plain(w,n));
-      else if(n.type!=='d'){var key=P.norm(w).split('/').pop(),up=P.find(P.dirOf(P.norm(w)),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
+      else if(n.type!=='d'){var abs=P.norm(w),key=abs.split('/').pop(),up=P.find(P.dirOf(abs),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);
     });
@@ -51,8 +44,10 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
         .map(function(k){return [k,n.kids[k]]});
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
       if(want.length>1){if(L.length)L.push('');L.push(d[0]+':')}
-      if(long){var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t)}
-      if(long)ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
+      if(long){
+        var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t);
+        ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
+      }
       else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])})));
     });
     P.say(L);

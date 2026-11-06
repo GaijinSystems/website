@@ -171,18 +171,18 @@ function Vi(name,S){
     }
   }
   function find(re,dir,y,x){
-    var n=L.length;
+    var n=L.length,g=new RegExp(re.source,'g'+(re.ignoreCase?'i':'')); /* one, its lastIndex set for each line */
     for(var k=0;k<=n;k++){
       var at=((y+dir*k)%n+n)%n,t=L[at],hit=-1;
       if(dir>0){
-        var g=new RegExp(re.source,'g'+(re.ignoreCase?'i':''));
         g.lastIndex=k===0?x+1:0;
         var m=g.exec(t);
         if(m)hit=m.index;
       }
       else{
-        var g2=new RegExp(re.source,'g'+(re.ignoreCase?'i':'')),m2,lim=k===0?x:t.length+1,b=-1;
-        while((m2=g2.exec(t))&&m2.index<lim){b=m2.index;if(!m2[0].length)g2.lastIndex++}
+        var m2,lim=k===0?x:t.length+1,b=-1;
+        g.lastIndex=0;
+        while((m2=g.exec(t))&&m2.index<lim){b=m2.index;if(!m2[0].length)g.lastIndex++}
         hit=b;
       }
       if(hit>=0)return {r:at,c:hit};

@@ -4,13 +4,8 @@
 (function(P){
 'use strict';
 P.command({names:['bj'],run:function(){
-  var randx=0,deck=[],i;
+  var rnd=P.etcrand(),deck=[],i;
   for(i=0;i<52;i++)deck.push(i);
-  function rnd(n){ /* as in the binary on the V7 tape; 2.11BSD's etc.s has a later one */
-    if(!randx)randx=Math.floor(Date.now()/1000)&0xffff;
-    randx=(Math.imul(randx,13077)+6925)&0xffff;
-    return ((randx&0o77777)*2*n)>>>16;
-  }
   var cval=0,aceflg=0,cden='',csuit='',peekf=0,dhole=0,dbjf=0,upval=0,upace=0,value=0,taction=0,action=0,naces=0,ival=0,iace=0,dflag=0,fcard=0,stotal=0,total=0,mod=0,bet=0;
   P.cprog(function*(io){
     var END={},st;

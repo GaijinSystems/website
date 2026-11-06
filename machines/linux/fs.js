@@ -105,7 +105,7 @@ Phosphor.setup(function(P){
   var M=D.mem;
   sys('/proc/version','f',{body:['Linux version '+D.krel+' (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) '+D.kbuild]});
   sys('/proc/uptime','f',{body:function(){var s=since();return [s.toFixed(2)+' '+(s*1.96).toFixed(2)]}});
-  sys('/proc/loadavg','f',{body:function(){var m=since()/60;return [[.02+.55*Math.exp(-m/1.5),.03+.3*Math.exp(-m/6),.01+.12*Math.exp(-m/16)].map(function(x){return x.toFixed(2)}).join(' ')+' 1/97 '+(700+Math.floor(m))]}});
+  sys('/proc/loadavg','f',{body:function(){return [D.loads().join(' ')+' 1/97 '+(700+Math.floor(since()/60))]}});
   sys('/proc/cmdline','f',{body:['BOOT_IMAGE=/boot/vmlinuz-'+D.krel+' root=UUID=7d3c51e2-0b4f-4a8e-9c61-2f5e8a90d1b7 ro console=tty0 console=ttyS0,115200n8']});
   sys('/proc/meminfo','f',{body:function(){
     var R=[['MemTotal',M.MemTotal],['MemFree',M.MemFree],['MemAvailable',M.MemAvailable],['Buffers',M.Buffers],['Cached',M.Cached],['SwapCached',0],['Active',301452],['Inactive',198320],

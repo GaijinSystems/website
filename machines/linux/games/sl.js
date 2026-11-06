@@ -35,9 +35,9 @@ P.command({names:['sl'],run:function(a,raw,w){
       if(crash&&!little){put(base+1,x+33,k%8<4?'Help!':'  Help!');for(j=0;j<3;j++)put(base+5,x+33+j*4,k%2?'o':'O')}
       S.drawGrid(C,-1,0);
     }
-    var t=S.every(40,function(){
+    S.every(40,function(){
       x--;k++;
-      if(x<-width-20){S.cancel(t);stop();return}
+      if(x<-width-20){stop();return}
       draw();
     });
     draw();

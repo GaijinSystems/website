@@ -44,7 +44,7 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
     var nm,to;
     if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()}
     else{
-      var hit=P.aliases.filter(function(x){return x.from.join(' ')===P.fold(rest).split(/\s+/).join(' ')});
+      var key=P.fold(rest).split(/\s+/).join(' '),hit=P.aliases.filter(function(x){return x.from.join(' ')===key});
       if(hit.length){P.typeLine(aliasRow(hit[0]));return}
       if(rest.indexOf(' ')<0){P.typeLine('alias: '+P.fold(rest)+': not found','err');return}
       nm=P.fold(rest.split(/\s+/)[0]);to=P.unquote(rest.replace(/^\S+\s+/,'')); /* csh style: alias name value */

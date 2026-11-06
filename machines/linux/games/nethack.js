@@ -570,10 +570,7 @@ function $grow(need){
 }
 function $stkovf(){throw new Error('stack overflow')}
 function $ld64(a){return HEAPU32[a>>2]+HEAP32[a+4>>2]*4294967296}
-function $ldu64(a){return HEAPU32[a>>2]+HEAPU32[a+4>>2]*4294967296}
 function $st64(a,v){HEAP32[a>>2]=v;HEAP32[a+4>>2]=Math.floor(v/4294967296);return v}
-function $u64c(x){return x<0?x+18446744073709551616:x}
-function $s64c(x){return x>=9223372036854775808?x-18446744073709551616:x}
 function $mul64(a,b){var r=a*b;return Number.isSafeInteger(r)?r:Number(BigInt.asIntN(64,BigInt(a)*BigInt(b)))}
 function $div64(a,b){return b?Math.trunc(a/b):0}
 function $mod64(a,b){return b?a%b:0}
@@ -632,8 +629,6 @@ function free$(p){
   if(!l)$free.set(sz,l=[]);
   l.push(p);
 }
-function calloc$(a,b){var n=Number(a)*Number(b),p=malloc$(n);HEAPU8.fill(0,p,p+n);return p}
-function realloc$(p,n){if(!p)return malloc$(n);var q=malloc$(n),o=HEAP32[p-16>>2];$memcpy(q,p,Math.min(o,Number(n)));free$(p);return q}
 /* ---- string.h ---- */
 function strlen$(p){return $strlen(p)}
 function strcpy$(d,s){HEAPU8.copyWithin(d,s,s+$strlen(s)+1);return d}
@@ -646,10 +641,7 @@ function strchr$(s,c){c&=255;for(;;s++){var x=HEAPU8[s];if(x===c)return s;if(!x)
 function strrchr$(s,c){c&=255;var r=0;for(;;s++){var x=HEAPU8[s];if(x===c)r=s;if(!x)return r}}
 function strstr$(h,n){var hs=$str(h),i=hs.indexOf($str(n));return i<0?0:h+i}
 function memcpy$(d,s,n){return $memcpy(d,s,Number(n))}
-function memmove$(d,s,n){return $memcpy(d,s,Number(n))}
 function memset$(d,c,n){return $memset(d,c,Number(n))}
-function memcmp$(a,b,n){n=Number(n);for(var i=0;i<n;i++){var x=HEAPU8[a+i],y=HEAPU8[b+i];if(x!==y)return x-y}return 0}
-function memchr$(s,c,n){n=Number(n);c&=255;for(var i=0;i<n;i++)if(HEAPU8[s+i]===c)return s+i;return 0}
 var $ERRS={1:'Operation not permitted',2:'No such file or directory',5:'Input/output error',9:'Bad file descriptor',12:'Cannot allocate memory',13:'Permission denied',17:'File exists',20:'Not a directory',21:'Is a directory',22:'Invalid argument',28:'No space left on device'};
 function strerror$(e){var s=$ERRS[e]||('Unknown error '+e);if(!$E.errbuf)$E.errbuf=malloc$(64);return $put($E.errbuf,s)}
 /* ---- ctype.h, C locale, glibc's mask values ---- */
@@ -664,22 +656,19 @@ function $ct(c,m){c|=0;if(c<0||c>127)return 0;var r=0;
   if(c>32&&c<127&&!(r&8))r|=4;
   return r&m}
 function isspace$(c){return $ct(c,8192)}function isupper$(c){return $ct(c,256)}function islower$(c){return $ct(c,512)}
-function isalpha$(c){return $ct(c,1024)}function isdigit$(c){return $ct(c,2048)}function isalnum$(c){return $ct(c,8)}
-function isprint$(c){return $ct(c,16384)}function ispunct$(c){return $ct(c,4)}function iscntrl$(c){return $ct(c,2)}
-function isxdigit$(c){return $ct(c,4096)}function isgraph$(c){return $ct(c,32768)}
-function toupper$(c){return c>=97&&c<=122?c-32:c}function tolower$(c){return c>=65&&c<=90?c+32:c}
+function isdigit$(c){return $ct(c,2048)}function isalnum$(c){return $ct(c,8)}
+function ispunct$(c){return $ct(c,4)}function iscntrl$(c){return $ct(c,2)}
+function isgraph$(c){return $ct(c,32768)}
+function tolower$(c){return c>=65&&c<=90?c+32:c}
 /* ---- stdlib ---- */
 function abs$(x){return x<0?-x|0:x}
-function labs$(x){return Math.abs(x)}
 function $strtol(s){var i=0;while(/\s/.test(s[i]||''))i++;var m=/^[-+]?\d+/.exec(s.slice(i));return m?parseInt(m[0],10):0}
 function atoi$(p){return $strtol($str(p))|0}
 function atol$(p){return $strtol($str(p))}
-function strtol$(p,e,b){var s=$str(p),i=0;while(/\s/.test(s[i]||''))i++;var m=(b===16?/^[-+]?(0[xX])?[0-9a-fA-F]+/:/^[-+]?\d+/).exec(s.slice(i));if(e)HEAP32[e>>2]=m?p+i+m[0].length:p;return m?parseInt(m[0],b||10):0}
 function getenv$(n){var v=$E.envp[$str(n)];return v||0}
 function abort$(){throw new Error('abort')}
 function atexit$(f){$E.atexit.push(f);return 0}
 function exit$(c){$flushAll();var a=$E.atexit;$E.atexit=[];while(a.length)$callFT(a.pop());$flushAll();throw {$exit:c}}
-function _exit$(c){$flushAll();throw {$exit:c}}
 function qsort$(base,n,size,cmp){
   n=Number(n);size=Number(size);if(n<2)return;
   var els=[];for(var i=0;i<n;i++)els.push(HEAPU8.slice(base+i*size,base+(i+1)*size));
@@ -742,13 +731,10 @@ function $fmt(f,ap){ /* returns the formatted bytes as a Latin-1 string */
   return o;
 }
 function sprintf$(b,f,va){var s=$fmt(f,va);$put(b,s);return s.length}
-function vsprintf$(b,f,ap){var s=$fmt(f,ap);$put(b,s);return s.length}
-function snprintf$(b,n,f,va){return vsnprintf$(b,n,f,va)}
 function vsnprintf$(b,n,f,ap){n=Number(n);var s=$fmt(f,ap);if(n>0)$put(b,s.slice(0,n-1));return s.length}
 function printf$(f,va){return $fputs(HEAP32[stdout>>2],$fmt(f,va))}
 function vprintf$(f,ap){return $fputs(HEAP32[stdout>>2],$fmt(f,ap))}
 function fprintf$(fp,f,va){return $fputs(fp,$fmt(f,va))}
-function vfprintf$(fp,f,ap){return $fputs(fp,$fmt(f,ap))}
 /* ---- scanf ---- */
 function $scan(src,f,ap){ /* src: {s,i} over a Latin-1 string; returns the count assigned, or -1 at end of input */
   var n=0,i=f,c,any=false,k;
@@ -791,17 +777,15 @@ function fscanf$(fp,f,va){
   var st=$E.files.get(fp);if(!st)return -1;
   var o=$E.fds[st.fd];if(!o||!o.node)return -1;
   var d=o.node.data,e=Math.min(o.node.size,o.pos+4096),rest=String.fromCharCode.apply(null,d.subarray(o.pos,e));
-  var src={s:rest,i:0},r=$scan(src,f,va);o.pos+=src.i;if(r<0)st.eof=true;return r;
+  var src={s:rest,i:0},r=$scan(src,f,va);o.pos+=src.i;return r;
 }
-/* ---- files: an in-memory tree ---- */
+/* ---- files: an in-memory tree; every change to it sets $E.dirty ---- */
 function $norm(p){
   if(p[0]!=='/')p=$E.cwd+'/'+p;
   var o=[];p.split('/').forEach(function(x){if(!x||x==='.')return;if(x==='..')o.pop();else o.push(x)});
   return '/'+o.join('/');
 }
-function $node(p){return $E.fs.files.get($norm(p))}
-function $isdir(p){return $E.fs.dirs.has($norm(p))}
-function $mkfile(p){var n={data:new Uint8Array(256),size:0,mtime:$now()};$E.fs.files.set($norm(p),n);return n}
+function $mkfile(p){var n={data:new Uint8Array(256),size:0,mtime:$now()};$E.fs.files.set($norm(p),n);$E.dirty=true;return n}
 function $ensure(n,sz){if(sz>n.data.length){var d=new Uint8Array(Math.max(sz,n.data.length*2));d.set(n.data.subarray(0,n.size));n.data=d}}
 function $now(){return Math.floor($env.now())}
 function $err(e){HEAP32[errno>>2]=e;return -1}
@@ -817,7 +801,7 @@ function open$(p,fl,va){
     n=$mkfile(ap);
   }else{
     if((fl&64)&&(fl&128))return $err(17);
-    if(fl&512){n.size=0;n.mtime=$now()}
+    if(fl&512){n.size=0;n.mtime=$now();$E.dirty=true}
   }
   return $newfd({node:n,pos:0,append:!!(fl&1024),fl:fl});
 }
@@ -855,7 +839,6 @@ function lseek$(fd,off,wh){
 }
 function unlink$(p){var a=$norm($str(p));if(!$E.fs.files.delete(a))return $err(2);$E.dirty=true;return 0}
 function rename$(a,b){var x=$norm($str(a)),y=$norm($str(b)),n=$E.fs.files.get(x);if(!n)return $err(2);$E.fs.files.delete(x);$E.fs.files.set(y,n);$E.dirty=true;return 0}
-function link$(a,b){var x=$norm($str(a)),y=$norm($str(b)),n=$E.fs.files.get(x);if(!n)return $err(2);if($E.fs.files.has(y))return $err(17);$E.fs.files.set(y,n);return 0}
 function access$(p,m){var a=$norm($str(p));return $E.fs.files.has(a)||$E.fs.dirs.has(a)||a==='/dev/urandom'?0:$err(2)}
 function $stat(n,dir,b){
   $memset(b,0,144);
@@ -871,17 +854,15 @@ function chdir$(p){var a=$norm($str(p));if(!$E.fs.dirs.has(a))return $err(2);$E.
 function getcwd$(b,n){$put(b,$E.cwd);return b}
 function fcntl$(){return 0}
 /* ---- stdio streams ---- */
-function $fopen(fd,mode){var fp=malloc$(16);HEAP32[fp>>2]=fd;$E.files.set(fp,{fd:fd,eof:false,err:false,ungot:-1,buf:[]});return fp}
+function $fopen(fd,mode){var fp=malloc$(16);HEAP32[fp>>2]=fd;$E.files.set(fp,{fd:fd,buf:[]});return fp}
 function fopen$(p,m){
   var mode=$str(m),fl=mode[0]==='r'?(mode.indexOf('+')>=0?2:0):mode[0]==='w'?(64|512|(mode.indexOf('+')>=0?2:1)):(64|1024|(mode.indexOf('+')>=0?2:1));
   var fd=open$(p,fl,0);if(fd<0)return 0;return $fopen(fd,mode);
 }
 function fdopen$(fd,m){if(!$E.fds[fd])return 0;return $fopen(fd,$str(m))}
-function freopen$(p,m,fp){var st=$E.files.get(fp);if(!st)return 0;var fd=open$(p,$str(m)[0]==='r'?0:577,0);if(fd<0)return 0;close$(st.fd);st.fd=fd;st.eof=false;return fp}
 function fclose$(fp){var st=$E.files.get(fp);if(!st)return -1;$flushFile(st);$E.files.delete(fp);close$(st.fd);free$(fp);return 0}
 function $flushFile(st){if(st.buf.length){var o=$E.fds[st.fd];var b=st.buf;st.buf=[];if(o&&o.tty){$E.out.push(Uint8Array.from(b));$E.outn+=b.length}else{var t=malloc$(b.length);HEAPU8.set(b,t);$wr(st.fd,t,b.length);free$(t)}}}
-function $flushStream(fd){$E.files.forEach(function(st){if(st.fd===fd)$flushFile(st)})}
-function fflush$(fp){if(!fp){$E.files.forEach($flushFile);return 0}var st=$E.files.get(fp);if(st)$flushFile(st);return 0}
+function fflush$(fp){if(!fp){$flushAllStreams();return 0}var st=$E.files.get(fp);if(st)$flushFile(st);return 0}
 function $fputs(fp,s){
   var st=$E.files.get(fp);if(!st)return -1;
   var o=$E.fds[st.fd];
@@ -894,29 +875,22 @@ function $flushAllStreams(){$E.files.forEach($flushFile)}
 function fputs$(s,fp){return $fputs(fp,$str(s))}
 function puts$(s){return $fputs(HEAP32[stdout>>2],$str(s)+'\n')}
 function fputc$(c,fp){$fputs(fp,String.fromCharCode(c&255));return c&255}
-function putc$(c,fp){return fputc$(c,fp)}
 function putchar$(c){return fputc$(c,HEAP32[stdout>>2])}
 function fwrite$(b,sz,n,fp){var k=Number(sz)*Number(n),st=$E.files.get(fp);if(!st)return 0;$flushFile(st);var r=$wr(st.fd,b,k);return r<0?0:Math.floor(r/Number(sz))}
-function fread$(b,sz,n,fp){var k=Number(sz)*Number(n),st=$E.files.get(fp);if(!st||!k)return 0;var r=$rd(st.fd,b,k);if(r<k)st.eof=true;return r<0?0:Math.floor(r/Number(sz))}
-function fgetc$(fp){var st=$E.files.get(fp);if(!st)return -1;if(st.ungot>=0){var u=st.ungot;st.ungot=-1;return u}var t=$E.cbuf;var r=$rd(st.fd,t,1);if(r<1){st.eof=true;return -1}return HEAPU8[t]}
-function getc$(fp){return fgetc$(fp)}
-function ungetc$(c,fp){var st=$E.files.get(fp);if(st&&c>=0){st.ungot=c&255;st.eof=false}return c}
+function fread$(b,sz,n,fp){var k=Number(sz)*Number(n),st=$E.files.get(fp);if(!st||!k)return 0;var r=$rd(st.fd,b,k);return r<0?0:Math.floor(r/Number(sz))}
+function fgetc$(fp){var st=$E.files.get(fp);if(!st)return -1;var t=$E.cbuf;if($rd(st.fd,t,1)<1)return -1;return HEAPU8[t]}
 function fgets$(b,n,fp){
   var st=$E.files.get(fp);if(!st)return 0;var i=0,c;
   while(i<n-1){c=fgetc$(fp);if(c<0)break;HEAPU8[b+i++]=c;if(c===10)break}
   if(!i)return 0;HEAPU8[b+i]=0;return b;
 }
-function fseek$(fp,off,wh){var st=$E.files.get(fp);if(!st)return -1;$flushFile(st);st.ungot=-1;st.eof=false;return lseek$(st.fd,off,wh)<0?-1:0}
-function ftell$(fp){var st=$E.files.get(fp);if(!st)return -1;$flushFile(st);var o=$E.fds[st.fd];return o?o.pos-(st.ungot>=0?1:0):-1}
+function fseek$(fp,off,wh){var st=$E.files.get(fp);if(!st)return -1;$flushFile(st);return lseek$(st.fd,off,wh)<0?-1:0}
+function ftell$(fp){var st=$E.files.get(fp);if(!st)return -1;$flushFile(st);var o=$E.fds[st.fd];return o?o.pos:-1}
 function rewind$(fp){fseek$(fp,0,0)}
-function feof$(fp){var st=$E.files.get(fp);return st&&st.eof?1:0}
-function ferror$(fp){return 0}
-function clearerr$(fp){var st=$E.files.get(fp);if(st)st.eof=false}
+function clearerr$(fp){}
 function fileno$(fp){var st=$E.files.get(fp);return st?st.fd:-1}
 function setbuf$(){}
-function setvbuf$(){return 0}
 function perror$(s){var m=$str(s),e=HEAP32[errno>>2];$fputs(HEAP32[stderr>>2],(m?m+': ':'')+($ERRS[e]||'Unknown error '+e)+'\n');}
-function remove$(p){return unlink$(p)}
 /* ---- the terminal and time ---- */
 function $flushOut(){if($E.out.length){var o=$E.out;$E.out=[];$E.outn=0;$env.write(o)}}
 function $flushAll(){$flushAllStreams();$flushOut()}
@@ -941,9 +915,9 @@ function* getchar$(){var c=yield* $key();return c}
 function* usleep$(us){$flushAll();if($env.sleeps)yield {sleep:Number(us)/1000};return 0}
 function* sleep$(s){$flushAll();if($env.sleeps)yield {sleep:s*1000};return 0}
 function time$(p){var t=$now();if(p)$st64(p,t);return t}
-function $tm(t,utc){
+function $tm(t){
   var d=new Date(t*1000),b=$E.tmbuf||($E.tmbuf=malloc$(64));
-  var g=utc||$env.utc;
+  var g=$env.utc;
   var v=g?[d.getUTCSeconds(),d.getUTCMinutes(),d.getUTCHours(),d.getUTCDate(),d.getUTCMonth(),d.getUTCFullYear()-1900,d.getUTCDay()]
          :[d.getSeconds(),d.getMinutes(),d.getHours(),d.getDate(),d.getMonth(),d.getFullYear()-1900,d.getDay()];
   var y0=g?Date.UTC(v[5]+1900,0,1):new Date(v[5]+1900,0,1).getTime();
@@ -952,8 +926,7 @@ function $tm(t,utc){
   HEAP32[b+28>>2]=yd;HEAP32[b+32>>2]=0;$st64(b+40,g?0:-d.getTimezoneOffset()*60);HEAP32[b+48>>2]=0;
   return b;
 }
-function localtime$(tp){return $tm($ld64(tp),false)}
-function gmtime$(tp){return $tm($ld64(tp),true)}
+function localtime$(tp){return $tm($ld64(tp))}
 function mktime$(b){
   var v=[];for(var i=0;i<6;i++)v.push(HEAP32[b+4*i>>2]);
   var t=$env.utc?Date.UTC(v[5]+1900,v[4],v[3],v[2],v[1],v[0]):new Date(v[5]+1900,v[4],v[3],v[2],v[1],v[0]).getTime();
@@ -961,7 +934,6 @@ function mktime$(b){
 }
 /* ---- the process ---- */
 function getpid$(){return $env.pid}
-function getppid$(){return 1}
 function getuid$(){return $env.uid}function geteuid$(){return $env.uid}function getgid$(){return $env.uid}function getegid$(){return $env.uid}
 function setuid$(){return 0}function setgid$(){return 0}
 function getlogin$(){return $E.login||($E.login=$newstr($env.user))}
@@ -978,7 +950,6 @@ function signal$(s,h){var o=$E.sig[s]||0;$E.sig[s]=h;return o}
 function kill$(pid,s){return pid===$env.pid?0:$err(3)}
 function fork$(){return $err(11)}
 function execl$(){return $err(2)}
-function execv$(){return $err(2)}
 function wait$(){return $err(10)}
 function isatty$(fd){return fd>=0&&fd<=2&&!(fd===0&&$env.stdinPipe)?1:0}
 function ioctl$(){return $err(25)}
@@ -2242,8 +2213,6 @@ wishcmdassist$too_many=263192;
 var $FT=[null,doapply,dorub,dojump,fig_transform,doinvoke,count_status_hilites,doconduct,domonability,doextlist,enter_explore_mode,dokeylist,hangup,dosearch,rot_organic,rot_corpse,doredraw,dodrop,doddrop,dodown,doup,revive_mon,$gw(donull),dowipe,docallcmd,Armor_off,Helmet_off,Gloves_off,Boots_on,Boots_off,Cloak_off,Shield_off,Shirt_off,dotakeoff,doremring,dowear,doputon,doddoremarm,dokick,dothrow,dofire,hurtle_jump,hurtle_step,donamelevel,dooverview,Hear_again,doeat,done1,done2,panic,dovanquished,doengrave,dopickup,$gw(is_worn),identify,ddoinv,dotypeinv,dolook,doprgold,doprwep,doprarm,doprring,dopramulet,doprtool,doprinuse,doorganize,wiz_light_sources,doforce,doopen,doclose,genl_putmixed,bless,unbless,curse,uncurse,dodiscovered,doclassdisco,xname,mshot_xname,doname,doname_with_price,doname_vague_quan,$gw(not_fully_identified),cxname,Doname2,yname,Yname2,ysimple_name,Ysimple_name2,simpleonames,ansimpleoname,thesimpleoname,doset,dotogglepickup,option_help,dowhatis,doquickwhatis,doidtrap,dowhatdoes,dohelp,dohistory,$gw(allow_all),allow_category,is_worn_by_type,$gw(ck_bag),doloot,dotip,You,Your,You_feel,impossible,dodrink,dodip,dosacrifice,dopray,doturn,doread,genl_outrip,$gw(rn2),$gw(rn2_on_display_rng),dosave,def_bclose,dopay,dosit,dotalk,docast,dovspell,doride,dotelecmd,hatch_egg,burn_object,wiz_timeout_queue,dountrap,doversion,doextversion,enhance_weapon_skill,dowield,doswapweapon,dowieldquiver,dotwoweapon,$gw(genl_can_suspend_no),$gw(genl_can_suspend_yes),genl_message_menu,$gw(genl_preference_update),$gw(genl_getmsghistory),genl_putmsghistory,$gw(genl_status_finish),$gw(genl_status_enablefield),bhitm,bhito,dozap,melt_ice_away,display_jump_positions,set_trap,display_polearm_positions,$gw(check_jump),get_valid_jump_position,$gw(get_valid_polearm_position),wiz_debug_cmd_bury,dosuspend_core,dosh_core,doherecmdmenu,dotherecmdmenu,doprev_message,timed_occupation,doextcmd,dotravel,doterrain,wiz_wish,wiz_identify,wiz_intrinsic,wiz_map,wiz_makemap,wiz_genesis,wiz_where,wiz_detect,wiz_panic,wiz_polyself,wiz_level_tele,wiz_level_change,wiz_show_seenv,wiz_show_vision,wiz_smell,wiz_show_wmodes,wiz_show_stats,wiz_rumor_check,doattributes,findone,openone,dig,lib_dlb_init,$gw(lib_dlb_cleanup),$gw(lib_dlb_fopen),$gw(lib_dlb_fclose),$gw(lib_dlb_fread),$gw(lib_dlb_fseek),lib_dlb_fgets,$gw(lib_dlb_fgetc),$gw(lib_dlb_ftell),drop,wipeoff,$gw(cmp_coord_distu),gloc_filter_floodfill_matcharea,docall_xname,$gw(Armor_on),Cloak_on,Helmet_on,Gloves_on,Shield_on,Shirt_on,select_off,take_off,$gw(wantdoor),mhurtle_step,eatmdone,eatfood,opentin,unfaint,$gw(done_intr),$gw(done_hangup),$gw(vanqsort_cmp),$gw(xputc),$gw(win_tty_init),tty_init_nhwindows,tty_preference_update,tty_player_selection,tty_askname,$gw(tty_get_nh_event),tty_exit_nhwindows,tty_suspend_nhwindows,tty_resume_nhwindows,tty_create_nhwindow,tty_clear_nhwindow,tty_display_nhwindow,tty_destroy_nhwindow,tty_curs,tty_putstr,tty_display_file,tty_start_menu,tty_add_menu,tty_end_menu,tty_select_menu,tty_message_menu,$gw(tty_update_inventory),$gw(tty_mark_synch),tty_wait_synch,tty_cliparound,tty_print_glyph,$gw(tty_raw_print),tty_raw_print_bold,tty_nhgetch,tty_nh_poskey,$gw(tty_nhbell),tty_doprev_message,tty_yn_function,tty_getlin,tty_get_ext_cmd,tty_number_pad,tty_delay_output,$gw(tty_status_enablefield),tty_status_init,tty_status_update,tty_start_screen,tty_end_screen,tty_getmsghistory,tty_putmsghistory,proc_wizkit_line,parse_config_line,proc_symset_line,gush,$gw(ext_cmd_getlin_hook),sortloot_cmp,$gw(worn_wield_only),$gw(only_here),ckvalidcat,$gw(ckunpaid),safeq_xprname,safeq_shortxprname,$gw(this_type_only),$gw(linux_mapon),picklock,forcelock,$gw(do_comp),$gw(iswall),$gw(iswall_or_stone),mbhitm,$gw(msgtype_count),$gw(count_menucolors),$gw(count_apes),docontact,dispfile_help,dispfile_shelp,dispfile_optionfile,dispfile_license,dispfile_debughelp,hmenu_doextversion,hmenu_dohistory,hmenu_dowhatis,hmenu_dowhatdoes,hmenu_doextlist,domenucontrols,$gw(n_or_more),$gw(all_but_uchain),in_container,out_container,prayer_done,$gw(get_valid_stinking_cloud_pos),display_stinking_cloud_positions,set_lit,inside_gas_cloud,$gw(expire_gas_cloud),$gw(def_minit),def_mread,def_bufon,def_bufoff,def_bflush,def_bwrite,$gw(floodfillchk_match_under),$gw(floodfillchk_match_accessible),$gw(sel_set_ter),$gw(sel_set_feature),$gw(sel_set_door),$gw(sel_set_wallify),learn,$gw(spell_cmp),$gw(spell_aim_step),stealarm,tty_decgraphics_termcap_fixup,cleanup_burn,$gw(def_raw_print),$gw(def_wait_synch),$gw(dump_create_nhwindow),$gw(dump_clear_nhwindow),$gw(dump_display_nhwindow),$gw(dump_destroy_nhwindow),$gw(dump_start_menu),$gw(dump_add_menu),$gw(dump_end_menu),$gw(dump_select_menu),$gw(dump_putstr),$gw(hup_nhgetch),$gw(hup_yn_function),$gw(hup_nh_poskey),$gw(hup_getlin),$gw(hup_init_nhwindows),hup_exit_nhwindows,$gw(hup_create_nhwindow),$gw(hup_select_menu),$gw(hup_add_menu),$gw(hup_end_menu),$gw(hup_putstr),$gw(hup_print_glyph),$gw(hup_outrip),$gw(hup_curs),$gw(hup_display_nhwindow),$gw(hup_display_file),$gw(hup_cliparound),$gw(hup_status_update),$gw(hup_int_ndecl),$gw(hup_void_ndecl),$gw(hup_void_fdecl_int),$gw(hup_void_fdecl_winid),$gw(hup_void_fdecl_constchar_p)];
 var $DATAEND=516080;
 /* runtime functions: abort abs access atexit atoi atol cfgetospeed chdir chmod clearerr close creat execl exit fclose fcntl fdopen fflush fgetc fgets fileno fopen fork fpathconf fprintf fputs fread free fscanf fseek fstat ftell fwrite getchar* getcwd getenv getgid getlogin getpid getpwnam getpwuid getuid ioctl isatty isspace isupper kill localtime lseek malloc memcpy memset mktime open perror printf putchar puts qsort read* regcomp regerror regexec regfree rename rewind setbuf setgid setuid signal sleep* sprintf sscanf stat strcat strchr strcmp strcpy strerror strlen strncat strncmp strncpy strrchr strstr tcgetattr tcsetattr time umask unlink usleep* vprintf vsnprintf wait write */
-var $RTDATA={stdin:stdin,stdout:stdout,stderr:stderr,errno:errno};
-var $FIDX={"doapply":1,"dorub":2,"dojump":3,"fig_transform":4,"doinvoke":5,"count_status_hilites":6,"doconduct":7,"domonability":8,"doextlist":9,"enter_explore_mode":10,"dokeylist":11,"hangup":12,"dosearch":13,"rot_organic":14,"rot_corpse":15,"doredraw":16,"dodrop":17,"doddrop":18,"dodown":19,"doup":20,"revive_mon":21,"donull":22,"dowipe":23,"docallcmd":24,"Armor_off":25,"Helmet_off":26,"Gloves_off":27,"Boots_on":28,"Boots_off":29,"Cloak_off":30,"Shield_off":31,"Shirt_off":32,"dotakeoff":33,"doremring":34,"dowear":35,"doputon":36,"doddoremarm":37,"dokick":38,"dothrow":39,"dofire":40,"hurtle_jump":41,"hurtle_step":42,"donamelevel":43,"dooverview":44,"Hear_again":45,"doeat":46,"done1":47,"done2":48,"panic":49,"dovanquished":50,"doengrave":51,"dopickup":52,"is_worn":53,"identify":54,"ddoinv":55,"dotypeinv":56,"dolook":57,"doprgold":58,"doprwep":59,"doprarm":60,"doprring":61,"dopramulet":62,"doprtool":63,"doprinuse":64,"doorganize":65,"wiz_light_sources":66,"doforce":67,"doopen":68,"doclose":69,"genl_putmixed":70,"bless":71,"unbless":72,"curse":73,"uncurse":74,"dodiscovered":75,"doclassdisco":76,"xname":77,"mshot_xname":78,"doname":79,"doname_with_price":80,"doname_vague_quan":81,"not_fully_identified":82,"cxname":83,"Doname2":84,"yname":85,"Yname2":86,"ysimple_name":87,"Ysimple_name2":88,"simpleonames":89,"ansimpleoname":90,"thesimpleoname":91,"doset":92,"dotogglepickup":93,"option_help":94,"dowhatis":95,"doquickwhatis":96,"doidtrap":97,"dowhatdoes":98,"dohelp":99,"dohistory":100,"allow_all":101,"allow_category":102,"is_worn_by_type":103,"ck_bag":104,"doloot":105,"dotip":106,"You":107,"Your":108,"You_feel":109,"impossible":110,"dodrink":111,"dodip":112,"dosacrifice":113,"dopray":114,"doturn":115,"doread":116,"genl_outrip":117,"rn2":118,"rn2_on_display_rng":119,"dosave":120,"def_bclose":121,"dopay":122,"dosit":123,"dotalk":124,"docast":125,"dovspell":126,"doride":127,"dotelecmd":128,"hatch_egg":129,"burn_object":130,"wiz_timeout_queue":131,"dountrap":132,"doversion":133,"doextversion":134,"enhance_weapon_skill":135,"dowield":136,"doswapweapon":137,"dowieldquiver":138,"dotwoweapon":139,"genl_can_suspend_no":140,"genl_can_suspend_yes":141,"genl_message_menu":142,"genl_preference_update":143,"genl_getmsghistory":144,"genl_putmsghistory":145,"genl_status_finish":146,"genl_status_enablefield":147,"bhitm":148,"bhito":149,"dozap":150,"melt_ice_away":151,"display_jump_positions":152,"set_trap":153,"display_polearm_positions":154,"check_jump":155,"get_valid_jump_position":156,"get_valid_polearm_position":157,"wiz_debug_cmd_bury":158,"dosuspend_core":159,"dosh_core":160,"doherecmdmenu":161,"dotherecmdmenu":162,"doprev_message":163,"timed_occupation":164,"doextcmd":165,"dotravel":166,"doterrain":167,"wiz_wish":168,"wiz_identify":169,"wiz_intrinsic":170,"wiz_map":171,"wiz_makemap":172,"wiz_genesis":173,"wiz_where":174,"wiz_detect":175,"wiz_panic":176,"wiz_polyself":177,"wiz_level_tele":178,"wiz_level_change":179,"wiz_show_seenv":180,"wiz_show_vision":181,"wiz_smell":182,"wiz_show_wmodes":183,"wiz_show_stats":184,"wiz_rumor_check":185,"doattributes":186,"findone":187,"openone":188,"dig":189,"lib_dlb_init":190,"lib_dlb_cleanup":191,"lib_dlb_fopen":192,"lib_dlb_fclose":193,"lib_dlb_fread":194,"lib_dlb_fseek":195,"lib_dlb_fgets":196,"lib_dlb_fgetc":197,"lib_dlb_ftell":198,"drop":199,"wipeoff":200,"cmp_coord_distu":201,"gloc_filter_floodfill_matcharea":202,"docall_xname":203,"Armor_on":204,"Cloak_on":205,"Helmet_on":206,"Gloves_on":207,"Shield_on":208,"Shirt_on":209,"select_off":210,"take_off":211,"wantdoor":212,"mhurtle_step":213,"eatmdone":214,"eatfood":215,"opentin":216,"unfaint":217,"done_intr":218,"done_hangup":219,"vanqsort_cmp":220,"xputc":221,"win_tty_init":222,"tty_init_nhwindows":223,"tty_preference_update":224,"tty_player_selection":225,"tty_askname":226,"tty_get_nh_event":227,"tty_exit_nhwindows":228,"tty_suspend_nhwindows":229,"tty_resume_nhwindows":230,"tty_create_nhwindow":231,"tty_clear_nhwindow":232,"tty_display_nhwindow":233,"tty_destroy_nhwindow":234,"tty_curs":235,"tty_putstr":236,"tty_display_file":237,"tty_start_menu":238,"tty_add_menu":239,"tty_end_menu":240,"tty_select_menu":241,"tty_message_menu":242,"tty_update_inventory":243,"tty_mark_synch":244,"tty_wait_synch":245,"tty_cliparound":246,"tty_print_glyph":247,"tty_raw_print":248,"tty_raw_print_bold":249,"tty_nhgetch":250,"tty_nh_poskey":251,"tty_nhbell":252,"tty_doprev_message":253,"tty_yn_function":254,"tty_getlin":255,"tty_get_ext_cmd":256,"tty_number_pad":257,"tty_delay_output":258,"tty_status_enablefield":259,"tty_status_init":260,"tty_status_update":261,"tty_start_screen":262,"tty_end_screen":263,"tty_getmsghistory":264,"tty_putmsghistory":265,"proc_wizkit_line":266,"parse_config_line":267,"proc_symset_line":268,"gush":269,"ext_cmd_getlin_hook":270,"sortloot_cmp":271,"worn_wield_only":272,"only_here":273,"ckvalidcat":274,"ckunpaid":275,"safeq_xprname":276,"safeq_shortxprname":277,"this_type_only":278,"linux_mapon":279,"picklock":280,"forcelock":281,"do_comp":282,"iswall":283,"iswall_or_stone":284,"mbhitm":285,"msgtype_count":286,"count_menucolors":287,"count_apes":288,"docontact":289,"dispfile_help":290,"dispfile_shelp":291,"dispfile_optionfile":292,"dispfile_license":293,"dispfile_debughelp":294,"hmenu_doextversion":295,"hmenu_dohistory":296,"hmenu_dowhatis":297,"hmenu_dowhatdoes":298,"hmenu_doextlist":299,"domenucontrols":300,"n_or_more":301,"all_but_uchain":302,"in_container":303,"out_container":304,"prayer_done":305,"get_valid_stinking_cloud_pos":306,"display_stinking_cloud_positions":307,"set_lit":308,"inside_gas_cloud":309,"expire_gas_cloud":310,"def_minit":311,"def_mread":312,"def_bufon":313,"def_bufoff":314,"def_bflush":315,"def_bwrite":316,"floodfillchk_match_under":317,"floodfillchk_match_accessible":318,"sel_set_ter":319,"sel_set_feature":320,"sel_set_door":321,"sel_set_wallify":322,"learn":323,"spell_cmp":324,"spell_aim_step":325,"stealarm":326,"tty_decgraphics_termcap_fixup":327,"cleanup_burn":328,"def_raw_print":329,"def_wait_synch":330,"dump_create_nhwindow":331,"dump_clear_nhwindow":332,"dump_display_nhwindow":333,"dump_destroy_nhwindow":334,"dump_start_menu":335,"dump_add_menu":336,"dump_end_menu":337,"dump_select_menu":338,"dump_putstr":339,"hup_nhgetch":340,"hup_yn_function":341,"hup_nh_poskey":342,"hup_getlin":343,"hup_init_nhwindows":344,"hup_exit_nhwindows":345,"hup_create_nhwindow":346,"hup_select_menu":347,"hup_add_menu":348,"hup_end_menu":349,"hup_putstr":350,"hup_print_glyph":351,"hup_outrip":352,"hup_curs":353,"hup_display_nhwindow":354,"hup_display_file":355,"hup_cliparound":356,"hup_status_update":357,"hup_int_ndecl":358,"hup_void_ndecl":359,"hup_void_fdecl_int":360,"hup_void_fdecl_winid":361,"hup_void_fdecl_constchar_p":362};
 function* moveloop(resuming){var moveamt=0,wtcap=0,change=0,monscanmove=0,mtmp=0,old_ux=0,old_uy=0;var $fp=$SP;if(($SP=$fp+32)>$SPMAX)$stkovf();try{resuming=(resuming<<24>>24);moveamt=0;wtcap=0;change=0;monscanmove=0;decl_init();monst_init();objects_init();if(resuming&&HEAP8[iflags+99]){yield* enter_explore_mode();}HEAPU32[flags+48>>2]=((phase_of_the_moon())>>>0);if((HEAPU32[flags+48>>2])===4){yield* You(263201,$vw($fp+0,''));change_luck(1);}else{if((HEAPU32[flags+48>>2])===0){yield* pline(263232,$vw($fp+8,''));}}HEAP8[flags+13]=friday_13th();if(HEAP8[flags+13]){yield* pline(263263,$vw($fp+16,''));change_luck((-1));}if(!resuming){HEAP32[context+24>>2]=rnd(9000);yield* set_wear(0);yield* pickup(1);}HEAP8[context+60]=1;yield* update_inventory();if(resuming){yield* read_engr_at(HEAP8[u],HEAP8[u+1]);}yield* encumber_msg();if(HEAP8[defer_see_monsters]){HEAP8[defer_see_monsters]=0;yield* see_monsters();}initrack();HEAP8[((u+12)+1)]=HEAP8[((u+10)+1)];HEAP16[youmonst+24>>1]=12;HEAP8[context+56]=0;HEAP32[program_state+28>>2]=1;for(;;){if(HEAP32[program_state+8>>2]){yield* end_of_input();}yield* $FT[HEAP32[windowprocs+64>>2]]();if(HEAP8[context+56]){HEAP16[youmonst+24>>1]=(((HEAP16[youmonst+24>>1])-12|0)<<16>>16);do{wtcap=(yield* encumber_msg());HEAP8[context+55]=1;do{monscanmove=((yield* movemon())<<24>>24);if((HEAP16[youmonst+24>>1])>=12){break;}}while(monscanmove);HEAP8[context+55]=0;if((!monscanmove)&&((HEAP16[youmonst+24>>1])<12)){yield* mcalcdistress();for(mtmp=HEAP32[level+40336>>2];mtmp;mtmp=HEAP32[mtmp>>2]){HEAP16[mtmp+24>>1]=(((HEAP16[mtmp+24>>1])+(mcalcmove(mtmp))|0)<<16>>16);}if(!rn2(((HEAP32[(u+1808)>>2]>>>13&1)?25:(((depth((u+10)))>(depth((dungeon_topology+8))))?50:70)))){yield* makemon(0,0,0,0);}if(HEAP32[u+2136>>2]&&HEAP8[u+17]){moveamt=mcalcmove(HEAP32[u+2136>>2]);}else{moveamt=HEAP8[(HEAP32[youmonst+8>>2]+10)];if($and64(($ld64((((u+88)+1512)+16))),(-($or64(($or64(67108864,33554432)),16777216))-1))||$ld64(((u+88)+1512))){if((rn2(3))!==0){moveamt=(moveamt+12|0);}}else{if($ld64((((u+88)+1512)+16))||$ld64(((u+88)+1512))){if((rn2(3))===0){moveamt=(moveamt+12|0);}}}}switch(wtcap){case 0:break;case 1:moveamt=(moveamt-(moveamt/4|0)|0);break;case 2:moveamt=(moveamt-(moveamt/2|0)|0);break;case 3:moveamt=(moveamt-((Math.imul(moveamt,3))/4|0)|0);break;case 4:moveamt=(moveamt-((Math.imul(moveamt,7))/8|0)|0);break;default:break;}HEAP16[youmonst+24>>1]=(((HEAP16[youmonst+24>>1])+moveamt|0)<<16>>16);if((HEAP16[youmonst+24>>1])<0){HEAP16[youmonst+24>>1]=0;}settrack();$st64(monstermoves,(($ld64(monstermoves))+1));$st64(moves,(($ld64(moves))+1));if($ld64((((u+88)+504)+16))){yield* glibr();}yield* nh_timeout();yield* run_regions();if(HEAP32[u+2064>>2]){HEAP32[u+2064>>2]=((HEAP32[u+2064>>2])-1|0);}if(HEAP8[flags+35]&&(!HEAPU32[context+8>>2])){HEAP8[iflags+145]=1;}if(HEAP32[(u+1796)>>2]>>>4&1){wtcap=0;}else{if((!((HEAP32[u+1756>>2])!==(HEAP32[u+1752>>2])))?(((HEAP32[u+1976>>2])<(HEAP32[u+1980>>2]))?1:0):((((HEAP32[u+1760>>2])<(HEAP32[u+1764>>2]))||((HEAP8[(HEAP32[youmonst+8>>2]+8)])===57))?1:0)){yield* regen_hp(wtcap);}}if((wtcap>2)&&HEAP8[u+17]){if(!((wtcap<4)?($mod64(($ld64(moves)),30)):($mod64(($ld64(moves)),10)))){if(((HEAP32[u+1756>>2])!==(HEAP32[u+1752>>2]))&&((HEAP32[u+1760>>2])>1)){HEAP32[u+1760>>2]=((HEAP32[u+1760>>2])-1|0);HEAP8[context+59]=1;}else{if((!((HEAP32[u+1756>>2])!==(HEAP32[u+1752>>2])))&&((HEAP32[u+1976>>2])>1)){HEAP32[u+1976>>2]=((HEAP32[u+1976>>2])-1|0);HEAP8[context+59]=1;}else{yield* You(263317,$vw($fp+24,''));yield* exercise(4,0);yield* fall_asleep((-10),0);}}}}if(((HEAP32[u+1984>>2])<(HEAP32[u+1988>>2]))&&(((wtcap<2)&&(!$mod64(($ld64(moves)),((Math.imul(((30+8|0)-(HEAP32[u+24>>2])|0),(((HEAP16[urole+208>>1])===342)?3:4)))/6|0))))||($ld64((((u+88)+1368)+16))||$ld64(((u+88)+1368))))){HEAP32[u+1984>>2]=((HEAP32[u+1984>>2])+((rn2(((((acurr(2))+(acurr(1))|0)/15|0)+1|0)))+1|0)|0);if((HEAP32[u+1984>>2])>(HEAP32[u+1988>>2])){HEAP32[u+1984>>2]=HEAP32[u+1988>>2];}HEAP8[context+59]=1;if((HEAP32[u+1984>>2])===(HEAP32[u+1988>>2])){yield* interrupt_multi(263341);}}if(!(HEAP32[(u+1796)>>2]>>>4&1)){if(($ld64((((u+88)+1080)+16))||$ld64(((u+88)+1080)))&&(!rn2(85))){old_ux=HEAP8[u];old_uy=HEAP8[u+1];yield* tele();if(((HEAP8[u])!==old_ux)||((HEAP8[u+1])!==old_uy)){if(!(yield* next_to_u())){yield* check_leash(old_ux,old_uy);}pushch(0);savech(0);}}if(((change===1)&&(!($ld64((((u+88)+1440)+16))||$ld64(((u+88)+1440)))))||((change===2)&&((HEAP32[u+1784>>2])===(-1)))){change=0;}if(($ld64((((u+88)+1440)+16))||$ld64(((u+88)+1440)))&&(!rn2(100))){change=1;}else{if((((HEAP32[u+1784>>2])>=((-1)+1|0))&&(!((HEAP32[u+1756>>2])!==(HEAP32[u+1752>>2]))))&&(!rn2((80-(Math.imul(20,(night())))|0)))){change=2;}}if(change&&(!($ld64((((u+88)+1488)+16))||$ld64(((u+88)+1488))))){if((HEAP32[multi>>2])>=0){yield* stop_occupation();if(change===1){yield* polyself(0);}else{yield* you_were();}change=0;}}}if(($ld64((((u+88)+816)+16))||$ld64(((u+88)+816)))&&((HEAP32[multi>>2])>=0)){yield* dosearch0(1);}if($ld64((((u+88)+744)+16))||$ld64(((u+88)+744))){yield* warnreveal();}yield* mkot_trap_warn();yield* dosounds();yield* do_storms();yield* gethungry();age_spells();yield* exerchk();yield* invault();if(HEAP32[(u+1812)>>2]>>>0&1){yield* amulet();}if(!rn2((40+(Math.imul((acurr(3)),3))|0))){yield* u_wipe_engr(rnd(3));}if((HEAP32[(u+1808)>>2]>>>13&1)&&(!(HEAP32[(u+1796)>>2]>>>4&1))){if(HEAPU32[u+1800>>2]){HEAPU32[u+1800>>2]=((HEAPU32[u+1800>>2])-1>>>0);}if(!HEAPU32[u+1800>>2]){yield* intervene();HEAPU32[u+1800>>2]=(((rn2(200))+50|0)>>>0);}}yield* restore_attrib();if(((HEAP8[((dungeon_topology+32)+1)]||HEAP8[dungeon_topology+32])&&on_level((u+10),(dungeon_topology+32)))||((HEAP8[((dungeon_topology+36)+1)]||HEAP8[dungeon_topology+36])&&on_level((u+10),(dungeon_topology+36)))){yield* movebubbles();}else{if((HEAP8[((dungeon_topology+34)+1)]||HEAP8[dungeon_topology+34])&&on_level((u+10),(dungeon_topology+34))){yield* fumaroles();}else{if(HEAP32[(u+1796)>>2]>>>1&1){yield* under_water(0);}else{if(HEAP32[(u+1796)>>2]>>>5&1){yield* under_ground(0);}}}}if((HEAP32[multi>>2])<0){if((HEAP32[multi>>2]=((HEAP32[multi>>2])+1|0))===0){yield* unmul(0);if(HEAPU8[u+16]){yield* deferred_goto();}}}}}while((HEAP16[youmonst+24>>1])<12);if($ld64(iflags+120)){status_eval_next_unhilite();}if(HEAP8[context+58]){clear_bypasses();}if((((((HEAP32[(u+1812)>>2]>>>0&1)||(($ld64((((u+88)+840)+16))||$ld64(((u+88)+840)))&&(!$ld64((((u+88)+840)+8)))))&&(!((HEAP8[u+10])===(HEAP8[dungeon_topology+38]))))&&(!$ld64((((u+88)+840)+8))))&&(!$mod64(($ld64(moves)),15)))&&(!rn2(2))){yield* do_vicinity_map(0);}if(HEAPU32[u+32>>2]&&((HEAPU32[u+36>>2])===3)){yield* sink_into_lava();}else{if(!HEAP8[u+17]){yield* pooleffects(0);}}}clear_splitobjs();find_ac();if((!HEAP8[context+57])||((((HEAP8[u+1904]||$ld64((((u+88)+360)+16)))||(HEAP32[ublindf>>2]&&((HEAP16[(HEAP32[ublindf>>2]+30)>>1])!==207)))||(!(($and64(($ld64((HEAP32[youmonst+8>>2]+48))),4096))===0)))&&(!(HEAP32[ublindf>>2]&&((HEAP8[(HEAP32[ublindf>>2]+51)])===26))))){if($ld64((((u+88)+552)+16))&&(!($ld64((((u+88)+576)+16))||$ld64(((u+88)+576))))){yield* see_monsters();yield* see_objects();yield* see_traps();if(HEAP32[(u+1796)>>2]>>>0&1){yield* swallowed(0);}}else{if($ld64(((u+88)+720))){yield* see_monsters();}else{if(($ld64((((u+88)+744)+16))||$ld64(((u+88)+744)))||($ld64((((u+88)+768)+16))||$ld64(((u+88)+768)))){yield* see_monsters();}}}if(HEAP8[vision_full_recalc]){yield* vision_recalc(0);}}if(HEAP8[context+59]||HEAP8[context+60]){yield* bot();yield* curs_on_u();}else{if(HEAP8[iflags+145]){yield* timebot();yield* curs_on_u();}}HEAP8[context+56]=1;if(((HEAP32[multi>>2])>=0)&&HEAP32[occupation>>2]){if((yield* $FT[HEAP32[occupation>>2]]())===0){HEAP32[occupation>>2]=0;}if(monster_nearby()){yield* stop_occupation();yield* reset_eat();}continue;}if(HEAP8[iflags+59]||HEAP8[iflags]){yield* sanity_check();}yield* $FT[HEAP32[windowprocs+224>>2]](HEAP8[u],HEAP8[u+1]);HEAP8[u+17]=0;if((HEAP32[multi>>2])>0){yield* lookaround();if(!HEAP32[multi>>2]){HEAP8[context+56]=0;if(HEAP8[flags+35]){HEAP8[context+59]=1;}continue;}if(HEAP8[context+57]){if(((HEAP32[multi>>2])<80)&&(!(HEAP32[multi>>2]=((HEAP32[multi>>2])-1|0)))){HEAP8[context+50]=(HEAP8[context+51]=(HEAP8[context+57]=((HEAPU32[context+8>>2]=0)<<24>>24)));}yield* domove();}else{HEAP32[multi>>2]=((HEAP32[multi>>2])-1|0);yield* rhack(HEAP32[save_cm>>2]);}}else{if((HEAP32[multi>>2])===0){yield* ckmailstatus();yield* rhack(0);}}if(HEAPU8[u+16]){yield* deferred_goto();}else{if(HEAP8[flags+35]&&((!HEAP8[context+56])||(!HEAP8[context+57]))){HEAP8[context+59]=1;}}if(HEAP8[vision_full_recalc]){yield* vision_recalc(0);}if(((!HEAPU32[context+8>>2])||((HEAP32[flags+152>>2])===0))&&(HEAP32[multi>>2]&&((!HEAP8[context+50])?((!((HEAP32[multi>>2])%7|0))?1:0):((!$mod64(($ld64(moves)),7))?1:0)))){if(HEAP8[flags+35]&&HEAPU32[context+8>>2]){HEAP8[context+59]=1;}yield* $FT[HEAP32[windowprocs+112>>2]](HEAP32[WIN_MAP>>2],0);}}}finally{$SP=$fp}}
 function* regen_hp(wtcap){var heal=0,reached_full=0,encumbrance_ok=0,Con=0;heal=0;reached_full=0;encumbrance_ok=((((wtcap<2)||(!HEAP8[u+17]))?1:0)<<24>>24);if((HEAP32[u+1756>>2])!==(HEAP32[u+1752>>2])){if((HEAP32[u+1760>>2])<1){yield* rehumanize();}else{if((((HEAP8[(HEAP32[youmonst+8>>2]+8)])===57)&&(!is_pool(HEAP8[u],HEAP8[u+1])))&&(!((HEAP8[((dungeon_topology+32)+1)]||HEAP8[dungeon_topology+32])&&on_level((u+10),(dungeon_topology+32))))){if(((((HEAP32[u+1760>>2])>1)&&(!($ld64((((u+88)+1344)+16))||$ld64(((u+88)+1344)))))&&((rn2(HEAP32[u+1760>>2]))>(rn2(8))))&&((!($ld64((((u+88)+1320)+16))||$ld64(((u+88)+1320))))||(!$mod64(($ld64(moves)),2)))){heal=(-1);}}else{if((HEAP32[u+1760>>2])<(HEAP32[u+1764>>2])){if(($ld64((((u+88)+1344)+16))||$ld64(((u+88)+1344)))||(encumbrance_ok&&(!$mod64(($ld64(moves)),20)))){heal=1;}}}}if(heal){HEAP8[context+59]=1;HEAP32[u+1760>>2]=((HEAP32[u+1760>>2])+heal|0);reached_full=((((HEAP32[u+1760>>2])===(HEAP32[u+1764>>2]))?1:0)<<24>>24);}}else{if(((HEAP32[u+1976>>2])<(HEAP32[u+1980>>2]))&&(encumbrance_ok||($ld64((((u+88)+1344)+16))||$ld64(((u+88)+1344))))){if((HEAP32[u+24>>2])>9){if(!$mod64(($ld64(moves)),3)){Con=acurr(4);if(Con<=12){heal=1;}else{heal=rnd(Con);if(heal>((HEAP32[u+24>>2])-9|0)){heal=((HEAP32[u+24>>2])-9|0);}}}}else{if(!$mod64(($ld64(moves)),(((30+12|0)/((HEAP32[u+24>>2])+2|0)|0)+1|0))){heal=1;}}if(($ld64((((u+88)+1344)+16))||$ld64(((u+88)+1344)))&&(!heal)){heal=1;}if(heal){HEAP8[context+59]=1;HEAP32[u+1976>>2]=((HEAP32[u+1976>>2])+heal|0);if((HEAP32[u+1976>>2])>(HEAP32[u+1980>>2])){HEAP32[u+1976>>2]=HEAP32[u+1980>>2];}reached_full=((((HEAP32[u+1976>>2])===(HEAP32[u+1980>>2]))?1:0)<<24>>24);}}}if(reached_full){yield* interrupt_multi(263366);}}
 function* stop_occupation(){var $fp=$SP;if(($SP=$fp+8)>$SPMAX)$stkovf();try{if(HEAP32[occupation>>2]){if(!(yield* maybe_finished_meal(1))){yield* You(263390,$vw($fp+0,'p',HEAP32[occtxt>>2]));}HEAP32[occupation>>2]=0;HEAP8[context+59]=1;nomul(0);pushch(0);}else{if((HEAP32[multi>>2])>=0){nomul(0);}}}finally{$SP=$fp}}
@@ -5741,7 +5710,7 @@ function $nhStart(env,image,argv){
   $views(new ArrayBuffer(64<<20));
   HEAPU8.set(image,0);
   $STACK0=($DATAEND+15)&~15;$SP=$STACK0;$SPMAX=$STACK0+(4<<20);$brk=$SPMAX+64;$free=new Map();
-  if(!env.fs.dirs.has(env.home)){env.fs.dirs.add(env.home)}
+  env.fs.dirs.add(env.home);
   $E={fs:env.fs,cwd:env.home,fds:{0:{tty:true},1:{tty:true},2:{tty:true}},files:new Map(),out:[],outn:0,keys:[],inputEnd:false,
       sig:{},atexit:[],isig:!!env.isig,mark:env.mark||function(){},dirty:false};
   $E.cbuf=malloc$(16);
@@ -5880,7 +5849,7 @@ function $keepFiles(fs){
   fs.files.forEach(function(v,k){if($KEEP.test(k))o[k]=$unb64(v.data.subarray(0,v.size))});
   return P.save('nethack/files',o);
 }
-var $running=false;
+var $running=false,$KEYS={Enter:10,Backspace:127,Escape:27,Tab:9,ArrowLeft:104,ArrowDown:106,ArrowUp:107,ArrowRight:108}; /* named keys: the arrows move as hjkl */
 P.command({names:['nethack'],run:function(a,raw,words){
   var last=null,fault=null;
   if($running){P.typeLine('nethack: already running','err');return}
@@ -5892,7 +5861,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
     var sig=null;
     function show(){
       if(over)return;
-      if(C&&$FS){var g=$keptSig($FS);if(sig!==null&&g!==sig)$keepFiles($FS);sig=g} /* a save restored is gone at once, as on disk */
+      if(C&&$E.dirty){$E.dirty=false;var g=$keptSig($FS);if(g!==sig)$keepFiles($FS);sig=g} /* a save restored is gone at once, as on disk */
       var r=Math.min(S.rows,24),c=Math.min(S.cols,80);
       if(T.y<oy)oy=T.y<r?0:T.y;else if(T.y>=oy+r)oy=T.y-r+1;
       if(T.x<ox)ox=T.x<c-4?0:T.x-4;else if(T.x>=ox+c)ox=Math.min(80-c,T.x-c+5);
@@ -5916,15 +5885,14 @@ P.command({names:['nethack'],run:function(a,raw,words){
       if(!$FS)$FS=$loadFiles(parts,t0);
       /* nothing else runs this game here: a lock left by an earlier run that broke is stale */
       $FS.files.forEach(function(v,k){if(/^\/usr\/lib\/games\/nethack\/([0-9]+[^\/]*\.[0-9]+|perm_lock|record_lock|[0-9]+[^\/]*lock)$/.test(k))$FS.files.delete(k)});
-      var home=st.home||'/',rc=P.find(home.replace(/\/$/,'')+'/.nethackrc');
-      $FS.files.delete(home.replace(/\/$/,'')+'/.nethackrc');
-      if(rc&&rc.type!=='d'){var tx=P.text(rc).join('\n')+'\n',u=new Uint8Array(tx.length);for(var i=0;i<tx.length;i++)u[i]=tx.charCodeAt(i)&255;$FS.dirs.add(home);$FS.files.set(home.replace(/\/$/,'')+'/.nethackrc',{data:u,size:u.length,mtime:t0})}
+      var home=st.home||'/',rcp=home.replace(/\/$/,'')+'/.nethackrc',rc=P.find(rcp);
+      $FS.files.delete(rcp);
+      if(rc&&rc.type!=='d'){var tx=P.text(rc).join('\n')+'\n',u=new Uint8Array(tx.length);for(var i=0;i<tx.length;i++)u[i]=tx.charCodeAt(i)&255;$FS.dirs.add(home);$FS.files.set(rcp,{data:u,size:u.length,mtime:t0})}
       var vars={USER:user,LOGNAME:user,HOME:home,TERM:'vt100',SHELL:'/bin/sh'};
       if(P.env&&typeof P.env.NETHACKOPTIONS==='string')vars.NETHACKOPTIONS=P.env.NETHACKOPTIONS;
-      var rnd=window.crypto&&window.crypto.getRandomValues?function(k){return window.crypto.getRandomValues(new Uint8Array(k))}:function(k){var r=new Uint8Array(k);for(var i=0;i<k;i++)r[i]=Math.floor(Math.random()*256);return r};
       sig=$keptSig($FS);
       C=$nhStart({fs:$FS,vars:vars,stdinPipe:P.stdin()!==null,user:user,home:home,uid:root?0:1000,pid:1000+Math.floor(Math.random()*30000),isig:true,sleeps:true,utc:false,
-        now:function(){return Date.now()/1000},random:rnd,
+        now:function(){return Date.now()/1000},random:function(k){return window.crypto.getRandomValues(new Uint8Array(k))},
         write:function(o){o.forEach(function(b){T.write(b)})},
         later:function(ms,f){return S.after(ms,function(){f();show()})},
         exit:function(code){$keepFiles($FS);P.status(code);quit()}},parts.image,(words||['nethack']).slice(0,20).map(function(w,i){return i?String(w):'nethack'}));
@@ -5937,11 +5905,9 @@ P.command({names:['nethack'],run:function(a,raw,words){
     return {
       feed:function(k){
         if(over||!C)return;
-        var m=/^C-([a-z])$/.exec(k),c=k==='Enter'?'\n':k==='Backspace'?'\x7f':k==='Escape'?'\x1b':k==='Tab'?'\t':
-          k==='ArrowLeft'?'h':k==='ArrowDown'?'j':k==='ArrowUp'?'k':k==='ArrowRight'?'l':k.length===1?k:m?String.fromCharCode(m[1].charCodeAt(0)-96):null;
-        if(c===null)return;
-        var b=[];for(var i=0;i<c.length;i++)b.push(c.charCodeAt(i)&255);
-        try{C.feed(b)}catch(e){$running=false;throw e}
+        var m=/^C-([a-z])$/.exec(k),c=k.length===1?k.charCodeAt(0)&255:m?m[1].charCodeAt(0)-96:$KEYS.hasOwnProperty(k)?$KEYS[k]:-1;
+        if(c<0)return;
+        try{C.feed([c])}catch(e){$running=false;throw e}
         show();
       },
       draw:show

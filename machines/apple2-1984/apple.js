@@ -11,7 +11,8 @@ var S=null,el=null,closeFn=null,rows=[],dirty=true,blinkOn=true,calm=window.matc
 var basic=null,mode='off',GL=null,keyCb=null,kq=[],brkFlag=false,lastKey=0,job=null,cpu=null,cpuDone=null,sleepUntil=0,sleepCb=null;
 var WELCOME=[],MAILNOTE='',graphics=false,booted=false,booting=false;
 var CH=0x24,CV=0x25,WL=0x20,WW=0x21,WT=0x22,WB=0x23,INV=0x32;
-var DOS={slot:6,drive:1,cap:null,lastCR:true,pend:null,w:null,r:null,open:{},exec:null,on:true};
+function freshDos(){return {slot:6,drive:1,cap:null,lastCR:true,pend:null,w:null,r:null,open:{},exec:null,on:true}}
+var DOS=freshDos();
 var disk=null;
 
 /* ---------- the text screen: the bytes at $400-$7FF, as the IIe keeps them ---------- */
@@ -236,7 +237,6 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
   if(D.bad)throw {dos:11};
   var c=D.cmd;
   if((c==='LOAD'||c==='SAVE'||c==='RUN')&&(!D.name||!/^[A-Z]/.test(D.name)))return null; /* the cassette, or RUN 100: BASIC's */
-  if(NEEDNAME[c]&&!D.name)throw {dos:11};
   if(NEEDNAME[c]&&!/^[A-Z]/.test(D.name))throw {dos:11};
   if(c==='MAXFILES'&&!/^\d+$/.test(D.name))throw {dos:11};
   if(D.name&&D.name.length>30)D.name=D.name.slice(0,30);
@@ -386,7 +386,6 @@ function runCpu(at,then){
   cpu.a=mem[0x45];cpu.x=mem[0x46];cpu.y=mem[0x47];
   cpu.pc=at;cpuDone=then;mode='cpu';
 }
-function hexOut(v,n){say(n===4?h4(v):h2(v))}
 function trap(C){ /* true: the routine at C.pc was done here, and returned from */
   var pc=C.pc;
   function ret(){C.rts();return true}
@@ -395,9 +394,9 @@ function trap(C){ /* true: the routine at C.pc was done here, and returned from 
   case 0xFDED:case 0xFDF0:out(C.a);return ret();
   case 0xFD8E:cr();return ret();
   case 0xFD8B:clreol();cr();return ret();
-  case 0xFDDA:hexOut(C.a);return ret();
+  case 0xFDDA:say(h2(C.a));return ret();
   case 0xFDE3:say((C.a&15).toString(16).toUpperCase());return ret();
-  case 0xF941:hexOut(C.a);hexOut(C.x);return ret();
+  case 0xF941:say(h2(C.a)+h2(C.x));return ret();
   case 0xF948:say('   ');return ret();
   case 0xF94A:say(' '.repeat(C.x));return ret();
   case 0xFC58:home();return ret();
@@ -600,7 +599,7 @@ var MACH={
   call:function(a){return {wait:'cpu',at:a}},
   slot:function(io,n){if(n===6)return {wait:'boot'};return null},
   tape:function(){return {wait:'tape'}},
-  amper:function(t){return amper(t)},
+  amper:amper,
   pending:function(){return DOS.pend!==null},
   runDos:function(){
     var c=DOS.pend;DOS.pend=null;DOS.w=null;DOS.r=null;
@@ -627,14 +626,14 @@ function amper(t){
   s=s.replace(/ +/g,' ').trim();
   var w=(s.match(/^[A-Z]+/)||[''])[0],rest=s.slice(w.length).trim();
   if(s==='WELCOME'){welcome();return null}
-  if(/^ZORK ?(I|II|1|2)$/.test(s.replace(/ /g,' '))){return {wait:'view',name:/II|2$/.test(s)?'ZORK2':'ZORK1',args:''}}
+  if(/^ZORK ?(I|II|1|2)$/.test(s)){return {wait:'view',name:/II|2$/.test(s)?'ZORK2':'ZORK1',args:''}}
   if(TERMINAL[w])return {wait:'view',name:w,args:rest};
   return false;
 }
 function welcome(){ /* the site's welcome, word-wrapped to the screen */
   var L=WELCOME.concat(MAILNOTE?['',MAILNOTE]:[],P.columns&&coarse()?['','(tap the screen for a keyboard.)']:[]);
   L.forEach(function(l){
-    var t=String(Array.isArray(l)?l[0]:l).replace(/[\u0001\u0002]/g,'').replace(/[\u0003\u0004]/g,'');
+    var t=String(Array.isArray(l)?l[0]:l).replace(/[\u0001-\u0004]/g,'');
     wrap(t,39).forEach(function(x){say(x);cr()});
   });
 }
@@ -686,8 +685,10 @@ function leave(what,then,hint){ /* off the Apple's screen to the terminal's own,
   var keep=mode;
   closeScreen();
   P.queue(what);
-  if(hint)P.queue(function(){P.typeLine('(press any key to go back to the apple.)','dim')});
-  if(hint)P.queue(function(){return P.readKey('',true)});
+  if(hint){
+    P.queue(function(){P.typeLine('(press any key to go back to the apple.)','dim')});
+    P.queue(function(){return P.readKey('',true)});
+  }
   P.queue(function(){openScreen(function(){mode=keep==='getln'?'busy':keep;then()})});
 }
 
@@ -699,7 +700,7 @@ function resetMemory(){
   mem.set([0x4C,0x58,0xFF],0x3F5);         /* & goes nowhere until the card's program says otherwise */
   mem.set([0x4C,0xBF,0x9D,0x4C,0x84,0x9D],0x3D0);
   mem.set([0x4C,0x03,0xE0],0x3F2);
-  DOS={slot:6,drive:1,cap:null,lastCR:true,pend:null,w:null,r:null,open:{},exec:null,on:true};
+  DOS=freshDos();
   kq=[];brkFlag=false;dirty=true;
 }
 function boot(){
@@ -755,7 +756,6 @@ P.setup(function(){
   P.setPrompt(function(){return ''});
   ['help','mail','about','source','fill','sound','effects','connect'].concat(Object.keys(P.cmds)).forEach(function(n){if(P.has(P.cmds,n))TERMINAL[n.toUpperCase()]=1});
   P.fallback=function(word,raw){openScreen(function(){prompt()});return true}; /* typed at the terminal's own prompt: back to the Apple */
-  loadDisk();
   setTimeout(function(){
     P.queue(function(){
       if(P.profile.problems.length)return P.readKey('',true);
