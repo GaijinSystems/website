@@ -1,0 +1,14 @@
+/* PHOSPHOR-9 terminal: machine "c128-1986", how the glass looks while the Commodore is plugged in. The border
+   fills the glass and the screen sits in it, drawn dot for dot on a canvas by screen.js, which sets the colours:
+   light green on dark grey in 40 columns, light cyan on black in 80 (html.vdc), light blue on blue as a C64
+   (html.c64). The text copy of the screen (#full) is kept for screen readers and stays out of sight.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
+html.c128 #full{position:absolute;left:0;top:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);padding:0}
+html.c128 #term{overflow:hidden}
+#c128{position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#9ad284}
+#c128 .paper{position:relative;flex:0 0 auto;filter:drop-shadow(0 0 3px var(--c128-glow,rgba(154,210,132,.55)))}
+#c128 canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+html.lite #c128 .paper{filter:none}
+html.c128 #crt::before{background:radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.25),rgba(255,255,255,0) 70%)}
+html.c128 .flicker{background:rgba(255,255,255,.02)}
+@media (prefers-reduced-motion:reduce){#c128 .paper{filter:none}}
