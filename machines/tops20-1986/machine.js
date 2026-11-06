@@ -10,6 +10,7 @@ user:         guest
 home:         /guest
 case:         ignore
 shell:        dcl
+disk full:    ?Quota exceeded
 unix:         no
 hostname:     dec20
 login prompt: @LOGIN

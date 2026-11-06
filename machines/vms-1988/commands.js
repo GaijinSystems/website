@@ -151,6 +151,7 @@ verb('rename',3,function(a){
   var v=nextVersion(dir,T),k=T.name+'.'+T.typ+';'+v,n=r.e.node;
   delete r.dir.kids[r.e.key];
   n.name=k;n.parent=dir;dir.kids[k]=n;
+  delete n.store; /* no longer the EMPSAVE.DAT that stands for the saved game */
 });
 verb('delete',3,function(a){
   if(!a.length){P.typeLine('_File: ');return}

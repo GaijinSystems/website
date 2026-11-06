@@ -7,7 +7,11 @@
 var cmd=P.fcb.cmd,fcb=P.fcb.name;
 var user=0,SIZE=486; /* a double-sided eight-inch disk */
 function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n=P.root.kids[k];return n.type!=='d'&&k.charAt(0)!=='.'&&(n.user||0)===user})}
-function get(k){var n=P.root.kids[k]||P.root.kids[P.fcb.cut(k)];return n&&(n.user||0)===user?n:undefined} /* a long name means its first eight and three */
+function get(k){ /* a long name means its first eight and three, and so does a file kept under a longer name */
+  var K=P.root.kids,c=P.fcb.cut(k),n=K[k]||K[c];
+  if(!n){var j=Object.keys(K).filter(function(x){return P.fcb.cut(x)===c&&(K[x].user||0)===user})[0];n=j&&K[j]}
+  return n&&(n.user||0)===user?n:undefined;
+}
 function write(k,L,full){ /* full: what to say when the name is another user area's (one name, one file here) */
   k=P.fcb.cut(k); /* a new file's name is cut to eight and three, as the FCB holds it */
   var o=P.root.kids[k];
@@ -61,7 +65,7 @@ cmd(['era'],null,function(a,raw,w){
 });
 cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD */
   var q=assign(raw);
-  if(!q){P.typeLine((raw.trim()+'?').toUpperCase());return}
+  if(!q||/[*?]/.test(q[1]+q[2])){P.typeLine((raw.trim()+'?').toUpperCase());return} /* no wildcards in either name */
   if(elsewhere(q[1])||elsewhere(q[2]))return;
   q=q.map(function(x){return x.replace(/^a:/i,'')});
   var n=get(q[2]),to=P.fcb.cut(q[1]);

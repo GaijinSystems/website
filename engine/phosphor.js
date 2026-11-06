@@ -173,6 +173,7 @@ var PROFILE=(function(){
     else if(k==='not found')P.notFound=v;
     else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8;P.lsTight=lc[2]==='tight'}
     else if(k==='mail notice')P.mailNotice=v;
+    else if(k==='disk full')P.diskFull=v;                /* what a write says when the disk fills */
     else if(k==='home')P.home=v.replace(/\/+$/,'')||'/'; /* one fixed home instead of homes/user */
     else if(k==='login prompt')P.loginPrompt=v+' ';
     else if(k==='root login')P.rootName=v.toLowerCase();
@@ -555,6 +556,7 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
       view=next||{at:0,max:0};next=null;
       if(view.off)r=-1; /* the cursor is out of the dragged view */
       edge[0].hidden=!(view.at>0);edge[1].hidden=!(view.at<view.max);
+      el.style.touchAction=view.max>0?'pan-y pinch-zoom':''; /* a sideways drag is the engine's only when there is a view to pan */
       for(i=0;i<lines.length;i++){
         var was=el.children[i];
         if(was&&i!==r&&sameRow(was,lines[i]))continue;
@@ -649,7 +651,7 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
     if(e.timeStamp-d.t>80||calm.matches||document.documentElement.classList.contains('lite'))return; /* held still, or no motion wanted */
     var v=d.v,last=performance.now();
     glide=requestAnimationFrame(function step(now){ /* a little momentum */
-      var dt=Math.min(50,now-last);last=now;
+      var dt=Math.max(0,Math.min(50,now-last));last=now;
       if(to(U+v*dt)&&Math.abs(v*=Math.pow(.99,dt))>.003)glide=requestAnimationFrame(step);
     });
   }
@@ -799,8 +801,8 @@ function writeFile(p,lines,append){ /* false if it cannot be written */
   if(bsize(L)>DISK){ /* what fits goes in, and the rest is lost, the way a full disk did it */
     for(var i=0,n=0;n+lineOf(L[i])[0].length+1<=DISK;i++)n+=lineOf(L[i])[0].length+1;
     L=L.slice(0,i);
-    typeLine(PROFILE.dcl?'%SYSTEM-F-EXDISKQUOTA, disk quota exceeded':PROFILE.dos?'Insufficient disk space':
-      PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 6/0','err'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
+    typeLine(PROFILE.diskFull||(PROFILE.dcl?'%SYSTEM-F-EXDISKQUOTA, disk quota exceeded':PROFILE.dos?'Insufficient disk space':
+      PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 6/0'),'err'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
   }
   if(!ex)put(abs,'f',{body:L,owner:ST.user,date:now()});
   else{ex.body=L;ex.size=0;ex.date=now()}
@@ -1155,7 +1157,7 @@ function guard(t,spaces){
 function unguard(t){return t.replace(/\uE010/g,'').replace(/[\uE000-\uE00B]/g,function(c){return META.charAt(c.charCodeAt(0)-0xE000)})}
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
   var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0,piped=false;
-  function fresh(){return {words:[],raw:'',src:'',in:null,out:null,app:false,err:null,glass:false,mk:[]}}
+  function fresh(){return {words:[],ends:[],raw:'',src:'',in:null,out:null,app:false,err:null,glass:false,mk:[]}}
   var st=fresh();
   function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
   function endWord(){
@@ -1168,12 +1170,13 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       if(PROFILE.csh&&g.length===1&&g[0]===x&&/[*?\[]/.test(x))throw NOMATCH; /* csh says so; sh passes the word along */
       st.words=st.words.concat(g);
     });
+    for(var e=[st.raw.length,st.src.length];st.ends.length<st.words.length;)st.ends.push(e); /* where each word ends in raw and src */
     w=null;quoted=false;fromVar=false;
   }
   function endStage(tok){
     endWord();
     if(redir&&!PROFILE.dos)throw {syntax:tok,redir:true}; /* echo a > : a redirection with no name */
-    st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass)stages.push(st);st=fresh();
+    st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass)stages.push(st);st=fresh();
   }
   function blank(){return w===null&&!/\S/.test(st.src)&&st.in===null&&st.out===null&&st.err===null&&!st.glass&&!st.e2o&&!st.closed&&!st.errClosed&&!st.mk.length} /* nothing written for this command */
   function endList(nextOp){endStage(nextOp||'newline');if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp;piped=false}
@@ -1265,10 +1268,10 @@ function runPipeline(stages){
       while((!k||!PROFILE.csh&&!PROFILE.dos)&&k<st.words.length&&A.test(st.words[k]))k++; /* csh and DOS: only a lone x=1 */
       if(k&&k===st.words.length){st.words.forEach(function(x){var m=x.match(A);ENV[m[1]]=m[2]});STATUS=0;return} /* x=1 y=2 */
       if(!k||PROFILE.csh||PROFILE.dos){runOne(st.raw,st.words,st.src);return}
-      var cut=function(t){return t.replace(new RegExp('^\\s*(\\S+\\s+){'+k+'}'),'')};
+      var cut=function(t,j){return t.slice(st.ends[k-1][j]).replace(/^\s+/,'')};
       prefix={}; /* X=2 cmd: X is 2 for cmd only, and its $X was worked out before that */
       st.words.slice(0,k).forEach(function(x){var m=x.match(A);if(!has(prefix,m[1]))prefix[m[1]]=has(ENV,m[1])?ENV[m[1]]:undefined;ENV[m[1]]=m[2]});
-      runOne(cut(st.raw),st.words.slice(k),cut(st.src));
+      runOne(unguard(cut(st.raw0,0)),st.words.slice(k),cut(st.src,1));
     });
     queue(function(){
       if(own)SUB--;
@@ -1647,7 +1650,9 @@ function run(raw){
     return;
   }
   if(!PROFILE.csh&&/(\||&&)\s*$/.test(raw.replace(/\\[\s\S]/g,'x').replace(/'[^']*'|"(?:[^"\\]|\\.)*"|`[^`]*`/g,'q').replace(/(^|\s)#.*$/,''))){ /* echo x | : the rest is on the next line */
-    ask('> ',function(l){if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+' '+l)});
+    var g=GEN,l;
+    queue(function(){return readLine('> ').then(function(x){l=x})});
+    queue(function(){if(g!==GEN)nextPrompt();else if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+' '+l)},true); /* ^C: bash just gives a new prompt */
     return;
   }
   if(compound(raw)){

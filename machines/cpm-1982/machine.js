@@ -10,6 +10,7 @@ user:      guest
 home:      /
 case:      ignore
 shell:     dos
+disk full: DISK WRITE ERROR
 unix:      no
 login:     no
 hostname:  cpm

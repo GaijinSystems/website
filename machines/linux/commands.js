@@ -101,35 +101,25 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
     P.st.cwd=P.pathOf(n);
     if(back)P.typeLine(P.st.cwd);
   },{core:true,help:'change directory'});
-/* bash's own list: the engine keeps what was typed (for !n and the arrows), and -c, -d and -s change both */
-var HV=[],seenN=0,seenLast;
-function histView(){
-  var E=P.hist(),k=E.length-seenN; /* what was typed since the last look; at the engine's cap the oldest fall off */
-  if(E.length<seenN){HV=[];k=E.length} /* a new login: a new list */
-  else if(seenN&&E.length===seenN){k=0;for(var t=1;t<=E.length;t++)if(E[E.length-t]===seenLast){k=t-1;break}}
-  HV=HV.concat(E.slice(E.length-Math.max(0,k)));
-  seenN=E.length;seenLast=E[E.length-1];
-  return HV;
-}
-function histSet(){P.setHist(HV);var E=P.hist();seenN=E.length;seenLast=E[E.length-1]}
+/* bash's own list is the engine's (for !n and the arrows): -c, -d, -s and -p change a copy and put it back */
 cmd('history','','display the command history','history [-c] [-d offset] [n]','lists the commands typed so far, numbered. with n, only the last n. -c clears the list, -d offset deletes one entry. !n runs number n again, and !! the last one.',function(a){
-  var H=histView(),USAGE='history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]';
+  var H=P.hist(),USAGE='history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]';
   function bad(m,st){err('bash: history: '+m);if(st===2)err(USAGE);P.queue(function(){P.status(st)})} /* after the error lines, which set 1 as they go out */
   var o=a[0]||'';
   if(o==='--'){a=a.slice(1);o=a[0]||''}
   else if(/^-./.test(o)){
     var f=o.charAt(1);
     if('cdanrwps'.indexOf(f)<0){bad(o.slice(0,2)+': invalid option',2);return}
-    if(f==='c'){HV.length=0;histSet();return}
+    if(f==='c'){P.setHist([]);return}
     if(f==='d'){
       var arg=o.length>2?o.slice(2):a[1];
       if(arg===undefined){bad('-d: option requires an argument',2);return}
       var d=/^-?[0-9]+$/.test(arg)?parseInt(arg,10):NaN,at=d<0?H.length+d:d-1;
       if(isNaN(d)||d===0||at<0||at>=H.length){bad(arg+': history position out of range',1);return}
-      HV.splice(at,1);histSet();return;
+      H.splice(at,1);P.setHist(H);return;
     }
-    if(f==='s'){if(a.length>1){HV.pop();HV.push(a.slice(1).join(' '));histSet()}return} /* in place of the history -s line itself */
-    if(f==='p'){lines(a.slice(1));return}
+    if(f==='s'){if(a.length>1){H.pop();H.push(a.slice(1).join(' '));P.setHist(H)}return} /* in place of the history -s line itself */
+    if(f==='p'){H.pop();P.setHist(H);lines(a.slice(1));return} /* nor is the history -p line kept */
     return; /* -a -n -r -w: to and from ~/.bash_history, which shows nothing */
   }
   if(a.length>1){bad('too many arguments',1);return}
@@ -285,7 +275,7 @@ function sizeOf(n){return n.type==='d'?4096:n.dev?0:P.fsize(n)}
 function group(n){return n.group||(n.owner==='root'||n.owner==='bin'?'root':n.owner)}
 function linkOf(path,n,up){ /* a name that is really somewhere else: the merged /usr, os-release, cowthink */
   if(P.has(D.links,path))return D.links[path];
-  return up&&n.parent!==up&&n!==up&&n!==up.parent?P.pathOf(n):null;
+  return up&&n&&n.parent!==up&&n!==up&&n!==up.parent?P.pathOf(n):null;
 }
 function lsDate(d){
   var now=P.now(),old=now-d>15552e6||d-now>36e5;
