@@ -13,5 +13,5 @@ Phosphor.machines({
   dos:{name:'ibm pc/at, ms-dos 3.30',year:1988,dir:'machines/dos-1988',files:['machine.js','../shared/zork.js','../shared/fcb.js','fs.js','commands.js']},
   vms:{name:'vax-11/785, vax/vms v4.5',year:1988,dir:'machines/vms-1988',files:['later.js','machine.js','fs.js','commands.js']},
   irix:{name:'silicon graphics crimson, irix 4.0.5',year:1993,dir:'machines/irix-1993',files:['machine.js','commands.js','fs.js']},
-  linux:{name:'kvm virtual server, debian 13',year:new Date().getFullYear(),dir:'machines/linux-2025',files:['later.js','machine.js','commands.js','fs.js']}
+  linux:{name:'kvm virtual server, debian 13',year:new Date().getFullYear(),dir:'machines/linux',files:['later.js','machine.js','commands.js','fs.js']}
 });

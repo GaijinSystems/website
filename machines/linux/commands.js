@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "linux-2025", the commands of a Debian 13 server: bash's prompt and builtins,
+/* PHOSPHOR-9 terminal: machine "linux", the commands of a Debian 13 server: bash's prompt and builtins,
    GNU's ls, procps, iproute2, systemd, sudo and apt, as an unprivileged user sees them.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){

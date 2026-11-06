@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "linux-2025", a small KVM server running Debian GNU/Linux 13 "trixie",
+/* PHOSPHOR-9 terminal: machine "linux", a small KVM server running Debian GNU/Linux 13 "trixie",
    reached on its serial console. Its clock is the visitor's own: the year is today's.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    Same text format as the site files; see README.md. Do not type a backtick or a dollar sign

@@ -1,4 +1,4 @@
-/* PHOSPHOR-9 terminal: machine "linux-2025", the programs the administrator installed, which only load when
+/* PHOSPHOR-9 terminal: machine "linux", the programs the administrator installed, which only load when
    first run: what each needs, and its manual page.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
