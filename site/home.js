@@ -1,4 +1,9 @@
-/* gaijin.systems: the home folder (/usr/guest on V7). Dot names are hidden (ls -a). */
+/* gaijin.systems: the home folder. Every == file: == and == dir: == below appears in ls.
+
+   Paths are relative to the visitor's home (/usr/guest on V7); folders are made as needed. A name starting
+   with a dot is hidden: only ls -a shows it. A path starting with / goes
+   anywhere (== file: /etc/fortune ==). Lock files with "protected:" in site/config.js.
+   Do not type a backtick, or a dollar sign followed by {, between the two backticks. */
 Phosphor.content(String.raw`
 
 # Retired and discontinued projects, moved here from the letter. Read it with: cat attic
@@ -33,7 +38,7 @@ main()
 so you know the word.
 there is not much of a secret. there never was. the machine is warm, and now it is yours.
 ~ the old hands synced three times before they threw the switch.
-~ on the newer machines, there is /etc/halt.
+~ on the newer machines, there is halt.
 ~ a reload brings everything back.
 
 == file: .profile ==
