@@ -1532,7 +1532,7 @@ P.command({names:['hunt'],run:function(a,raw,words){
       /* the program fits the type to the whole 80x24 where it stays readable; where it would not, the view follows the cursor */
       function draw(){
         if(finished)return;
-        var rows=S.rows,cols=S.cols,top=rows<24?Math.max(0,Math.min(24-rows,cur_row-(rows>>1))):0,lft=cols<80?Math.max(0,Math.min(80-cols,cur_col-(cols>>1))):0,L=[];
+        var rows=S.rows,cols=S.cols,top=rows<24?Math.max(0,Math.min(24-rows,cur_row-(rows>>1))):0,lft=S.pan(cols<80?Math.max(0,Math.min(80-cols,cur_col-(cols>>1))):0,80-cols,cur_col),L=[];
         for(var r=top;r<Math.min(24,top+rows);r++)L.push(screen[r].slice(lft,lft+cols).join('').trimEnd());
         S.draw(L,Math.min(cur_row,23)-top,Math.max(0,Math.min(cur_col-lft,cols-1)));
       }

@@ -290,7 +290,8 @@ function board(S){ /* the screen as curses sized it at the start, which the C ke
       py=Math.max(0,Math.min(H-h,py));
       if(c<px||c>=px+w)px=c-(w>>1);
       px=Math.max(0,Math.min(W-w,px));
-      S.draw(C.slice(py,py+h).map(function(row){return (row.join?row.join(''):row).slice(px,px+w).trimEnd()}),r-py,c-px);
+      var x=S.pan(px,W-w,c);
+      S.draw(C.slice(py,py+h).map(function(row){return (row.join?row.join(''):row).slice(x,x+w).trimEnd()}),r-py,c-x);
     }};
 }
 function fullProgram(name,make){

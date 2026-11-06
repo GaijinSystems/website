@@ -9,11 +9,13 @@
    (the same 64 bits, kept exact by the translation); in include/config.h the compression of save files is off;
    and src/fakecap.c is new. The data files (nhdat, license, symbols, sysconf) are built from the same source by
    its own makedefs, lev_comp, dgn_comp and dlb, and kept here compressed.
-   The complete source code is at https://www.nethack.org/download/3.6.7/nethack-367-src.tgz and
-   https://github.com/NetHack/NetHack/tree/NetHack-3.6.7_Released; the changes to it, as a patch, with fakecap.c and
-   the C library headers, are in a comment at the end of this file (paragraph 3 of the licence below). The
-   JavaScript itself is the source of this port: the C library, file system, vt100 and glue that the translation
-   runs on are new code written for it, and the translation is the changed form of the files named below.
+   The C library, file system, vt100 and glue are new JavaScript written for this port, and are their own source.
+   The translated part is generated from the C files named below; its source is the 3.6.7 release plus the patch,
+   fakecap.c and C library headers in the comment at the end of this file (paragraph 3 of the licence below).
+   The release is at https://www.nethack.org/download/3.6.7/nethack-367-src.tgz and
+   https://github.com/NetHack/NetHack/tree/NetHack-3.6.7_Released. Pointing to it instead of shipping it is
+   allowed only for noncommercial distribution (paragraph 3b): a commercial distributor of this file must
+   ship the complete source, the release and the patch, alongside it.
    The whole file keeps the notices of the files it was made from, and is distributed under the licence below.
 
 src/allmain.c:
@@ -68,6 +70,7 @@ src/dig.c:
     NetHack may be freely redistributed.  See license for details.
 src/display.c:
     Copyright (c) Dean Luick, with acknowledgements to Kevin Darcy
+    and Dave Cohrs, 1990.
     NetHack may be freely redistributed.  See license for details.
 src/dlb.c:
     Copyright (c) Kenneth Lorber, Bethesda, Maryland, 1993.
@@ -503,6 +506,7 @@ include/dgn_file.h:
     NetHack may be freely redistributed.  See license for details.
 include/display.h:
     Copyright (c) Dean Luick, with acknowledgements to Kevin Darcy
+    and Dave Cohrs, 1990.
     NetHack may be freely redistributed.  See license for details.
 include/dlb.h:
     Copyright (c) Kenneth Lorber, Bethesda, Maryland, 1993.
@@ -666,7 +670,7 @@ include/youprop.h:
     Copyright (c) 1989 Mike Threepoint
     NetHack may be freely redistributed.  See license for details.
 
-The data files nhdat, symbols and the rest are built from:
+The data files nhdat, symbols and the rest are built from, and the sysconf file:
 dat/Arch.des:
     Copyright (c) 1989 by Jean-Christophe Collet
     Copyright (c) 1991 by M. Stephenson
@@ -737,6 +741,7 @@ dat/dungeon.def:
 dat/endgame.des:
     Copyright (c) 1989 by Jean-Christophe Collet
     Copyright (c) 1992,1993 by Izchak Miller, David Cohrs,
+    and Timo Hakulinen
     NetHack may be freely redistributed.  See license for details.
 dat/engrave.txt:
     Copyright (c) 2015 by Pasi Kallinen
@@ -781,6 +786,9 @@ dat/tribute:
 dat/yendor.des:
     Copyright (c) 1989 by Jean-Christophe Collet
     Copyright (c) 1992 by M. Stephenson and Izchak Miller
+    NetHack may be freely redistributed.  See license for details.
+sys/unix/sysconf:
+    Copyright (c) 2015 by Kenneth Lorber, Kensington, Maryland
     NetHack may be freely redistributed.  See license for details.
 
                     NETHACK GENERAL PUBLIC LICENSE
@@ -1287,14 +1295,16 @@ function tcsetattr$(){return 0}
 function cfgetospeed$(t){return 0}
 function fpathconf$(){return 0}
 /* ---- regex: POSIX extended through RegExp ---- */
-var $RECLASS=Object.assign(Object.create(null),{alpha:'A-Za-z',digit:'0-9',alnum:'A-Za-z0-9',space:'\\s',upper:'A-Z',lower:'a-z',punct:'!-\\/:-@\\[-`{-~'});
+var $RECLASS=Object.assign(Object.create(null),{alpha:'A-Za-z',digit:'0-9',alnum:'A-Za-z0-9',upper:'A-Z',lower:'a-z',
+  space:'\\t-\\r ',blank:'\\t ',xdigit:'0-9A-Fa-f',punct:'!-\\/:-@\\[-`{-~',cntrl:'\\x00-\\x1f\\x7f',print:' -~',graph:'!-~'}); /* the C locale */
 function regcomp$(re,p,fl){ /* a class name inside a bracket ([[:alpha:]], [[:punct:][:digit:]_]) becomes its ranges */
-  var s=$str(p).replace(/\[:(\w+):\]/g,function(m,c){return $RECLASS[c]||''});
+  var bad=false,s=$str(p).replace(/\[:(\w+):\]/g,function(m,c){if(!$RECLASS[c])bad=true;return $RECLASS[c]||''});
+  if(bad)return 4; /* REG_ECTYPE */
   var r;try{r=new RegExp(s,fl&2?'i':'')}catch(e){return 2}
   if(!$E.re)$E.re=[null];HEAP32[re>>2]=$E.re.length;$E.re.push(r);return 0;
 }
 function regexec$(re,s){var r=$E.re&&$E.re[HEAP32[re>>2]];if(!r)return 1;return r.test($str(s))?0:1}
-function regerror$(e,re,b,n){var m=e===1?'No match':'Invalid regular expression';if(Number(n)>0)$put(b,m.slice(0,Number(n)-1));return m.length+1}
+function regerror$(e,re,b,n){var m=e===1?'No match':e===4?'Invalid character class name':'Invalid regular expression';if(Number(n)>0)$put(b,m.slice(0,Number(n)-1));return m.length+1}
 function regfree$(re){if($E.re)$E.re[HEAP32[re>>2]]=null}
 
 var stdin=64,
@@ -6166,13 +6176,28 @@ function $loadFiles(parts,t0){
   ['nhdat','license','symbols'].forEach(function(f){files[$DIR+'/'+f]=parts[f]});
   files['/etc/nethack/sysconf']=parts.sysconf;
   ['record','logfile','xlogfile','perm'].forEach(function(f){files[$DIR+'/'+f]=new Uint8Array(0)});
-  var kept=P.saved('nethack/files'),n=0;
-  if(kept&&typeof kept==='object'&&!Array.isArray(kept))Object.keys(kept).forEach(function(k){
+  var st=$stored()||{};
+  Object.keys(st).forEach(function(k){files[k]=st[k];$HAD.add(k)});
+  return $nhFiles(files,$DIR,t0);
+}
+function $stored(){ /* the kept files in storage, decoded; null when there are none or the browser refuses */
+  var kept=P.saved('nethack/files'),n=0,o={};
+  if(!kept||typeof kept!=='object'||Array.isArray(kept))return null;
+  Object.keys(kept).forEach(function(k){
     var v=kept[k];
     if(!$KEEP.test(k)||typeof v!=='string'||v.length>4e6||!/^[A-Za-z0-9+\/]*={0,2}$/.test(v)||++n>200)return;
-    try{files[k]=$b64(v);$HAD.add(k)}catch(e){}
+    try{o[k]=$b64(v)}catch(e){}
   });
-  return $nhFiles(files,$DIR,t0);
+  return o;
+}
+function $syncFiles(fs,t0){ /* another tab may have saved, restored or ended a game since: storage has the last word */
+  var st=$stored();if(!st)return;
+  fs.files.forEach(function(v,k){if($HAD.has(k)&&!(k in st))fs.files.delete(k)});
+  Object.keys(st).forEach(function(k){
+    var f=fs.files.get(k),d=st[k],i;
+    if(f&&f.size===d.length){for(i=0;i<d.length&&f.data[i]===d[i];i++);if(i===d.length){$HAD.add(k);return}}
+    fs.files.set(k,{data:d,size:d.length,mtime:t0});$HAD.add(k);
+  });
 }
 function $keptSig(fs){var s='';fs.files.forEach(function(v,k){if($KEEP.test(k))s+=k+':'+v.size+':'+v.mtime+';'});return s}
 function $keepFiles(fs){ /* false when the browser would not keep them */
@@ -6205,7 +6230,8 @@ P.command({names:['nethack'],run:function(a,raw,words){
       if(T.y<oy)oy=T.y<r?0:T.y;else if(T.y>=oy+r)oy=T.y-r+1;
       if(T.x<ox)ox=T.x<c-4?0:T.x-4;else if(T.x>=ox+c)ox=Math.min(80-c,T.x-c+5);
       oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
-      S.drawGrid(T.scr.slice(oy,oy+r).map(function(R){return R.slice(ox,ox+c)}),T.y-oy,T.x-ox);
+      var x=S.pan(ox,80-c,T.x);
+      S.drawGrid(T.scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),T.y-oy,T.x-x);
     }
     function hup(){if(C&&!over)C.hangup()}
     function broke(){over=true;$running=false;window.removeEventListener('pagehide',hup)} /* a crash: the engine closes the screen */
@@ -6223,7 +6249,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
     function start(parts){
       if(over)return;
       var t0=Math.floor(Date.now()/1000);
-      if(!$FS)$FS=$loadFiles(parts,t0);
+      if(!$FS)$FS=$loadFiles(parts,t0);else $syncFiles($FS,t0);
       /* nothing else runs this game here: a lock left by an earlier run that broke is stale */
       $FS.files.forEach(function(v,k){if(/^\/usr\/lib\/games\/nethack\/([0-9]+[^\/]*\.[0-9]+|[a-z]lock\.[0-9]+|perm_lock|record_lock|[0-9]+[^\/]*lock)$/.test(k))$FS.files.delete(k)});
       var home=st.home||'/',rcp=home.replace(/\/$/,'')+'/.nethackrc',rc=P.find(rcp);
@@ -6252,7 +6278,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
         try{C.feed([c])}catch(e){broke();throw e}
         show();
       },
-      draw:show
+      draw:function(){try{show()}catch(e){broke();throw e}} /* the engine's resize and redraw */
     };
   },{tty:'nethack',fit:[80,24]});
   P.queue(function(){
@@ -6268,8 +6294,10 @@ P.command({names:['nethack'],run:function(a,raw,words){
    Inside this comment every star-slash of the files is written *\/.
 
    1. The patch against the released source (nethack-367-src.tgz) for the files the game is translated from.
-      Build settings: sys/unix/setup.sh sys/unix/hints/linux, the tty interface only (no curses), and every
-      file preprocessed with: gcc -E -undef -D__linux__ -nostdinc -I/nh/libc -Iinclude -DNOTPARMDECL -DDLB -DSYSCF -DSYSCF_FILE=\"/etc/nethack/sysconf\" -DSECURE -DTIMED_DELAY -DHACKDIR=\"/usr/lib/games/nethack\" -DDUMPLOG -DCONFIG_ERROR_SECURE=FALSE
+      Build settings: sys/unix/setup.sh sys/unix/hints/linux, with these changes to the Makefiles it makes: its
+      -DCOMPRESS (gzip) removed, the tty interface only (no curses), linked with src/fakecap.c instead of a termcap
+      library, installed under a private prefix without chown and chgrp. Every file is preprocessed with:
+      gcc -E -undef -D__linux__ -nostdinc -I/nh/libc -Iinclude -DNOTPARMDECL -DDLB -DSYSCF -DSYSCF_FILE=\"/etc/nethack/sysconf\" -DSECURE -DTIMED_DELAY -DHACKDIR=\"/usr/lib/games/nethack\" -DDUMPLOG -DCONFIG_ERROR_SECURE=FALSE
       (-I/nh/libc: the headers in 3. below). onames.h, pm.h, date.h and vis_tab.c are made by makedefs as usual.
 
 --- a/include/config.h

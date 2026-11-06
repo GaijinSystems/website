@@ -5600,6 +5600,7 @@ function render(){
     }
     pan_y=Math.max(first,Math.min(LINES-1-vis,pan_y));
     pan_x=Math.max(0,Math.min(COLS-cw,pan_x));
+    var px=glass.pan?glass.pan(pan_x,COLS-cw,inmap?cx:-1):pan_x; /* where the visitor has dragged it, until the next key */
     r=-1;c=0;
     for(i=0;i<topH;i++){
       lines.push(textrow(0).substr(i*cw,cw));
@@ -5607,9 +5608,9 @@ function render(){
       if(cy===0&&Math.floor(cx/cw)===i){r=lines.length-1;c=cx%cw}
     }
     for(y=pan_y;y<pan_y+vis;y++){
-      lines.push(textrow(y).substr(pan_x,cw));
-      meta.push({y:y,x:pan_x,n:cw});
-      if(cy===y){r=lines.length-1;c=cx-pan_x}
+      lines.push(textrow(y).substr(px,cw));
+      meta.push({y:y,x:px,n:cw});
+      if(cy===y&&cx>=px&&cx<px+cw){r=lines.length-1;c=cx-px}
     }
     for(i=0;i<botH;i++){
       lines.push(textrow(LINES-1).substr(i*cw,cw));
@@ -5756,7 +5757,7 @@ function session(argv){
             result=a;
             res();
           }
-        },function(){S.fit(80,24);proc.render()}); /* smaller type for the whole 80x24 where it stays readable; where it would not, the map pans */
+        },function(){S.fit(80,24);proc.render()},function(){proc.render()}); /* smaller type for the whole 80x24 where it stays readable; where it would not, the map pans */
         proc.glass(S);
         S.fit(80,24);
         proc.render();

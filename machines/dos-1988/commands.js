@@ -58,6 +58,13 @@ function entries(R){
   var m=matcher(R.pat);
   return Object.keys(R.dir.kids).sort().filter(function(k){return shown(k,R.dir.kids[k])&&m(k)});
 }
+function lookup(x){ /* a file by name, or by the eight and three a longer name is shown as */
+  var n=P.find(x,true);if(n)return n;
+  var abs=P.norm(x),d=P.find(P.dirOf(abs),true),c=P.fcb.cut(abs.slice(abs.lastIndexOf('/')+1));
+  if(!d||d.type!=='d'||/[*?]/.test(c))return null;
+  var k=Object.keys(d.kids).filter(function(k){return P.fcb.cut(k)===c})[0];
+  return k?d.kids[k]:null;
+}
 function files(R){return entries(R).filter(function(k){return R.dir.kids[k].type!=='d'})}
 function none(){P.typeLine('        0 File(s) copied')}
 
@@ -88,7 +95,7 @@ cmd(['type'],'print a file',function(a,raw,w){
   var N=names(args(w));
   if(!N.length){P.typeLine('Required parameter missing');return}
   if(/[*?]/.test(N[0])){P.typeLine('Invalid filename or file not found');return}
-  var n=P.find(N[0],true);
+  var n=lookup(N[0]);
   if(!n||n.type==='d'){P.typeLine('File not found');return}
   if(n.prot){P.typeLine('Access denied');return}
   if(n.bin){P.typeLine('MZ\u00901\u263a\u263b@\u00ff\u00ff\u00b8!L\u00cd!This program cannot be run on the glass.');return}
@@ -139,7 +146,7 @@ cmd(['del','erase'],null,function(a,raw,w){
 cmd(['ren','rename'],null,function(a,raw,w){
   var N=names(args(w));
   if(N.length<2){P.typeLine('Required parameter missing');return}
-  var n=P.find(N[0],true),to=N[1].toLowerCase();
+  var n=lookup(N[0]),to=P.fcb.cut(N[1].toLowerCase());
   if(!n||n.type==='d'){P.typeLine('File not found');return}
   if(n.bin||n.prot||n.parent.kids[to]||/^\.|[\\\/:*?]/.test(to)){P.typeLine('Duplicate file name or File not found');return} /* no wildcards, and no name that is all extension, like .. */
   delete n.parent.kids[n.name];
@@ -152,7 +159,7 @@ cmd(['copy'],null,function(a,raw,w){
   var from=N[0].toLowerCase(),to=N[1]||split(from.replace(/^.*[\\\/]/,'')).join('.').replace(/\.$/,'');
   if(from===to.toLowerCase()){P.typeLine('File cannot be copied onto itself');none();return}
   function write(L){
-    var d=P.find(to,true),at=d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to;
+    var d=P.find(to,true),at=(d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to).replace(/[^\\\/]*$/,P.fcb.cut); /* the new name, cut to eight and three */
     if(!P.writeFile(at,L,false)){P.typeLine('Access denied');none();return}
     P.typeLine('        1 File(s) copied');
   }
@@ -164,7 +171,7 @@ cmd(['copy'],null,function(a,raw,w){
     P.queue(function(){write(got)});
     return;
   }
-  var n=P.find(from,true);
+  var n=lookup(from);
   if(!n||n.type==='d'){P.typeLine('File not found - '+N[0].toUpperCase());none();return}
   if(n.prot){P.typeLine('Access denied');return}
   write(P.text(n));

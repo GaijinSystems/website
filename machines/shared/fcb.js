@@ -3,15 +3,16 @@
 (function(P){
 'use strict';
 function split(k){var i=k.lastIndexOf('.');return i>0?[k.slice(0,i),k.slice(i+1)]:[k,'']}
+function cut(k){var s=split(k);return s[0].slice(0,8)+(s[1]?'.'+s[1].slice(0,3):'')} /* what the FCB keeps of a name */
 P.fcb={
   cmd:function(names,help,run){var d={names:names,noHelpFlag:true,run:run};if(help)d.help=help;P.command(d)},
-  split:split,
+  split:split,cut:cut,
   name:function(k){var s=split(k);return s[0].slice(0,8).toUpperCase().padEnd(8)+' '+s[1].slice(0,3).toUpperCase().padEnd(3)},
   matcher:function(pat){ /* *.* and ?, the way COMMAND.COM reads them: name and extension apart */
     var re=split(pat.toLowerCase()).map(function(x,i){ /* the FCB holds eight and three: the rest of a name is dropped */
       return new RegExp('^'+x.slice(0,i?3:8).replace(/[.+^${}()|\\\[\]]/g,'\\$&').replace(/\*.*$/,'.*').replace(/\?/g,'.?')+'$');
     });
-    return function(k){var s=split(k);return re[0].test(s[0])&&re[1].test(s[1])};
+    return function(k){var s=split(k);return re[0].test(s[0].slice(0,8))&&re[1].test(s[1].slice(0,3))}; /* a name as it is shown: eight and three */
   }
 };
 P.setup(function(){}); /* nothing to do at start: this notes the file as loaded */

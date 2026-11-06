@@ -7,8 +7,9 @@
 var cmd=P.fcb.cmd,fcb=P.fcb.name;
 var user=0,SIZE=486; /* a double-sided eight-inch disk */
 function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n=P.root.kids[k];return n.type!=='d'&&k.charAt(0)!=='.'&&(n.user||0)===user})}
-function get(k){var n=P.root.kids[k];return n&&(n.user||0)===user?n:undefined}
+function get(k){var n=P.root.kids[k]||P.root.kids[P.fcb.cut(k)];return n&&(n.user||0)===user?n:undefined} /* a long name means its first eight and three */
 function write(k,L,full){ /* full: what to say when the name is another user area's (one name, one file here) */
+  k=P.fcb.cut(k); /* a new file's name is cut to eight and three, as the FCB holds it */
   var o=P.root.kids[k];
   if(o&&!o.prot&&(o.user||0)!==user){P.typeLine(full||'NO DIRECTORY SPACE');return}
   if(!P.writeFile(k,L,false)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
@@ -61,12 +62,13 @@ cmd(['era'],null,function(a,raw,w){
 cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD */
   var q=assign(raw);
   if(!q){P.typeLine((raw.trim()+'?').toUpperCase());return}
-  q=q.map(function(x){return x.replace(/^a:/,'')});
-  var n=get(q[2]);
+  if(elsewhere(q[1])||elsewhere(q[2]))return;
+  q=q.map(function(x){return x.replace(/^a:/i,'')});
+  var n=get(q[2]),to=P.fcb.cut(q[1]);
   if(!n){P.typeLine('NO FILE');return}
   if(n.prot){P.typeLine('BDOS ERR ON A: FILE R/O');return}
-  if(P.root.kids[q[1]]){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
-  delete P.root.kids[q[2]];n.name=q[1];P.root.kids[q[1]]=n;
+  if(P.root.kids[to]){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
+  delete P.root.kids[n.name];n.name=to;P.root.kids[to]=n;
 });
 cmd(['user'],null,function(a,raw,w){
   var n=parseInt(w[1],10);

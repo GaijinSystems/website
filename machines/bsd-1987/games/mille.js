@@ -170,7 +170,7 @@ function run(words){
       if(cur>=0&&(cur<pan_y||cur>=pan_y+body))pan_y=cur-(body>>1);
       pan_y=Math.max(0,Math.min(m.length-body,pan_y));
       var n=m[0].n;
-      pan_x=cw>=n?0:Math.max(0,Math.min(n-cw,(cur>=0?pcx-m[cur].x:0)-(cw>>1)));
+      pan_x=S.pan(cw>=n?0:Math.max(0,Math.min(n-cw,(cur>=0?pcx-m[cur].x:0)-(cw>>1))),n-cw,cur>=0?pcx-m[cur].x:-1);
       for(i=pan_y;i<pan_y+body;i++){
         lines.push(text(m[i],cw,pan_x));shown.push(m[i]);
         if(i===cur){r=lines.length-1;c=pcx-m[i].x-pan_x}

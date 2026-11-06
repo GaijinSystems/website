@@ -65,6 +65,7 @@ function pick(spec){ /* the one file a spec means */
 function from(T,e){ /* an output spec: what it leaves out, or gives as *, is the input file's */
   return Object.assign({},T,{name:!T.name||T.name==='*'?e.name:T.name,typ:!T.dot||T.typ==='*'?e.typ:T.typ,dot:true});
 }
+function gone(n){if(n.store)P.save(n.store,null)} /* a file that stands for a record in storage (EMPSAVE.DAT): the record goes too */
 function fullSpec(S){return dirName(S.abs)+up(S.name+'.'+S.typ)+';'+(S.ver||'')}
 function nextVersion(dir,S){
   var v=0;
@@ -163,7 +164,7 @@ verb('delete',3,function(a){
         err('%DELETE-W-FILNOTDEL, error deleting '+dirName(S.abs)+show(e),PRV);
         return;
       }
-      delete dir.kids[e.key];
+      gone(e.node);delete dir.kids[e.key];
     });
   });
 });
@@ -172,7 +173,7 @@ verb('purge',2,function(a){ /* keep only the newest of each */
   if(!dir)return;
   var keep={},L=matches(S,dir);
   latest(L).forEach(function(e){keep[e.key]=true});
-  L.forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&!e.node.prot&&P.canWrite(P.pathOf(e.node)))delete dir.kids[e.key]});
+  L.forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&!e.node.prot&&P.canWrite(P.pathOf(e.node))){gone(e.node);delete dir.kids[e.key]}});
 });
 verb('create',2,function(a,q){
   if(!a.length){P.typeLine('_File: ');return}

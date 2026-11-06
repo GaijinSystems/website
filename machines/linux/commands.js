@@ -101,10 +101,40 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
     P.st.cwd=P.pathOf(n);
     if(back)P.typeLine(P.st.cwd);
   },{core:true,help:'change directory'});
-cmd('history','','display the command history','history [n]','lists the commands typed so far, numbered. with n, only the last n. !n runs number n again, and !! the last one.',function(a){
-  var H=P.hist(),n=parseInt(a[0],10),from=n>=0?Math.max(0,H.length-n):0;
-  if(/^-[^-cdanrwps]/.test(a[0])){err('bash: history: '+a[0].slice(0,2)+': invalid option');err('history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]');P.queue(function(){P.status(2)});return} /* after the error lines, which set 1 as they go out */
-  if(a[0]&&isNaN(n)){err('bash: history: '+a[0]+': numeric argument required');return}
+/* bash's own list: the engine keeps what was typed (for !n and the arrows), and -c, -d and -s change both */
+var HV=[],seenN=0,seenLast;
+function histView(){
+  var E=P.hist(),k=E.length-seenN; /* what was typed since the last look; at the engine's cap the oldest fall off */
+  if(E.length<seenN){HV=[];k=E.length} /* a new login: a new list */
+  else if(seenN&&E.length===seenN){k=0;for(var t=1;t<=E.length;t++)if(E[E.length-t]===seenLast){k=t-1;break}}
+  HV=HV.concat(E.slice(E.length-Math.max(0,k)));
+  seenN=E.length;seenLast=E[E.length-1];
+  return HV;
+}
+function histSet(){P.setHist(HV);var E=P.hist();seenN=E.length;seenLast=E[E.length-1]}
+cmd('history','','display the command history','history [-c] [-d offset] [n]','lists the commands typed so far, numbered. with n, only the last n. -c clears the list, -d offset deletes one entry. !n runs number n again, and !! the last one.',function(a){
+  var H=histView(),USAGE='history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]';
+  function bad(m,st){err('bash: history: '+m);if(st===2)err(USAGE);P.queue(function(){P.status(st)})} /* after the error lines, which set 1 as they go out */
+  var o=a[0]||'';
+  if(o==='--'){a=a.slice(1);o=a[0]||''}
+  else if(/^-./.test(o)){
+    var f=o.charAt(1);
+    if('cdanrwps'.indexOf(f)<0){bad(o.slice(0,2)+': invalid option',2);return}
+    if(f==='c'){HV.length=0;histSet();return}
+    if(f==='d'){
+      var arg=o.length>2?o.slice(2):a[1];
+      if(arg===undefined){bad('-d: option requires an argument',2);return}
+      var d=/^-?[0-9]+$/.test(arg)?parseInt(arg,10):NaN,at=d<0?H.length+d:d-1;
+      if(isNaN(d)||d===0||at<0||at>=H.length){bad(arg+': history position out of range',1);return}
+      HV.splice(at,1);histSet();return;
+    }
+    if(f==='s'){if(a.length>1){HV.pop();HV.push(a.slice(1).join(' '));histSet()}return} /* in place of the history -s line itself */
+    if(f==='p'){lines(a.slice(1));return}
+    return; /* -a -n -r -w: to and from ~/.bash_history, which shows nothing */
+  }
+  if(a.length>1){bad('too many arguments',1);return}
+  var n=parseInt(o,10),from=n>=0?Math.max(0,H.length-n):0;
+  if(o&&isNaN(n)){bad(o+': numeric argument required',1);return}
   lines(H.slice(from).map(function(l,i){return String(from+i+1).padStart(5)+'  '+l}));
 });
 function where(x){
