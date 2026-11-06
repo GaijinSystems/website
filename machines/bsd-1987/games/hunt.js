@@ -20,7 +20,8 @@
    Differences from the original:
    - THE ROBOTS ARE NOT PART OF HUNT. Hunt was for several people on a network and had no computer players.
      There is no network here, so the driver runs inside the page and three robots enter it in place of other
-     people. The robots (makeBot, below) are new code written for this terminal, not a port of anything. They
+     people. The robots (makeBot, below) are new code written for this terminal, not a port of anything
+     (Copyright (C) 2026 Gaijin Systems, GNU AGPL v3 or later; see LICENSE). They
      play through the driver's own door: each sends one key at a time and sees only the map it would have on
      its screen, the driver's p_maze, plus its own status. They come back two seconds after dying, as a person
      answering y to "Re-enter game?" did. They use Math.random, not the driver's generator.

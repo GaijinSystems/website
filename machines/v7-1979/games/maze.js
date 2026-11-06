@@ -2,7 +2,8 @@
    simulator; its source does not survive, and nothing here is translated from its binary. The questions, the drawing, the
    limits, how the sizes are read and the runtime's errors are the original's. The mazes are drawn from this file's own random
    walk, so none is the original's maze; like the original's, each joins every square, and a small one may have no way out,
-   about as often as the original's did when sampled: 18 of 30 at 2 by 2, 6 of 20 at 3 by 3, 1 of 15 at 5 by 5. */
+   about as often as the original's did when sampled: 18 of 30 at 2 by 2, 6 of 20 at 3 by 3, 1 of 15 at 5 by 5.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
 function rnd(n){return Math.floor(Math.random()*n)}

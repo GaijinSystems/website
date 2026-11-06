@@ -5573,7 +5573,7 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
     return {
       feed:function(k){
         /* it has no handler for the interrupt, so ^C ends it where it stands */
-        if(k==='C-c'){quit();return}
+        if(k==='C-c'||k==='C-y'){quit();return} /* ^Y, as at DCL */
         var m=/^C-([a-z])$/.exec(k),c=k==='Enter'?'\n':k==='Backspace'?'\b':k==='Tab'?'\t':k.length===1?k:m?$chr(m[1].charCodeAt(0)-96):null;
         if(c===null)return;
         if(waiting){waiting=null;pump(c)}

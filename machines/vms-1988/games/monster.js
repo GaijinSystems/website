@@ -284,11 +284,20 @@ function $flush(){ /* all the changed files, or none: half a world, saved, would
     if(!P.save('monster/'+k,o)){ok=false;break}
     done.push([k,was]);
   }
-  if(!ok){
+  if(!ok){ /* put back what went, and keep it all to try again: never half a world */
     done.forEach(function(d){P.save('monster/'+d[0],d[1]===undefined?null:d[1])});
     if(!$warned){$warned=true;$writeln('%warning- this browser would not save the Monster world')}
+    return;
   }
   $dirty={};
+}
+function $roomfor(f,n){ /* how many more records this browser's storage can hold, with room to spare for everything else */
+  var used=0,per;
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);used+=k.length+(localStorage.getItem(k)||'').length}}catch(e){return n}
+  per=JSON.stringify($enc(f.buf)).length+8;
+  var room=Math.max(0,Math.floor((4.5e6-used)/2/per));
+  if(room<n){$writeln('Only '+room+' can be added: this browser has no room for more.');return room}
+  return n;
 }
 function $find(f,n){
   if(!f.recs[n]){f.st=1;return}
@@ -342,6 +351,7 @@ function* addrooms(n){
   var i=0;
   (yield* getindex(i_room));
   n=Math.max(0,Math.min(n,maxroom-indx.top));
+  n=$roomfor(roomfile,n);
   for(var $e63=(indx.top+n),$ie63=(indx.top+1);$ie63<=$e63;$ie63++){
     i=$ie63;
     $locate(roomfile,i);
@@ -359,6 +369,7 @@ function* addobjects(n){
   var i=0;
   (yield* getindex(i_object));
   n=Math.max(0,Math.min(n,maxroom-indx.top));
+  n=$roomfor(objfile,n);
   for(var $e67=(indx.top+n),$ie67=(indx.top+1);$ie67<=$e67;$ie67++){
     i=$ie67;
     $locate(objfile,i);
@@ -372,6 +383,7 @@ function* addints(n){
   var i=0;
   (yield* getindex(i_int));
   n=Math.max(0,Math.min(n,maxindex-indx.top));
+  n=$roomfor(intfile,n);
   for(var $e64=(indx.top+n),$ie64=(indx.top+1);$ie64<=$e64;$ie64++){
     i=$ie64;
     $locate(intfile,i);
@@ -385,6 +397,7 @@ function* addlines(n){
   var i=0;
   (yield* getindex(i_line));
   n=Math.max(0,Math.min(n,maxindex-indx.top));
+  n=$roomfor(linefile,n);
   for(var $e65=(indx.top+n),$ie65=(indx.top+1);$ie65<=$e65;$ie65++){
     i=$ie65;
     $locate(linefile,i);
@@ -398,6 +411,7 @@ function* addblocks(n){
   var i=0;
   (yield* getindex(i_block));
   n=Math.max(0,Math.min(n,maxindex-indx.top));
+  n=$roomfor(descfile,n);
   for(var $e66=(indx.top+n),$ie66=(indx.top+1);$ie66<=$e66;$ie66++){
     i=$ie66;
     $locate(descfile,i);

@@ -2345,9 +2345,11 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
       function addstr(s){for(var k=0;k<s.length;k++){if(cy>=LINES)return;addch(s.charAt(k))}}
       function mvaddch(y,x,c){if(moveto(y,x))addch(c)}
       function mvaddstr(y,x,s){if(moveto(y,x))addstr(s)}
-      function show(g,y,x){
-        var L=g.map(function(r){return r.join('').replace(/ +$/,'')}).slice(0,S.rows);
-        S.draw(L,Math.min(y,S.rows-1),Math.min(x,Math.max(S.cols-1,0)));
+      function show(g,y,x){ /* the screen it drew; when the glass is still smaller, the view follows the cursor */
+        var rows=S.rows,cols=S.cols,H=g.length,W=(g[0]||[]).length;
+        var top=rows<H?Math.max(0,Math.min(H-rows,y-(rows>>1))):0,lft=cols<W?Math.max(0,Math.min(W-cols,x-(cols>>1))):0;
+        var L=g.slice(top,top+rows).map(function(r){return r.slice(lft,lft+cols).join('').replace(/ +$/,'')});
+        S.draw(L,Math.max(0,Math.min(y-top,rows-1)),Math.max(0,Math.min(x-lft,cols-1)));
       }
       function refresh(){
         for(var y=0;y<LINES;y++)phys[y]=scr[y].slice();

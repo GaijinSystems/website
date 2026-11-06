@@ -172,7 +172,7 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] comman
   P.ask('[sudo] password for '+P.st.user+': ',function(l){
     if(l===null||l===P.INT)return;
     P.pause(1500);
-    err(P.st.user+' is not in the sudoers file. This incident will be reported.');
+    err(P.st.user+' is not in the sudoers file.');err('This incident has been reported to the administrator.');
   },false,true);
 });
 cmd('tty','/usr/bin','print the file name of the terminal connected to standard input','tty [OPTION]...','prints the name of the terminal you are typing on.',function(){P.typeLine('/dev/ttyS0')});
@@ -606,16 +606,17 @@ cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journa
 });
 
 /* packages: apt as anyone but root */
-var PKGS=[['apt','3.0.3','commandline package manager'],['base-files','13.8+deb13u7','Debian base system miscellaneous files'],['bash','5.2.37-2+b10','GNU Bourne Again SHell'],
+var PKGS=[['apt','3.0.4','commandline package manager'],['base-files','13.8+deb13u7','Debian base system miscellaneous files'],['bash','5.2.37-2+b10','GNU Bourne Again SHell'],
   ['coreutils','9.7-3','GNU core utilities'],['cowsay','3.03+dfsg2-8','configurable talking cow'],['cmatrix','2.0-6','simulates the display from "The Matrix"'],['cron','3.0pl1-197','process scheduling daemon'],
-  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-7.3','provides fortune cookies on demand'],['frotz','2.54+dfsg-1','interpreter of Z-code story-files'],
+  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files'],
   ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],
-  ['linux-image-'+D.krel,'6.12.88-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['neofetch','7.1.0-4','Shows Linux System Information with Distribution Logo'],
-  ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b2','Correct you if you type \'sl\' by mistake'],
-  ['sudo','1.9.16p2-3','Provide limited super user privileges to specific users'],['systemd','257.13-1~deb13u1','system and service manager'],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility'],
+  ['linux-image-'+D.krel,'6.12.88-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['fastfetch','2.40.4+dfsg-1','Neofetch-like tool for fetching system information with Distribution Logo'],
+  ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake'],
+  ['sudo','1.9.16p2-3+deb13u2','Provide limited super user privileges to specific users'],['systemd','257.13-1~deb13u1','system and service manager'],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility'],
   ['unattended-upgrades','2.12','automatic installation of security upgrades'],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities'],['vim-tiny','2:9.1.1230-2','Vi IMproved - enhanced vi editor - compact version']];
+PKGS.sort(function(x,y){return x[0]<y[0]?-1:x[0]>y[0]?1:0}); /* dpkg and apt list by name */
 var AVAIL=[['bsdgames','2.17-34','collection of classic textual unix games'],['cowsay-off','3.03+dfsg2-8','configurable talking cow (offensive cows)'],['curl','8.14.1-2','command line tool for transferring data with URL syntax'],
-  ['fortunes','1:1.99.1-7.3','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
+  ['fortunes','1:1.99.1-9','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
   ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nethack-console','3.6.7-3','dungeon crawling game - text-based interface'],['nginx','1.26.3-3+deb13u1','small, powerful, scalable web/proxy server'],
   ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)'],['tmux','3.5a-3','terminal multiplexer']];
 function pkg(n){return PKGS.concat(AVAIL).filter(function(p){return p[0]===n})[0]}
@@ -623,8 +624,8 @@ var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremo
 function apt(a,get){
   var o=opts(a),verb=o.ops[0]||'',E=get?'E: ':'Error: ';
   if(!verb){
-    if(get){P.say(['apt 3.0.3 (amd64)','Usage: apt-get [options] command','       apt-get [options] install|remove pkg1 [pkg2 ...]','','Most used commands:','  update - Retrieve new lists of packages','  upgrade - Perform an upgrade','  install - Install new packages (pkg is libc6 not libc6.deb)','  remove - Remove packages','','See apt-get(8) for more information about the available commands.','                                        This APT has Super Cow Powers.']);return}
-    P.say(['apt 3.0.3 (amd64)','Usage: apt [options] command','','Most used commands:','  list - list packages based on package names','  search - search in package descriptions','  show - show package details','  install - install packages','  remove - remove packages','  update - update list of available packages','  upgrade - upgrade the system by installing/upgrading packages','','See apt(8) for more information about the available commands.','                                        This APT has Super Cow Powers.']);
+    if(get){P.say(['apt 3.0.4 (amd64)','Usage: apt-get [options] command','       apt-get [options] install|remove pkg1 [pkg2 ...]','','Most used commands:','  update - Retrieve new lists of packages','  upgrade - Perform an upgrade','  install - Install new packages (pkg is libc6 not libc6.deb)','  remove - Remove packages','','See apt-get(8) for more information about the available commands.','                                        This APT has Super Cow Powers.']);return}
+    P.say(['apt 3.0.4 (amd64)','Usage: apt [options] command','','Most used commands:','  list - list packages based on package names','  search - search in package descriptions','  show - show package details','  install - install packages','  remove - remove packages','  update - update list of available packages','  upgrade - upgrade the system by installing/upgrading packages','','See apt(8) for more information about the available commands.','                                        This APT has Super Cow Powers.']);
     return;
   }
   if(verb==='update'){
@@ -639,7 +640,7 @@ function apt(a,get){
   if(!get&&verb==='list'){
     var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
-    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(p[0]==='base-files'?'amd64':/^(cowsay|neofetch|fortunes|unattended)/.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
+    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(p[0]==='base-files'?'amd64':/^(cowsay|fortunes|unattended)/.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
     return;
   }
   if(!get&&verb==='search'||get===2&&verb==='search'){
@@ -683,14 +684,16 @@ cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['i
   err('dpkg: error: need an action option');err('');err("Use --help for help about installing and deinstalling packages [*];");err("Use 'apt' or 'aptitude' for user-friendly package management;");P.status(2);
 });
 
-/* neofetch: the logo is drawn for this terminal */
+/* fastfetch: trixie's system summary (neofetch is no longer packaged). The logo is drawn for this terminal */
 var SWIRL=['        .-""""""-.','      .\'  .--.   \'.','     /   /    \\    \\','    |   |   ()|    |','    |   |    .\'   /','     \\   \'--\'   .\'','      \'.      .\'','        \'-.  \'','           \'-.','              \'.'];
-cmd('neofetch','/usr/bin','A fast, highly customizable system info script','neofetch [options]',['prints what this machine is, beside the logo of its distribution.'],function(){
-  var m=Math.floor(since()/6e4),M=D.mem,used=Math.round((M.MemTotal+M.Shmem-M.MemFree-M.Buffers-M.Cached-M.SReclaimable)/1024),id=P.st.user+'@'+P.st.hostname;
-  var I=[id,'-'.repeat(id.length),'OS: Debian GNU/Linux 13 (trixie) x86_64','Host: KVM/QEMU (Standard PC (i440FX + PIIX, 1996) pc-i440fx-9.2)','Kernel: '+D.krel,
-    'Uptime: '+(m<60?m+' min'+(m!==1?'s':''):Math.floor(m/60)+' hour'+(m>=120?'s':'')+', '+m%60+' mins'),'Packages: 412 (dpkg)','Shell: bash 5.2.37','Terminal: /dev/ttyS0',
-    'CPU: AMD EPYC-Rome ('+D.ncpu+') @ 2.794GHz','GPU: 00:02.0 Cirrus Logic GD 5446','Memory: '+used+'MiB / '+Math.round(M.MemTotal/1024)+'MiB'];
+cmd('fastfetch','/usr/bin','fast neofetch-like system information tool','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){
+  var m=Math.floor(since()/6e4),M=D.mem,used=(M.MemTotal+M.Shmem-M.MemFree-M.Buffers-M.Cached-M.SReclaimable)/1048576,tot=M.MemTotal/1048576,id=P.st.user+'@'+P.st.hostname;
+  var I=[id,'-'.repeat(id.length),'OS: Debian GNU/Linux 13 (trixie) x86_64','Host: KVM/QEMU Standard PC (i440FX + PIIX, 1996) (pc-i440fx-9.2)','Kernel: Linux '+D.krel,
+    'Uptime: '+(m<60?m+' min'+(m!==1?'s':''):Math.floor(m/60)+' hour'+(m>=120?'s':'')+', '+m%60+' min'+(m%60!==1?'s':'')),'Packages: 412 (dpkg)','Shell: bash 5.2.37','Terminal: /dev/ttyS0',
+    'CPU: AMD EPYC-Rome ('+D.ncpu+') @ 2.79 GHz','GPU: Cirrus Logic GD 5446','Memory: '+used.toFixed(2)+' GiB / '+tot.toFixed(2)+' GiB ('+Math.round(used/tot*100)+'%)','Locale: C.UTF-8'];
+  var nologo=a.some(function(x,i){return (x==='-l'||x==='--logo')&&a[i+1]==='none'});
   var wide=I.reduce(function(x,l){return Math.max(x,l.length)},0)+24;
+  if(nologo){lines(I);return}
   if(!P.piped()&&P.columns()<wide){lines(SWIRL.concat([''],I));return} /* too narrow for the two side by side */
   var R=[];
   for(var i=0;i<Math.max(SWIRL.length,I.length);i++)R.push(((SWIRL[i]||'').padEnd(24)+(I[i]||'')).replace(/\s+$/,''));

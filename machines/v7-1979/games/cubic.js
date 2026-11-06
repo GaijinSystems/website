@@ -2,7 +2,8 @@
    /usr/games/cubic does when run under a simulator; its source does not survive, and nothing here is translated from its
    binary. The questions, the replies and the way it announces a forced win are the original's. How it plays is this file's
    own: a search for a run of forcing moves, then a simple score of the open lines. It doesn't always choose the original's
-   moves. The original always starts at 323, as this does. */
+   moves. The original always starts at 323, as this does.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 (function(P){
 'use strict';
 var LINES=[],AT=[],i;

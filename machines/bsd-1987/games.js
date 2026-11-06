@@ -48,7 +48,7 @@ function run(gen){
     catch(e){if(e!==EXIT)throw e;return}
     if(r.done)return;
     P.ask(r.value||'',function(line){ /* ^C ends it, as the signal did; ^D is the end of the input */
-      if(line===P.INT){try{gen.return()}catch(e){}return}
+      if(line===P.INT){try{gen.return()}catch(e){}P.status(130);return}
       step(line);
     },true);
   })();
