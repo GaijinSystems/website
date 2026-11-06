@@ -1,6 +1,13 @@
 /* gaijin.systems: settings. */
 Phosphor.content(String.raw`
 
+# Words in braces that any section's text can use, filled in when the terminal starts:
+#   {owner}     the first word of name: below (letters and digits, up to 8, lower case)
+#   {email}     email: below
+#   {hostname}  hostname: if set here, else the first part of the page's address, else {owner}
+#   {site}      the address the page was served from (not set here); {hostname} from a file
+#   {year}      the connected machine's year, from machines/machines.js (not set here)
+
 machine:   v7
 name:      gaijin
 email:     support@gaijin.systems
