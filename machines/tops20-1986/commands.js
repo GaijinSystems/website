@@ -71,7 +71,8 @@ function nextGen(dir,name,ext){
   var g=0;entries(dir,true).forEach(function(e){if(e.name===name&&e.ext===ext&&e.gen>g)g=e.gen});
   return g+1;
 }
-function mine(abs){return abs===P.st.home||abs.indexOf(P.st.home+'/')===0}
+function mine(abs){return wheel()||abs===S.home||abs.indexOf(S.home+'/')===0} /* an ENABLEd WHEEL owns everything */
+function wheel(){return S.en&&S.home==='/operator'}
 function writeNew(spec,lines){ /* a new generation, never over the old one: the name it got, or null */
   var S=parse(spec),abs=S.dirs[0],dir=folder(abs);
   if(!dir){err('?No such directory - "'+said(S)+'"');return null}
@@ -369,7 +370,7 @@ function newMail(){return myMail().length>0&&!S.read}
 function myMail(){return S.home===GUEST.home?P.profile.mail:[]} /* the site's letter is to the guest */
 /* OPERATOR has WHEEL and OPERATOR capabilities: ENABLE makes them work ($), DISABLE puts them away (@).
    Anyone may ENABLE, as in the real EXEC; for anyone else the $ is all it changes. */
-function disable(){S.en=false;P.unsu()}
+function disable(){var c=P.st.cwd;S.en=false;if(P.unsu())P.st.cwd=c} /* still connected where it was */
 function enable(){S.en=true;if(S.home==='/operator')P.su()}
 cmd('LOGOUT','','',function(){
   var n=P.now();
