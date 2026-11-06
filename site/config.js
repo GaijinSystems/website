@@ -12,6 +12,7 @@ source:    https://github.com/GaijinSystems/phosphor
 protected: photo01.pic, photo02.pic, photo03.pic, secrets, .trash/core, .old/terminal.rom
 
 cord turns:     7
+cord desktop:   13
 cord width:     18
 cord thickness: 3.2
 cord gap:       1.8
