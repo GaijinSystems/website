@@ -5,7 +5,7 @@
 
 P.command({names:['help'],core:true,terminal:true,
   man:{what:'list the commands',syn:'help',desc:[
-    'lists the commands, alphabetically, with a few words about each, and apart from them the ones the terminal answers on every machine. man name says more about any of them.']},
+    'lists the commands, alphabetically, with a few words about each, and apart from them the ones the terminal answers itself. man name says more about any of them.']},
   run:function(){
     var H=P.help(),man=P.has(P.cmds,'man'),split=!P.profile.noUnix; /* the other machines' help is all the terminal's */
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
