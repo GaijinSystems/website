@@ -131,6 +131,22 @@ P.command({names:['fill'],terminal:true,noHelpFlag:true,help:'bigger screen, on 
     'puts the monitor away and lets the glass fill the window. fill again brings the monitor back. this browser remembers which you chose.']},
   run:function(){P.fillGlass(!P.fillGlass())}});
 
+/* effects: the terminal's other switch, on every machine. */
+P.command({names:['effects'],terminal:true,help:'tube effects: auto, full or lite',
+  man:{what:'tube effects, full or lite',syn:'effects [ auto | full | lite ]',desc:[
+    'full draws the whole tube: a double glow round the text, the bright band rolling down the glass, the flicker and the swaying cable. lite does less work and looks much the same: one small glow, the band moving in small steps, the flicker and the cable held still. auto, the usual, picks lite when the browser draws without a graphics chip, or draws the warm-up slowly.',
+    '',
+    'with no argument, says which is in use. this browser remembers which you chose.']},
+  run:function(a){
+    var m=(a[0]||'').toLowerCase(),e;
+    if(/^(auto|full|lite)$/.test(m)){P.effects(m);P.typeLine('effects '+m+'.');return}
+    e=P.effects();
+    P.say([
+      'effects '+e.mode+(e.mode==='auto'?': '+(e.lite?'lite ('+e.why+')':'full'):''),
+      ['usage: effects auto|full|lite','dim']
+    ]);
+  }});
+
 /* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */
 P.command({names:['connect'],terminal:true,help:'plug into another machine',
   enabled:function(){return P.allowed.length>1},

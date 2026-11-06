@@ -1,11 +1,11 @@
-/* PHOSPHOR-9 terminal: machine "vms-1988", a VAX-11/785 running VAX/VMS V4.5.
+/* PHOSPHOR-9 terminal: machine "vms-1988", a VAX-11/785 running VAX/VMS V4.6.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
    Same text format as the site files; see README.md. Do not type a backtick or a dollar sign
    followed by { between the two backticks below. */
 Phosphor.content(String.raw`
 
 badge:        PHOSPHOR-9
-installed:    1986-11-14 09:12
+installed:    1987-09-14 09:12
 user:         guest
 home:         /guest
 case:         ignore
@@ -29,12 +29,12 @@ PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07
 == boot ==
 >>>B/1 @400
 %%%%%%%%%%% @300
-VAX/VMS Version V4.5 Major version id = 01 Minor version id = 00 @300
+VAX/VMS Version V4.6  6-Jul-1987 17:00 @300
 SYSBOOT> CONTINUE @200
-%SET-I-INTSET, login interactive limit= 64, current interactive value = 0 @200
+%SET-I-INTSET, login interactive limit = 64, current interactive value = 0 @200
 SYSTEM       job terminated at  01-JAN-{year} 09:12:40.00 @300
 
-Welcome to VAX/VMS version V4.5 on node VAXA @200
+Welcome to VAX/VMS version V4.6 on node VAXA @200
 
 == file: readme.txt ==
 this is a phosphor-9 video terminal.

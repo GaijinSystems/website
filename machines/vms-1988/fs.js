@@ -6,7 +6,7 @@ Phosphor.setup(function(P){
   function d(p){P.put(p,'d',{owner:'system',date:SD})}
   function f(p,body){P.put(p,'f',{owner:'system',date:SD,body:body})}
   ['/sys0','/sys0/sysexe','/sys0/syshlp','/sys0/sysmgr','/field','/system'].forEach(d);
-  P.put('/sys0/sysexe/vms.exe;1','f',{owner:'system',date:SD,bin:true,size:1048576});
+  P.put('/sys0/sysexe/sys.exe;1','f',{owner:'system',date:SD,bin:true,size:1048576});
   P.put('/sys0/sysexe/dcl.exe;1','f',{owner:'system',date:SD,bin:true,size:175104});
   P.put('/sys0/sysexe/edt.exe;1','f',{owner:'system',date:SD,bin:true,size:276480});
   d('/games');
