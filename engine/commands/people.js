@@ -4,13 +4,13 @@
 'use strict';
 
 P.command({names:['about'],terminal:true,help:'the owner of this machine',
-  enabled:function(p){return p.about.length>0}, /* no == about == section: no about command, no about file */
+  enabled:function(p){return p.about.length>0}, /* no == about == section: no about command */
   man:{what:'who owns this machine',syn:'about',desc:[
-    'prints the about file. same as cat about.']},
+    'prints what the owner of this machine wrote about it.']},
   run:function(){P.say(P.profile.about)}});
 
 /* the letter is the whole == mail == section; the engine only adds the From line */
-P.command({names:['mail'],core:true,terminal:true,help:'read your mail',path:'/bin',
+P.command({names:['mail'],core:true,terminal:true,help:'read your mail',
   man:{what:'read your mail',syn:'mail',desc:[
     'prints your mail. there is usually one letter.'],bugs:[
     'there is no modem, so you cannot answer it from here.']},

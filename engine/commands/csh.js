@@ -179,7 +179,7 @@ P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:fu
   });
 }});
 P.command({names:['whereis'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
-  a.forEach(function(x){var f=place(x);P.typeLine(x+':'+(f?' '+f:'')+(P.has(P.man,x)?' /usr/man/man1/'+x+'.1':''))});
+  a.forEach(function(x){var f=place(x);P.typeLine(x+':'+(f?' '+f:'')+(P.has(P.man,x)&&!P.own(x)?' /usr/man/man1/'+x+'.1':''))}); /* the terminal's words are not the machine's */
 }});
 P.command({names:['apropos'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
   if(!a.length){P.typeLine('apropos what?');return}

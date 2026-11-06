@@ -118,9 +118,10 @@ function pickMachine(){
   if(def&&PH.allowed.indexOf(def)<0){PH.early.push('machine: "'+def+'" is not one of the machines allowed');def=''}
   PH.machine=PH.allowed.indexOf(asked)>=0?asked:def||PH.allowed[0];
   function randomMachine(){ /* machine: random. One pick per browser tab, so a reload is a reboot of the same machine */
-    var k='phosphor-9/machine',m=null;
+    var k='phosphor-9/machine',m=null,pool=PH.allowed.filter(function(x){return PH.catalog[x].random!==false}); /* random:false sits out the draw */
+    if(!pool.length)pool=PH.allowed; /* unless nothing else is allowed */
     try{m=sessionStorage.getItem(k)}catch(e){}
-    if(PH.allowed.indexOf(m)<0){m=PH.allowed[Math.floor(Math.random()*PH.allowed.length)];try{sessionStorage.setItem(k,m)}catch(e){}}
+    if(pool.indexOf(m)<0){m=pool[Math.floor(Math.random()*pool.length)];try{sessionStorage.setItem(k,m)}catch(e){}}
     return m;
   }
   return PH.machine;
@@ -837,8 +838,13 @@ function page(names,what,syn,desc,bugs){
   names.forEach(function(n){MAN[n]=p});
   return p;
 }
-function install(n,fn,noh){ /* later definitions of the same name win */
+/* the terminal's own words (help, about, fill ...) and the site's text commands: the terminal answers them on every
+   machine, so help lists them apart on the machines that have man, and their manual pages say so. A word with a
+   program file is the machine's. */
+var TERMSAYS='the terminal answers this, not the machine.',OWN=Object.create(null);
+function install(n,fn,noh,own){ /* later definitions of the same name win */
   CMDS[n]=fn;NOH[n]=noh;delete PATHS[n];
+  if(own)OWN[n]=true;else delete OWN[n];
   HELP=HELP.filter(function(h){return h[0]!==n});
 }
 PH.defs.forEach(function(d){
@@ -846,10 +852,11 @@ PH.defs.forEach(function(d){
   if(PROFILE.noUnix&&!d.terminal&&/(^|\/)engine\//.test(d.from||''))return; /* terminal: part of the terminal, not the OS */
   var names=(d.names||[]).filter(function(n){return PROFILE.off.indexOf(n)<0});
   if(!names.length||typeof d.run!=='function')return;
-  names.forEach(function(n){install(n,d.run,!!d.noHelpFlag)});
+  var own=d.terminal&&!d.path;
+  names.forEach(function(n){install(n,d.run,!!d.noHelpFlag,own)});
   if(d.path)PATHS[names[0]]=d.path; /* where its program file shows up in the file tree */
   if(d.help&&!d.hidden)HELP.push([names[0],d.help]);
-  if(d.man)page(names,d.man.what||'',d.man.syn||names[0],d.man.desc,d.man.bugs);
+  if(d.man)page(names,d.man.what||'',d.man.syn||names[0],own?d.man.desc.concat(['',TERMSAYS]):d.man.desc,d.man.bugs);
 });
 /* Text commands (== command: NAME ==). They cannot take the name of a core command while
    it is running; switch it off first ("commands: -mail") and yours takes its place.
@@ -865,10 +872,10 @@ PROFILE.commands.forEach(function(c){
   });
   if(!n.length)return;
   var fn=function(){say(c.body)};
-  n.forEach(function(x){install(x,fn,false);delete MAN[x]}); /* replaces any built-in of that name, its manual page and program file too */
+  n.forEach(function(x){install(x,fn,false,c.site);delete MAN[x]}); /* replaces any built-in of that name, its manual page and program file too */
   if(c.help){
     HELP.push([n[0],c.help]);
-    page(n,c.help.toLowerCase(),n[0],[c.help.toLowerCase()+'.']); /* a page made from the help text */
+    page(n,c.help.toLowerCase(),n[0],[c.help.toLowerCase()+'.'].concat(c.site?['',TERMSAYS]:[])); /* a page made from the help text */
   }
 });
 Object.keys(PROFILE.man).forEach(function(k){ /* == man: NAME == sections */
@@ -969,7 +976,7 @@ PH.runLater=function(files,def,a,raw,w){
 };
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'},CSHV=Object.create(null); /* CSHV: csh's own variables, from set */
 Object.assign(PH,{ /* what commands and machine hooks may use */
-  profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
+  profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},own:function(n){return has(OWN,n)},
   hist:function(){return hist.slice()},setHist:function(L){hist=L.slice(-HMAX);hi=hist.length}, /* a shell's history -c, -d or -s */
   setPrompt:function(f){promptFn=f},readKey:readKey,oops:oops,oopsW:oopsW,shvars:CSHV,
   /* what a game keeps between visits, in this browser only; false or null when the browser refuses */
@@ -1035,7 +1042,6 @@ PH.hooks.forEach(function(fn){
 });
 var ENV0=Object.assign({},ENV); /* the environment a login starts with */
 put(ST.home,'d',{owner:OWNER});
-if(PROFILE.about.length)put(ST.home+'/about','f',{body:PROFILE.about});
 PROFILE.dirs.forEach(function(d){put(home(d),'d')});
 PROFILE.files.forEach(function(f){put(home(f.name),'f',{body:f.body})});
 PROFILE.protected.forEach(function(p){
