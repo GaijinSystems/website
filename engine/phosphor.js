@@ -1571,6 +1571,18 @@ function submit(){
   hi=hist.length;
   run(cmd);
 }
+/* TOPS-20's EXEC: the machine's PH.recognize(key,line) answers Escape, Tab and ? at the prompt with the new line,
+   or with {echo,list,line}: what stays on this line, the lines printed under it, and the line asked again */
+function recognize(k){
+  if(!PH.recognize||!bufNode||MODE!=='shell')return false;
+  var r=PH.recognize(k,buf);
+  if(r==null)return false;
+  if(typeof r==='string'){setBuf(r);return true}
+  setBuf(r.echo);bufNode=null;term.classList.remove('idle');setBuf('');
+  say(r.list);
+  queue(function(){showPrompt();setBuf(r.line)},true);
+  return true;
+}
 /* bash: tab completes a command name first, a file name after; a second tab lists the choices */
 var TABBED=null;
 function complete(){
@@ -1617,6 +1629,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
   if(PROFILE.dos&&!PROFILE.dcl&&k==='F3'&&bufNode&&hist.length){e.preventDefault();setBuf(hist[hist.length-1]);return true} /* the only history there is */
   if(k==='Enter')submit();
   else if(k==='Tab'&&PROFILE.bash&&!e.shiftKey)complete();
+  else if((k==='Escape'||k==='?'||k==='Tab'&&!e.shiftKey)&&recognize(k)){}
   else if(k==='ArrowUp'||k==='ArrowDown')histNav(d);
   else if(k==='PageUp'||k==='PageDown')term.scrollTop+=d*.9*term.clientHeight;
   else return false;
@@ -1685,6 +1698,7 @@ if(coarse){
       if(KEYS)KEYS(named?b[1]:'C-'+b[1]);
       else if(!named)ctrlKey({key:b[1],preventDefault:function(){}});
       else if(b[1]==='Tab'&&PROFILE.bash)complete();
+      else recognize(b[1]);
       kb.focus({preventScroll:true});
     });
     soft.appendChild(t);
