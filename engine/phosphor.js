@@ -1779,10 +1779,25 @@ function histNav(d){
   hi=Math.max(0,Math.min(hist.length,hi+d));
   setBuf(hist[hi]||'');
 }
-kb.addEventListener('input',function(){
-  if(KEYS){var v=kb.value;kb.value='';for(var i=0;KEYS&&i<v.length;i++)KEYS(v.charAt(i));return}
+/* a full-screen program gets a phone keyboard's typing a key at a time. The keyboard composes each word in the input:
+   it stays there until the word is done (emptied sooner, the keyboard types it all again), and the program gets what changed */
+var fed='',keyed=null; /* what the program has had of the word; a key whose keydown already gave it */
+function feedKb(done){
+  var v=kb.value,i=0,j;
+  if(done&&v===keyed&&!fed)v=''; /* a keyboard that inserts a key it has sent as a keydown */
+  keyed=null;
+  while(i<fed.length&&fed.charAt(i)===v.charAt(i))i++;
+  for(j=fed.length;KEYS&&j>i;j--)KEYS('Backspace'); /* letters taken back, or a suggestion taken */
+  for(;KEYS&&i<v.length;i++)KEYS(v.charAt(i));
+  fed=v;
+  if(done||!KEYS){kb.value='';fed=''}
+}
+kb.addEventListener('input',function(e){
+  if(KEYS){feedKb(!e.isComposing);return}
+  fed='';
   var grew=kb.value.length>buf.length;setBuf(kb.value);if(grew)click(.667);
 });
+kb.addEventListener('compositionend',function(){if(KEYS)feedKb(true)});
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
   var k=e.key,d=k==='ArrowUp'||k==='PageUp'?-1:1;
   if(PROFILE.dos&&!PROFILE.dcl&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
@@ -1830,10 +1845,11 @@ function ctrlKey(e){
 }
 var NAMED=/^(Escape|Enter|Backspace|Tab|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|PageUp|PageDown)$/;
 document.addEventListener('keydown',function(e){
+  keyed=null;
   if(KEYS){ /* a full-screen program has every key */
     if(e.metaKey||e.altKey||e.isComposing)return;
     var name=e.ctrlKey&&e.key.length===1?'C-'+e.key.toLowerCase():e.key;
-    if(name.length===1||NAMED.test(name)||/^C-/.test(name)){e.preventDefault();KEYS(name)}
+    if(name.length===1||NAMED.test(name)||/^C-/.test(name)){e.preventDefault();if(name.length===1)keyed=name;KEYS(name)}
     return;
   }
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&ctrlKey(e))return;
