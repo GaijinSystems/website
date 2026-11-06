@@ -8,7 +8,9 @@ var cmd=P.fcb.cmd,fcb=P.fcb.name;
 var user=0,SIZE=486; /* a double-sided eight-inch disk */
 function files(){return Object.keys(P.root.kids).sort().filter(function(k){var n=P.root.kids[k];return n.type!=='d'&&k.charAt(0)!=='.'&&(n.user||0)===user})}
 function get(k){var n=P.root.kids[k];return n&&(n.user||0)===user?n:undefined}
-function write(k,L){
+function write(k,L,full){ /* full: what to say when the name is another user area's (one name, one file here) */
+  var o=P.root.kids[k];
+  if(o&&!o.prot&&(o.user||0)!==user){P.typeLine(full||'NO DIRECTORY SPACE');return}
   if(!P.writeFile(k,L,false)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
   var n=P.root.kids[k];
   if(n)n.user=user;
@@ -42,7 +44,7 @@ cmd(['type'],'print a file',function(a,raw,w){
   if(elsewhere(w[1]))return;
   var n=get(arg(w,1).replace(/^a:/,''));
   if(!n||n.type==='d'||n.prot){P.typeLine('NO FILE');return}
-  if(n.bin){P.typeLine('\u00c3\u0000\u0001\u00cd\u0005\u0000\u00c9');return}
+  if(n.bin){P.typeLine('\u00c3\u0000\u00cd\u0005\u0000\u00c9');return}
   P.say(P.text(n));
 });
 function eraseAll(m){files().filter(m).forEach(function(k){var n=P.root.kids[k];if(!n.prot)delete P.root.kids[k]})}
@@ -59,10 +61,11 @@ cmd(['era'],null,function(a,raw,w){
 cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD */
   var q=assign(raw);
   if(!q){P.typeLine((raw.trim()+'?').toUpperCase());return}
+  q=q.map(function(x){return x.replace(/^a:/,'')});
   var n=get(q[2]);
   if(!n){P.typeLine('NO FILE');return}
   if(n.prot){P.typeLine('BDOS ERR ON A: FILE R/O');return}
-  if(get(q[1])){P.typeLine('FILE EXISTS');return}
+  if(P.root.kids[q[1]]){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
   delete P.root.kids[q[2]];n.name=q[1];P.root.kids[q[1]]=n;
 });
 cmd(['user'],null,function(a,raw,w){
@@ -72,17 +75,17 @@ cmd(['user'],null,function(a,raw,w){
 });
 cmd(['save'],null,function(a,raw,w){
   if(!w[2]){P.typeLine((raw.trim()+'?').toUpperCase());return}
-  write(arg(w,2),[]);
+  write(arg(w,2),[],'NO SPACE');
 });
 cmd(['stat'],null,function(a,raw,w){
   if(elsewhere(w[1]))return;
   if(w[1]){
     var m=matcher(arg(w,1)),F=files().filter(m);
-    if(!F.length){P.typeLine('FILE NOT FOUND');return}
-    P.say([' RECS  BYTES  EXT ACC'].concat(F.map(function(k){var sz=P.fsize(P.root.kids[k]);return String(Math.ceil(sz/128)).padStart(5)+String(Math.ceil(sz/1024)).padStart(6)+'K   1 R/W A:'+fcb(k).replace(/ +/,'.').replace(/\.$/,'')}),['BYTES REMAINING ON A: '+free()+'K']));
+    if(!F.length){P.typeLine('File Not Found');return}
+    P.say([' Recs  Bytes  Ext Acc'].concat(F.map(function(k){var sz=P.fsize(P.root.kids[k]);return String(Math.ceil(sz/128)).padStart(5)+String(Math.ceil(sz/1024)).padStart(6)+'k   1 R/W A:'+fcb(k).replace(/ +/,'.').replace(/\.$/,'')}),['Bytes Remaining On A: '+free()+'k']));
     return;
   }
-  P.typeLine('A: R/W, SPACE: '+free()+'K');
+  P.typeLine('A: R/W, Space: '+free()+'k');
 });
 cmd(['pip'],null,function(a,raw){ /* the one that moves everything: PIP DEST=SOURCE */
   var q=assign(raw);
@@ -138,7 +141,7 @@ cmd(['ed'],null,function(a,raw,w){ /* a small ED: I to type (ctrl-z ends), #T to
   })();
 });
 P.stubs(['asm','ddt','load','movcpm','submit','sysgen','xsub'],function(n){
-  P.typeLine(n.toUpperCase()+' VERS 2.2');P.typeLine('(this one wants a real 8080 to run on.)','dim');
+  P.typeLine(n.toUpperCase()+' VERS 2.2');P.typeLine('(this one wants a real processor to run on.)','dim');
 },{noHelpFlag:true});
 P.fallback=function(word){
   var w=word.toLowerCase();

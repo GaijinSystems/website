@@ -1,16 +1,13 @@
-/* PHOSPHOR-9 terminal: machine "bsd-1987", small games from the Berkeley distribution: wump,
+/* PHOSPHOR-9 terminal: machine "bsd-1987", small games from the Berkeley distribution:
    number, primes, factor, banner, hangman, worm, robots and snake. Ported to JavaScript for this terminal from
    the C in NetBSD's games. hangman's word list is new. The originals carry this notice, with years
-   from 1980 to 1994 and these authors: wump Dave Taylor, hangman Ken Arnold, worm Michael Toy.
+   from 1980 to 1994 and these authors: hangman Ken Arnold, worm Michael Toy.
    This file keeps the notice, and may be used under its terms.
 
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  * All rights reserved.
- *
- * This code is derived from software contributed to Berkeley by
- * Dave Taylor, of Intuitive Systems.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,236 +36,9 @@
 (function(P){
 'use strict';
 
-/* A program written as a generator: "yield prompt" reads a line, and printing stays in order. */
-function run(gen){
-  var EXIT=run.EXIT;
-  (function step(v){
-    var r;
-    try{r=gen.next(v)}
-    catch(e){if(e!==EXIT)throw e;return}
-    if(r.done)return;
-    P.ask(r.value||'',function(line){ /* ^C ends it, as the signal did; ^D is the end of the input */
-      if(line===P.INT){try{gen.return()}catch(e){}P.status(130);return}
-      step(line);
-    },true);
-  })();
-}
-run.EXIT={};
 function game(name,fn){P.command({names:[name],run:fn})} /* loaded on first run: the names, paths and manual pages are in later.js */
 function ran(n){return Math.floor(Math.random()*n)}
 function atoi(s){return parseInt(s,10)||0}
-function say(s){P.say(s.split('\n'))}
-function plural(n){return n===1?'':'s'}
-
-/* ---------- wump: Hunt the Wumpus, by Dave Taylor ---------- */
-var WUMPINFO=["Welcome to the game of Hunt the Wumpus.", "", "The Wumpus typically lives in a cave of twenty rooms, with each room having", "three tunnels connecting it to other rooms in the cavern.  Caves may vary,", "however, depending on options specified when starting the game.", "", "The game has the following hazards for intrepid adventurers to wind their", "way through:", "", "  Pits   -- If you fall into one of the bottomless pits, you find yourself", "\t    slung back out on the far side of the Earth and in very poor", "\t    shape to continue your quest since you're dead.", "", "  Bats   -- As with any other cave, the Wumpus cave has bats in residence.", "\t    These are a bit more potent, however, and if you stumble into", "\t    one of their rooms they will rush up and carry you elsewhere in", "\t    the cave.", "", "  Wumpus -- If you happen to walk into the room the Wumpus is in you'll find", "\t    that he has quite an appetite for young adventurous humans!  Not", "\t    recommended.", "", "The Wumpus, by the way, is not bothered by the hazards since he has sucker", "feet and is too big for a bat to lift.  If you try to shoot him and miss,", "there's also a chance that he'll up and move himself into another cave,", "though by nature the Wumpus is a sedentary creature.", "", "Each turn you may either move or shoot a crooked arrow.  Moving is done", "simply by specifying \"m\" for move and the number of the room that you'd", "like to move down a tunnel towards.  Shooting is done similarly; indicate", "that you'd like to shoot one of your magic arrows with an \"s\" for shoot,", "then list a set of connected room numbers through which the deadly shaft", "should fly!", "", "If your path for the arrow is incorrect, however, it will flail about in", "the room it can't understand and randomly pick a tunnel to continue", "through.  You might just end up shooting yourself in the foot if you're", "not careful!  On the other hand, if you shoot the Wumpus you've WON!", "", "Good luck."];
-function* wump(argv){
-  var EXIT=run.EXIT,level=1,arrow_num=5,bat_num=3,pit_num=3,room_num=20,link_num=3,i,j;
-  function die(m){P.typeLine(m,'err');throw EXIT}
-  for(i=0;i<argv.length;i++){
-    var o=argv[i];
-    if(o==='-a')arrow_num=atoi(argv[++i]);
-    else if(o==='-b')bat_num=atoi(argv[++i]);
-    else if(o==='-h')level=2;
-    else if(o==='-p')pit_num=atoi(argv[++i]);
-    else if(o==='-r'){
-      room_num=atoi(argv[++i]);
-      if(room_num<10)die("No self-respecting wumpus would live in such a small cave!");
-      if(room_num>250)die("Even wumpi can't furnish caves that large!");
-    }
-    else if(o==='-t'){
-      link_num=atoi(argv[++i]);
-      if(link_num<2)die('Wumpi like extra doors in their caves!');
-    }
-    else die('usage: wump [-h] [-a arrows] [-b bats] [-p pits] [-r rooms] [-t tunnels]');
-  }
-  if(link_num>25||link_num>room_num-Math.trunc(room_num/4)){say("Too many tunnels!  The cave collapsed!\n(Fortunately, the wumpus escaped!)");return}
-  if(level===2){bat_num+=ran(Math.trunc(room_num/2))+1;pit_num+=ran(Math.trunc(room_num/2))+1}
-  if(bat_num>room_num/2)die('The wumpus refused to enter the cave, claiming it was too crowded!');
-  if(pit_num>room_num/2)die('The wumpus refused to enter the cave, claiming it was too dangerous!');
-  var cave=[],player,wumpus,arrows_left,lastchance=2;
-  function gcd(a,b){var r=a%b;return r===0?b:gcd(b,r)}
-  function cave_init(){
-    var i,j,k,lnk,delta;
-    cave=[];
-    for(i=0;i<=room_num;i++){
-      cave.push({tunnel:[],pit:false,bat:false});
-      for(j=0;j<link_num;j++)cave[i].tunnel[j]=-1;
-    }
-    do{delta=ran(room_num-1)+1}while(gcd(room_num,delta+1)!==1);
-    for(i=1;i<=room_num;i++){
-      lnk=((i+delta)%room_num)+1;
-      cave[i].tunnel[0]=lnk;
-      cave[lnk].tunnel[1]=i;
-    }
-    for(i=1;i<=room_num;i++){
-      for(j=2;j<link_num;j++){
-        if(cave[i].tunnel[j]!==-1)continue;
-        do{lnk=ran(room_num)+1}while(cave[i].tunnel.slice(0,j).indexOf(lnk)>=0);
-        cave[i].tunnel[j]=lnk;
-        if(ran(2)===1)continue;
-        for(k=0;k<link_num;k++){
-          if(cave[lnk].tunnel[k]===i)break;
-          if(cave[lnk].tunnel[k]===-1){cave[lnk].tunnel[k]=i;break}
-        }
-      }
-    }
-    for(i=1;i<=room_num;i++)cave[i].tunnel.sort(function(a,b){return a-b});
-  }
-  function nearby(what){
-    return cave[player].tunnel.some(function(t){return t>=1&&t<=room_num&&cave[t][what]});
-  }
-  function wump_nearby(){
-    return cave[player].tunnel.some(function(t){
-      return t===wumpus||(t>=1&&t<=room_num&&cave[t].tunnel.indexOf(wumpus)>=0);
-    });
-  }
-  function move_wump(){wumpus=cave[wumpus].tunnel[ran(link_num)]}
-  function wump_kill(){say("*ROAR* *chomp* *snurfle* *chomp*!\nMuch to the delight of the Wumpus, you walked right into his mouth,\nmaking you one of the easiest dinners he's ever had!  For you, however,\nit's a rather unpleasant death.  The only good thing is that it's been\nso long since the evil Wumpus cleaned his teeth that you immediately\npassed out from the stench!")}
-  function* move_to(room){
-    var next=atoi(room),moved=false;
-    if(next===room_num+1&&cave[player].tunnel[link_num-1]!==next)next++;
-    while(next<1||next>room_num+1){
-      if(next<0&&next!==-1)P.typeLine("Sorry, but we're constrained to a semi-Euclidean cave!");
-      if(next>room_num+1)P.typeLine("What?  The cave surely isn't quite that big!");
-      if(next===room_num+1&&cave[player].tunnel[link_num-1]!==next){P.typeLine("What?  The cave isn't that big!");next++}
-      var a=yield 'To which room do you wish to move? ';
-      if(a===null)return 1;
-      next=atoi(a);
-    }
-    if(cave[player].tunnel.indexOf(next)<0){
-      P.typeLine('*Oof!*  (You hit the wall)');
-      if(ran(6)===1){
-        P.typeLine('Your colorful comments awaken the wumpus!');
-        move_wump();
-        if(wumpus===player){wump_kill();return 1}
-      }
-      return 0;
-    }
-    if(next===room_num+1){
-      next=ran(room_num)+1;
-      say("\nWith a jaunty step you enter the magic tunnel.  As you do, you\nnotice that the walls are shimmering and glowing.  Suddenly you feel\na very curious, warm sensation and find yourself in room "+next+"!!");
-    }
-    player=next;
-    for(;;){
-      if(next===wumpus){wump_kill();return 1}
-      if(cave[next].pit){
-        if(ran(12)<2){
-          say("Without conscious thought you grab for the side of the cave and manage\nto grasp onto a rocky outcrop.  Beneath your feet stretches the limitless\ndepths of a bottomless pit!  Rock crumbles beneath your feet!");
-          return 0;
-        }
-        say("*AAAUUUUGGGGGHHHHHhhhhhhhhhh...*\nThe whistling sound and updraft as you walked into this room of the\ncave apparently wasn't enough to clue you in to the presence of the\nbottomless pit.  You have a lot of time to reflect on this error as\nyou fall many miles to the core of the earth.  Look on the bright side;\nyou can at least find out if Jules Verne was right...");
-        return 1;
-      }
-      if(cave[next].bat){
-        P.typeLine('*flap*  *flap*  *flap*  (humongous bats pick you up and move you'+(moved?' again':'')+'!)');
-        next=player=ran(room_num)+1;
-        moved=true;
-      }
-      else break;
-    }
-    return 0;
-  }
-  function shoot(list){
-    var W=list.split(/[ \t]+/).filter(Boolean),at=player,count;
-    for(count=1;;count++){
-      var p=W[count-1];
-      if(p===undefined){
-        if(count===1){P.typeLine('The arrow falls to the ground at your feet!');return 0}
-        break;
-      }
-      if(count>5){P.typeLine('The arrow wavers in its flight and and can go no further!');break}
-      var next=atoi(p);
-      if(cave[at].tunnel.indexOf(next)>=0){
-        if(next>room_num){
-          P.typeLine('A faint gleam tells you the arrow has gone through a magic tunnel!');
-          at=ran(room_num)+1;
-        }
-        else at=next;
-      }
-      else{
-        var lnk=ran(link_num);
-        if(lnk===player)say("*thunk*  The arrow can't find a way from "+at+" to "+next+" and flies back into\nyour room!");
-        else if(cave[at].tunnel[lnk]>room_num)say("*thunk*  The arrow flies randomly into a magic tunnel, thence into\nroom "+cave[at].tunnel[lnk]+"!");
-        else say("*thunk*  The arrow can't find a way from "+at+" to "+next+" and flies randomly\ninto room "+cave[at].tunnel[lnk]+"!");
-        at=cave[at].tunnel[lnk];
-        break;
-      }
-      var chance=ran(10);
-      if(count===3&&chance<2){say("Your bowstring breaks!  *twaaaaaang*\nThe arrow is weakly shot and can go no further!");break}
-      if(count===4&&chance<6){P.typeLine('The arrow wavers in its flight and and can go no further!');break}
-    }
-    if(at===wumpus){
-      say("*thwock!* *groan* *crash*\n\nA horrible roar fills the cave, and you realize, with a smile, that you\nhave slain the evil Wumpus and won the game!  You don't want to tarry for\nlong, however, because not only is the Wumpus famous, but the stench of\ndead Wumpus is also quite well known, a stench plenty enough to slay the\nmightiest adventurer at a single whiff!!");
-      return 1;
-    }
-    if(at===player){
-      say("\n*Thwack!*  A sudden piercing feeling informs you that the ricochet\nof your wild arrow has resulted in it wedging in your side, causing\nextreme agony.  The evil Wumpus, with its psychic powers, realizes this\nand immediately rushes to your side, not to help, alas, but to EAT YOU!\n(*CHOMP*)");
-      return 1;
-    }
-    if(!--arrows_left){
-      say("\nYou turn and look at your quiver, and realize with a sinking feeling\nthat you've just shot your last arrow (figuratively, too).  Sensing this\nwith its psychic powers, the evil Wumpus rampages through the cave, finds\nyou, and with a mighty *ROAR* eats you alive!");
-      return 1;
-    }
-    if(ran(level===1?12:9)<(lastchance+=2)){
-      move_wump();
-      if(wumpus===player)wump_kill();
-      lastchance=ran(3);
-    }
-    return 0;
-  }
-  function* getans(q){
-    for(;;){
-      var a=yield q;
-      if(a===null)return false;
-      var c=a.charAt(0);
-      if(c==='N'||c==='n')return false;
-      if(c==='Y'||c==='y')return true;
-      P.typeLine("I don't understand your answer; please enter 'y' or 'n'!");
-    }
-  }
-  if(yield* getans('Instructions? (y-n) '))P.say(WUMPINFO);
-  cave_init();
-  say('\nYou\'re in a cave with '+room_num+' rooms and '+link_num+' tunnels leading from each room.\nThere are '+bat_num+' bat'+plural(bat_num)+' and '+pit_num+' pit'+plural(pit_num)+' scattered throughout the cave, and your\nquiver holds '+arrow_num+' custom super anti-evil Wumpus arrows.  Good luck.');
-  for(;;){
-    for(i=1;i<=room_num;i++)cave[i].bat=cave[i].pit=false;
-    var loc;
-    for(i=0;i<bat_num;i++){do{loc=ran(room_num)+1}while(cave[loc].bat);cave[loc].bat=true}
-    for(i=0;i<pit_num;i++){do{loc=ran(room_num)+1}while(cave[loc].pit||cave[loc].bat);cave[loc].pit=true}
-    wumpus=ran(room_num)+1;
-    i=0;
-    do{player=ran(room_num)+1;i++}
-    while(i<=100&&(player===wumpus||cave[player].pit||cave[player].bat||(level===2&&link_num/room_num<.4&&wump_nearby())));
-    arrows_left=arrow_num;
-    var e=0;
-    do{
-      var L=['','You are in room '+player+' of the cave, and have '+arrows_left+' arrow'+plural(arrows_left)+' left.'];
-      if(nearby('bat'))L.push('*rustle* *rustle* (must be bats nearby)');
-      if(nearby('pit'))L.push('*whoosh* (I feel a draft from some pits).');
-      if(wump_nearby())L.push('*sniff* (I can smell the evil Wumpus nearby!)');
-      var T=cave[player].tunnel,s='There are tunnels to rooms '+T[0]+', ';
-      for(j=1;j<link_num-1;j++)if(T[j]<=room_num)s+=T[j]+', ';
-      L.push(s+'and '+T[link_num-1]+'.');
-      P.say(L);
-      var ans=yield 'Move or shoot? (m-s) ';
-      if(ans===null){e=2;break}
-      var c=ans.charAt(0);
-      if(c==='M'||c==='m')e=yield* move_to(ans.slice(1));
-      else if(c==='S'||c==='s')e=shoot(ans.slice(1));
-      else if(c==='Q'||c==='q'||c==='x')return;
-      else if(ans==='')e=0;
-      else{P.typeLine(ran(15)===1?'Que pasa?':"I don't understand!");e=0}
-    }while(!e);
-    if(e===2)return;
-    P.typeLine('');
-    if(!(yield* getans('Care to play another game? (y-n) ')))return;
-    if(!(yield* getans('In the same cave? (y-n) ')))cave_init();
-  }
-}
-game('wump',function(a,raw,w){
-  if(P.piped()){P.typeLine('wump: needs a terminal','err');return}
-  run(wump(w.slice(1)));
-});
 
 /* ---------- number: spell it out ---------- */
 var N1=['','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
@@ -508,6 +278,21 @@ function tooSmall(S,done,last,msg){ /* leave at once, once the program is under 
   setTimeout(function(){if(msg)last.push(msg);S.close();done()},0);
   return {feed:function(){},draw:function(){}};
 }
+function board(S){ /* the screen as curses sized it at the start, which the C keeps: after a resize, smaller type for all of
+   it where that stays readable, and where it would not, the view follows the cursor */
+  var H=S.rows,W=S.cols,py=0,px=0;
+  return {rows:H,cols:W,
+    fit:function(){S.fit(W,H)},
+    grid:function(){var C=[];for(var i=0;i<H;i++)C.push(new Array(W).fill(' '));return C},
+    draw:function(C,r,c){
+      var h=Math.min(S.rows,H),w=Math.min(S.cols,W);
+      if(r<py||r>=py+h)py=r-(h>>1);
+      py=Math.max(0,Math.min(H-h,py));
+      if(c<px||c>=px+w)px=c-(w>>1);
+      px=Math.max(0,Math.min(W-w,px));
+      S.draw(C.slice(py,py+h).map(function(row){return (row.join?row.join(''):row).slice(px,px+w).trimEnd()}),r-py,c-px);
+    }};
+}
 function fullProgram(name,make){
   return function(a,raw,w){
     var last=[];
@@ -522,6 +307,7 @@ function Worm(S,done,argv,last){
   var start=atoi(argv[0]),LINES=S.rows,COLS=S.cols,HEAD='@',BODY='o',RUN=8;
   if(COLS<18||LINES<5)return tooSmall(S,done,last);
   if(start<=0||start>Math.trunc((LINES-3)*(COLS-2)/3))start=7;
+  if(start>(LINES-2-Math.trunc(LINES/2))*(COLS-5)-1)start=7; /* it folds down from the middle row: on a short glass it would run over the bottom border */
   var tv=[],growing=0,running=0,score=0,lastch='',body=[],timer=null,over=false,visible;
   var i,y,x;
   for(y=0;y<LINES-1;y++){
@@ -553,11 +339,11 @@ function Worm(S,done,argv,last){
     var L=[top];
     for(var y=0;y<LINES-1;y++)L.push(tv[y].join(''));
     var h=body[body.length-1];
-    S.draw(L,h.y+1,h.x);
+    B.draw(L,h.y+1,h.x);
   }
-  function arm(){clearTimeout(timer);timer=setTimeout(function(){process(lastch)},1000)}
+  function arm(){S.cancel(timer);timer=S.after(1000,function(){process(lastch)})}
   function finish(m){
-    over=true;clearTimeout(timer);
+    over=true;S.cancel(timer);
     S.close();
     last.push('');
     if(m)last.push(m);
@@ -565,7 +351,7 @@ function Worm(S,done,argv,last){
     done();
   }
   function step(ch){
-    clearTimeout(timer);
+    S.cancel(timer);
     var h=body[body.length-1],nx=h.x,ny=h.y;
     switch(ch){
       case 'ArrowLeft':case 'h':nx--;ch='h';break;
@@ -605,10 +391,11 @@ function Worm(S,done,argv,last){
     while(running&&!over){running--;step(lastch)}
     if(!over)draw();
   }
+  var B=board(S);
   prize();
   draw();
   arm();
-  return {draw:draw,feed:process};
+  return {draw:draw,resize:function(){B.fit();draw()},feed:process};
 }
 game('worm',fullProgram('worm',Worm));
 
@@ -635,9 +422,10 @@ function Robots(S,done,argv,last){
     me=rnd();
   }
   function init(){dead=false;waiting=false;score=0;level=Start;bx=[];make()}
+  var B=board(S);
   function draw(){
-    var C=S.grid(),y,x;
-    function put(r,c,t){for(var i=0;i<t.length;i++)if(r>=0&&r<S.rows&&c+i<S.cols)C[r][c+i]=t.charAt(i)}
+    var C=B.grid(),y,x;
+    function put(r,c,t){for(var i=0;i<t.length;i++)if(r>=0&&r<B.rows&&c+i<B.cols)C[r][c+i]=t.charAt(i)}
     put(0,0,'+'+'-'.repeat(XF-1)+'+');put(YF,0,'+'+'-'.repeat(XF-1)+'+');
     for(y=1;y<YF;y++){put(y,0,'|');put(y,XF,'|')}
     DESC.forEach(function(l,i){put(i,XF+2,l)});
@@ -650,7 +438,7 @@ function Robots(S,done,argv,last){
     if(dead)put(me.y,me.x,'AARRrrgghhhh....'.slice(0,Math.max(0,XF-me.x)));
     bx.forEach(function(t,i){put(DESC.length+1+i,XF+2,t)});
     if(query)put(YF-1,XF+2,query.q);
-    S.drawGrid(C,me.y,me.x);
+    B.draw(C,me.y,me.x);
     S.say(query?query.q:num+' robots, level '+level+', score '+score);
   }
   function eaten(p){
@@ -707,7 +495,7 @@ function Robots(S,done,argv,last){
     if(!dead)return;
     record();
     running=false;count=0;waiting=false;
-    if(--games>0){clearTimeout(timer);timer=setTimeout(function(){init();draw()},1200);return}
+    if(--games>0){S.cancel(timer);timer=S.after(1200,function(){init();draw()});return}
     query={q:'Another game?',fn:function(y){
       query=null;
       if(y){games=1;init();draw();return}
@@ -715,7 +503,7 @@ function Robots(S,done,argv,last){
     }};
   }
   function quit(){
-    over=true;clearTimeout(timer);
+    over=true;S.cancel(timer);
     last.push('Your best score was '+best);
     S.close();done();
   }
@@ -759,7 +547,7 @@ function Robots(S,done,argv,last){
       tele=true;
       draw();
       busy=true;
-      setTimeout(function(){tele=false;busy=false;if(over)return;afterMove();go()},600);
+      S.after(600,function(){tele=false;busy=false;if(over)return;afterMove();go()});
       return false;
     }
     if(c==='C-l')return false;
@@ -768,22 +556,22 @@ function Robots(S,done,argv,last){
   }
   var busy=false;
   function go(){ /* keep going by itself while running, counting or waiting */
-    clearTimeout(timer);
+    S.cancel(timer);
     if(over)return;
     draw();
     if(busy||dead||query)return;
     if(!running&&!waiting&&!count)return;
-    timer=setTimeout(function(){
+    timer=S.after(running?40:waiting?90:60,function(){
       if(over||busy||dead||query)return;
       if(waiting)afterMove();
       else if(running){var d=DIR[runch];if(doMove(d[0],d[1]))afterMove()}
       else if(count)act(cnt);
       go();
-    },running?40:waiting?90:60);
+    });
   }
   var digits='';
   init();draw();
-  return {draw:draw,feed:function(k){
+  return {draw:draw,resize:function(){B.fit();draw()},feed:function(k){
     if(k==='C-c'){quit();return}
     if(busy)return;
     if(query){
@@ -851,7 +639,7 @@ function Snake(S,done,argv,last){
     for(i=0;i<8;i++){
       var d={col:sp.col+MX[i],line:sp.line+MY[i]};
       wt[i]=0;
-      if(d.col<0||d.col>=ccnt||d.line<0||d.line>=lcnt||same(d,money)||same(d,finish))continue;
+      if(d.col<0||d.col>=ccnt||d.line<0||d.line>=lcnt||(d.line===0&&d.col<5)||same(d,money)||same(d,finish))continue;
       wt[i]=i===w?Math.trunc(loot/10):1;
       if(i===oldw)wt[i]+=Math.trunc(loot/20);
     }
@@ -862,24 +650,24 @@ function Snake(S,done,argv,last){
     oldw=i;
     return {col:sp.col+MX[i],line:sp.line+MY[i]};
   }
+  var B=board(S);
   function draw(){
-    var C=S.grid(),y;
-    function pc(p,c){var r=p.line+1,x=p.col+1;if(r>=0&&r<S.rows&&x>=0&&x<S.cols)C[r][x]=c}
+    var C=B.grid(),y;
+    function pc(p,c){var r=p.line+1,x=p.col+1;if(r>=0&&r<B.rows&&x>=0&&x<B.cols)C[r][x]=c}
     if(flash){
-      flash.split('').forEach(function(c,i){C[Math.trunc(S.rows/2)][Math.max(0,Math.trunc(S.cols/2)-8)+i]=c});
-      S.drawGrid(C,you.line+1,you.col+1);
+      flash.split('').forEach(function(c,i){C[Math.trunc(B.rows/2)][Math.max(0,Math.trunc(B.cols/2)-8)+i]=c});
+      B.draw(C,you.line+1,you.col+1);
       return;
     }
-    function edge(r,x,c){if(r<S.rows&&x<S.cols)C[r][x]=c} /* the glass may have shrunk since the game began */
-    for(y=1;y<=ccnt;y++){edge(0,y,'-');edge(lcnt+1,y,'-')}
-    for(y=0;y<=lcnt+1;y++){edge(y,0,'|');edge(y,ccnt+1,'|')}
+    for(y=1;y<=ccnt;y++){C[0][y]='-';C[lcnt+1][y]='-'}
+    for(y=0;y<=lcnt+1;y++){C[y][0]='|';C[y][ccnt+1]='|'}
     pc(finish,'#');pc(money,'$');
     for(y=5;y>=1;y--)pc(snake[y],'s');
     pc(snake[0],'S');
     if(cash()>0)('$'+cash()).split('').forEach(function(c,i){C[1][1+i]=c});
     pc(you,'I');
     overlay.forEach(function(o){pc(o,o.c)});
-    S.drawGrid(C,you.line+1,you.col+1);
+    B.draw(C,you.line+1,you.col+1);
     S.say('you $'+cash());
   }
   function post(){ /* best for each visitor name and the record, kept in this browser */
@@ -905,13 +693,13 @@ function Snake(S,done,argv,last){
     if(bonus){loot-=penalty;penalty=0}
     else penalty+=Math.trunc(loot/10);
     busy=true;flash=bonus?'BONUS!!!':'SPACE WARP!!!';draw();
-    setTimeout(function(){flash='';busy=false;if(!over)draw()},700);
+    S.after(700,function(){flash='';busy=false;if(!over)draw()});
   }
   function eaten(){
     busy=true;
     overlay=[{col:you.col,line:you.line,c:'@'}];
     draw();
-    setTimeout(function(){
+    S.after(900,function(){
       if(over)return;
       overlay=[];
       var i=cash()%10,b=ran(10);
@@ -919,7 +707,7 @@ function Snake(S,done,argv,last){
       last.push('');
       last.push(loot>=penalty?'You and your $'+cash()+' have been eaten':'The snake ate you.  You owe $'+(-cash())+'.');
       quit();
-    },900);
+    });
   }
   function push(){
     var tmp=snake[5];
@@ -939,12 +727,12 @@ function Snake(S,done,argv,last){
       for(k=0;k<j;k++){O.push({col:x.col,line:x.line,c:'#'});x.col--}
     }
     overlay=O;draw();
-    setTimeout(function(){
+    S.after(900,function(){
       if(over)return;
       last.push('You have won with $'+cash()+'.');
       post();
       quit();
-    },900);
+    });
   }
   function snap(){
     function stretch(t){
@@ -963,7 +751,7 @@ function Snake(S,done,argv,last){
     }
     overlay=stretch(money)||stretch(finish)||[{col:you.col,line:you.line,c:'?'}];
     busy=true;draw();
-    setTimeout(function(){overlay=[];busy=false;if(!over)draw()},500);
+    S.after(500,function(){overlay=[];busy=false;if(!over)draw()});
   }
   function step(c,n){
     for(var k=1;k<=n;k++){
@@ -986,13 +774,13 @@ function Snake(S,done,argv,last){
   snake=[snrand()];
   for(i=1;i<6;i++)snake.push(chase(snake[i-1]));
   draw();
-  return {draw:draw,feed:function(k){
+  return {draw:draw,resize:function(){B.fit();draw()},feed:function(k){
     if(over)return;
     if(k==='C-c'){quit();return}
     if(busy)return;
     if(/^[0-9]$/.test(k)){pending+=k;return}
     var c=k;
-    if(pending){repeat=+pending;pending=''}
+    if(pending){repeat=Math.min(+pending,999);pending=''} /* the C would spin for ever on a count it cannot finish */
     else if(c!=='.')repeat=1;
     if(c==='.')c=lastc;
     lastc=c;

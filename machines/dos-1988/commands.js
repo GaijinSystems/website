@@ -66,6 +66,7 @@ cmd(['dir'],'list files',function(a,raw,w){
   if(floppy(N[0]))return;
   var R=resolve(N[0]);
   if(!R.dir){P.typeLine('Path not found');return}
+  if(R.pat.indexOf('.')<0)R.pat+='.*'; /* DIR README is DIR README.* */
   var E=entries(R),L=['',' Volume in drive C is FROBOZZ',' Directory of  '+dosPath(R.at),''];
   if(R.at!=='/')E=['.','..'].concat(E);
   if(!E.length){L.push('File not found');P.say(L);return}
@@ -90,7 +91,7 @@ cmd(['type'],'print a file',function(a,raw,w){
   var n=P.find(N[0],true);
   if(!n||n.type==='d'){P.typeLine('File not found');return}
   if(n.prot){P.typeLine('Access denied');return}
-  if(n.bin){P.typeLine('MZ\u00901\u0001\u0002@\u00ff\u00ff\u00b8!L\u00cd!This program cannot be run on the glass.');return}
+  if(n.bin){P.typeLine('MZ\u00901\u263a\u263b@\u00ff\u00ff\u00b8!L\u00cd!This program cannot be run on the glass.');return}
   P.say(P.text(n));
 });
 cmd(['cd','chdir'],'change directory',function(a,raw,w){
@@ -140,7 +141,7 @@ cmd(['ren','rename'],null,function(a,raw,w){
   if(N.length<2){P.typeLine('Required parameter missing');return}
   var n=P.find(N[0],true),to=N[1].toLowerCase();
   if(!n||n.type==='d'){P.typeLine('File not found');return}
-  if(n.bin||n.prot||n.parent.kids[to]||/[\\\/:]/.test(to)){P.typeLine('Duplicate file name or File not found');return}
+  if(n.bin||n.prot||n.parent.kids[to]||/^\.|[\\\/:*?]/.test(to)){P.typeLine('Duplicate file name or File not found');return} /* no wildcards, and no name that is all extension, like .. */
   delete n.parent.kids[n.name];
   n.name=to;n.parent.kids[to]=n;
 });

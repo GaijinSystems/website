@@ -146,6 +146,7 @@ body{
 
 /* ---------- keys a phone does not have (see engine/phosphor.js) ---------- */
 #softkeys{position:absolute;z-index:6;right:6px;bottom:6px;display:flex;gap:4px}
+@media (pointer:coarse){#full{padding-bottom:max(calc(var(--fs)*1.9),42px)}} /* a full-screen program's last row stays above them */
 #softkeys button{
   font:13px/1 "VT323","Courier New",Courier,monospace;min-width:34px;min-height:30px;padding:0 6px;
   color:var(--phos);background:rgba(var(--phos-rgb),.08);border:1px solid rgba(var(--phos-rgb),.35);border-radius:3px;
@@ -163,6 +164,10 @@ body{
   #bezel{padding:12px 12px 22px;border-radius:16px 16px 22px 22px / 14px 14px 28px 28px}
   #bezel::after{bottom:-12px;width:28px;height:15px}
   .badge{display:none}
+  /* html.short (set by the engine): the keyboard leaves too little height for the glass and its cable,
+     so the cable is put away and the glass takes the room */
+  html.short{--sh:max(60px,calc(var(--app-h,100dvh) - 50px - env(safe-area-inset-top,0px)))}
+  html.short #bezel::after,html.short #cablewrap{display:none}
 }
 /* ---------- the fill command: the whole monitor, bezel and all, as big as the window allows (the
    glass stays 4:3), with the cable put away. The bezel is 1.079 x 0.842 of the glass width ---------- */
@@ -174,6 +179,17 @@ html.fill #stage{padding-top:0;justify-content:flex-start}
      sides and top, 22px at the bottom) */
   html.fill{--sw:calc(100vw - 24px);--sh:calc(var(--app-h,100dvh) - 34px - env(safe-area-inset-top,0px))}
   html.fill #stage{padding-top:env(safe-area-inset-top,0px);justify-content:flex-start}
+}
+/* a phone on its side: too short for the desktop's monitor, so the phone's bezel across the whole width,
+   with no cable; text sized so that about 24 lines would fill the glass */
+@media (pointer:coarse) and (max-height:500px) and (min-width:641px){
+  :root{--sw:calc(100vw - 30px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px));
+    --sh:calc(var(--app-h,100dvh) - 50px - env(safe-area-inset-top,0px));--fs:clamp(13px,calc(var(--sh) / 24),17px)}
+  #stage{padding-top:calc(8px + env(safe-area-inset-top,0px))}
+  #bezel{padding:12px 12px 22px;border-radius:16px 16px 22px 22px / 14px 14px 28px 28px}
+  #bezel::after,#cablewrap,.badge{display:none}
+  html.fill{--sw:calc(100vw - 24px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px));--sh:calc(var(--app-h,100dvh) - 34px - env(safe-area-inset-top,0px))}
+  html.fill #stage{padding-top:env(safe-area-inset-top,0px)}
 }
 /* ---------- lite effects (the effects command; auto picks them for a browser that draws without a graphics
    chip): the same look for much less drawing. One small glow, the band stepped five times a second and not

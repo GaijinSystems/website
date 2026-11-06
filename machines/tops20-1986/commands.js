@@ -117,10 +117,11 @@ function runFile(r,a){ /* r from find1: start what is behind it, with the rest o
   var nm=r.e.name;
   if(r.abs==='/games'&&P.has(GAMEMAP,nm)&&P.has(P.cmds,GAMEMAP[nm])){P.cmds[GAMEMAP[nm]]([],GAMEMAP[nm],[GAMEMAP[nm]]);return}
   if(r.abs==='/subsys'&&P.has(PROG,nm)){PROG[nm](a||[]);return}
-  if(r.abs==='/games'){err('?Games may not be played during prime time');return}
+  if(r.abs==='/games'){err(prime()?'?Games may not be played during prime time':'?Load average too high for games - try again later');return}
   if(r.e.ext!=='exe'||!r.e.node.bin){err('?File is not in SAVE or EXE format');return}
   err('?Execute access required - "'+dirName(r.abs)+show(r.e)+'"');
 }
+function prime(){var d=P.now(),h=d.getHours();return d.getDay()>0&&d.getDay()<6&&h>=8&&h<18} /* weekdays, eight to six */
 function program(spec,where){ /* the name alone looks in SYS:, a name with a device or directory where it says */
   var S=parse(spec),plain=!S.dev&&!/[<\[]/.test(spec);
   return find1(plain&&where?where+':'+spec:spec,{ext:'exe'});
@@ -287,7 +288,9 @@ cmd('COPY','(FROM)','file',function(a){
   var r=find1(src,{ext:''});
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
   if(r.e.node.prot||r.e.node.type==='d'){err('?Read access required - "'+dirName(r.abs)+show(r.e)+'"');return}
-  var T=parse(dst),dd={name:T.name==='*'||!T.name?r.e.name:T.name,ext:T.ext===null||T.ext==='*'?r.e.ext:T.ext};
+  var T=parse(dst);
+  if(!T.name&&T.ext!==null){err('?Filename was not specified - "'+up(dst)+'"');return} /* .DOC: a type, and no name to keep */
+  var dd={name:T.name==='*'||!T.name?r.e.name:T.name,ext:T.ext===null||T.ext==='*'?r.e.ext:T.ext};
   var to=(dst.match(/^(.*?[:>\]])?/)[1]||'')+dd.name+'.'+dd.ext,got=writeNew(to,P.text(r.e.node));
   if(got)P.typeLine(' '+show(r.e)+' => '+show(got)+' [OK]');
 },{args:['file','file'],then:'(TO)'});
@@ -297,8 +300,10 @@ cmd('RENAME','(EXISTING FILE)','file',function(a){
   var r=find1(a[0],{ext:''});
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
   var T=parse(a[1]),d=folder(T.dirs[0]);
+  if(!T.name&&T.ext!==null){err('?Filename was not specified - "'+up(a[1])+'"');return}
+  if(r.e.node.type==='d'){err('?Directory access privileges required - "'+up(a[0])+'"');return}
   if(!d||r.e.node.prot||!mine(r.abs)||!mine(T.dirs[0])){err('?Rename access required - "'+show(r.e)+'"');return}
-  var ext=T.ext===null?r.e.ext:T.ext,g=nextGen(d,T.name,ext),k=T.name+'.'+ext+'.'+g,n=r.e.node;
+  var name=!T.name||T.name==='*'?r.e.name:T.name,ext=T.ext===null||T.ext==='*'?r.e.ext:T.ext,g=nextGen(d,name,ext),k=name+'.'+ext+'.'+g,n=r.e.node; /* as COPY: <DIR> alone keeps the old name */
   delete r.dir.kids[r.e.key];n.name=k;n.parent=d;d.kids[k]=n;
   P.typeLine(' '+show(r.e)+' => '+up(k)+' [OK]');
 },{args:['file','file'],then:'(TO BE)'});

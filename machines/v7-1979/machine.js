@@ -32,7 +32,7 @@ KEYBOARD      | DETECTED (YOURS)  | 300
 
 == boot ==
 Boot @300
-: rp(0,0)unix @500
+: hp(0,0)unix @500
 mem = 1032192 @400
 ~ (going multi-user) @400
 
@@ -41,14 +41,14 @@ unix/v7 (pdp-11/70)
 mem = 1032192
 avail mem = 917504
 rk0 at 177400 vector 220
-rp0 at 176700 vector 254: rm03
+hp0 at 176700 vector 254: rp06
 dz0 at 160100 vector 300: 8 lines
 lp0 at 177514 vector 200
 tty0: phosphor-9 video terminal, 9600 baud
 tty0: p1 phosphor, 525 lines, 24 kv
 tty0: keyboard detected (yours)
 ~ lp0: out of paper
-root on rp0, swap on rp0
+root on hp0, swap on hp0
 
 # show  pid  tty  time  command.  show: x = listed by ps x, a = by ps a, - = always
 == ps ==

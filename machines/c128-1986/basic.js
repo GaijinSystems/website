@@ -135,7 +135,7 @@ function Basic(m,seven){
 var B=Basic.prototype;
 B.clr=function(){
   this.vars=Object.create(null);this.arrs=Object.create(null);this.fns=Object.create(null);
-  this.stack=[];this.dataLi=0;this.dataP=-1;this.dataBuf=null;this.st=0;
+  this.stack=[];this.dataLi=0;this.dataP=-1;this.dataBuf=null;this.st=0;this.fnDepth=0;
   this.closeAll();
 };
 B.closeAll=function(){this.files={};this.cmdLfn=0;if(this.m.drive)this.m.drive.closeAll()};
@@ -153,7 +153,7 @@ B.store=function(n,bytes){
   this.clr();this.cont=null;
 };
 B.prg=function(){return linked(this.v7?0x1c01:0x801,this.prog)}; /* the program as a file */
-B.loadPrg=function(u){ /* false if it is not a BASIC program */
+B.loadPrg=function(u){ /* a program file's lines become the program; what else goes is up to the caller */
   var L=[],i=2;
   while(i+3<u.length){
     if(u[i]===0&&u[i+1]===0)break;
@@ -161,10 +161,18 @@ B.loadPrg=function(u){ /* false if it is not a BASIC program */
     while(j<u.length&&u[j]!==0)b.push(u[j++]);
     L.push({n:n,b:b});i=j+1;
   }
-  this.prog=L;this.clr();this.cont=null;
-  return true;
+  this.prog=L;this.cont=null;
 };
 B.size=function(){var s=2;this.prog.forEach(function(l){s+=l.b.length+5});return s};
+/* room on the stack for one more FOR, GOSUB or DO, as VICE measured it: BASIC 7.0 has 512 bytes for them (18 a FOR,
+   5 the others) and takes 66 GOSUBs at most, FORMULA TOO COMPLEX past that; the C64 takes 10 FORs or 23 GOSUBs */
+var FRAME7={'for':18,gosub:5,'do':5},FRAME2={'for':18,gosub:8};
+B.room=function(t){
+  var size=this.v7?FRAME7:FRAME2,used=size[t],subs=0;
+  this.stack.forEach(function(f){used+=size[f.t];if(f.t==='gosub')subs++});
+  if(this.v7&&t==='gosub'&&subs>=66)err(E.complex);
+  if(used>(this.v7?512:190))err(E.mem);
+};
 /* ---------- reading the tokens ---------- */
 B.at=function(){ /* the byte under the text pointer, past spaces; 0 at the end of the line */
   while(this.p<this.buf.length&&this.buf[this.p]===32)this.p++;
@@ -347,9 +355,10 @@ B.fn=function(){
   if(this.at()!==40)err(E.syntax);this.p++;
   var x=this.num();this.need(41);
   if(!f)err(E.fn);
+  if(this.fnDepth>=20)err(this.v7?E.complex:E.mem); /* a function that calls itself: what the real ones say */
   var keep={buf:this.buf,p:this.p},had=f.param in this.vars,old=this.vars[f.param];
-  this.vars[f.param]=x;this.buf=f.buf;this.p=f.p;
-  try{var v=this.num()}finally{if(had)this.vars[f.param]=old;else delete this.vars[f.param];this.buf=keep.buf;this.p=keep.p}
+  this.vars[f.param]=x;this.buf=f.buf;this.p=f.p;this.fnDepth++;
+  try{var v=this.num()}finally{this.fnDepth--;if(had)this.vars[f.param]=old;else delete this.vars[f.param];this.buf=keep.buf;this.p=keep.p}
   return v;
 };
 B.func=function(t){
@@ -446,7 +455,7 @@ B.ready=function(){
   this.say('\rREADY.\r');
   this.m.ready();
 };
-B.error=function(n,where){
+B.error=function(n){
   if(this.state==='run'&&this.li>=0&&this.trap!==null&&n!==E.directonly){ /* TRAP */
     var to=this.index(this.trap);
     this.erN=n;this.elN=this.line();this.resumeAt={li:this.li,p:this.stmt,buf:this.buf};
@@ -457,6 +466,7 @@ B.error=function(n,where){
   var ln=this.li>=0&&(this.state==='run'||this.state==='input'||this.state==='wait')?this.line():-1;
   this.erN=n;this.elN=ln<0?65535:ln;
   if(n===E.brk){
+    this.m.silence();this.voiceEnd=null; /* RUN/STOP: the tones stop, PLAY's queued notes with them */
     this.say((this.v7?'\r\r':'\r')+'BREAK'+(ln>=0?' IN '+ln:''));
     if(ln>=0)this.cont={li:this.li,p:this.stmt,buf:this.buf};
   }else{
@@ -578,7 +588,7 @@ st2[0x81]=function(){ /* FOR */
   var lim=this.num(),step=this.is(0xA9)?this.num():1;
   this.need58();
   for(var i=this.stack.length-1;i>=0;i--){var f=this.stack[i];if(f.t==='gosub')break;if(f.t==='for'&&f.v===n){this.stack.splice(i);break}}
-  if(this.stack.length>=24)err(E.mem);
+  this.room('for');
   this.stack.push({t:'for',v:n,lim:lim,step:step,at:this.here()});
   return false;
 };
@@ -647,7 +657,7 @@ st2[0x8C]=function(){ /* RESTORE */
 st2[0x8D]=function(){ /* GOSUB */
   var n=this.lineNum();if(n<0)err(E.syntax);
   this.toEndOfStatement();var back=this.here();
-  if(this.stack.length>=24)err(E.mem);
+  this.room('gosub');
   this.goLine(n);
   this.stack.push({t:'gosub',at:back});
   return false;
@@ -669,7 +679,7 @@ st2[0x91]=function(){ /* ON */
   if(L.some(function(n){return n<0}))err(E.syntax);
   if(x<1||x>L.length)return;
   if(t===0x89){this.goLine(L[x-1]);return false}
-  this.toEndOfStatement();var back=this.here();this.goLine(L[x-1]);this.stack.push({t:'gosub',at:back});return false;
+  this.toEndOfStatement();var back=this.here();this.room('gosub');this.goLine(L[x-1]);this.stack.push({t:'gosub',at:back});return false;
 };
 st2[0x92]=function(){ /* WAIT */
   var a=this.int(0,65535);this.need(44);var mask=this.byte(),x=this.is(44)?this.byte():0,self=this;
@@ -1022,9 +1032,11 @@ B.diskLoad=function(name,shown,run,quietly){ /* SEARCHING FOR, LOADING, and the 
       self.got=u;if(direct&&!quietly)self.say('\rLOADING');t0=self.m.ms();return false}
     if(self.m.ms()-t0<120+C.blocks({data:self.got})*30)return false;
     self.loadPrg(self.got);self.got=null;
+    if(run||direct)self.clr();
     if(run){self.state='run';if(!self.prog.length){self.ready();return false}self.li=0;self.buf=self.prog[0].b;self.p=0;if(!quietly)self.say('\r');return false}
-    if(direct){self.cont=null;self.ready();return false}
+    if(direct){self.ready();return false}
     self.li=0;self.buf=self.prog.length?self.prog[0].b:[];self.p=0;self.stack=[];self.state='run'; /* LOAD in a program runs the new one, keeping the variables */
+    self.dataLi=0;self.dataP=-1;self.dataBuf=null;
     return true;
   };
   throw WAIT;
@@ -1088,7 +1100,13 @@ st7[0xD8]=function(){this.trace=true};st7[0xD9]=function(){this.trace=false};
 st7[0xDA]=function(){ /* SOUND voice,freq,dur[,dir,min,sweep,wave,pulse] */
   var v=this.int(1,3);this.need(44);var f=this.int(0,65535);this.need(44);var d=this.int(0,32767),a=[0,0,0,2,2048];
   for(var i=0;i<5&&this.is(44);i++)if(this.at()!==44&&!this.end())a[i]=this.int(0,65535);
-  this.m.sound(v,f*0.0609594,d/60,a[3],this.volume);
+  this.need58();
+  var self=this,go=function(){ /* a voice still sounding is waited for, as the real one waits */
+    var now=self.m.ms(),E0=self.voiceEnd=self.voiceEnd||[0,0,0,0];
+    if(now<E0[v])return false;
+    E0[v]=now+d*1000/60;self.m.sound(v,f*0.0609594,d/60,a[3],self.volume);return true;
+  };
+  if(!go()){this.state='wait';this.waitFor=go;throw WAIT}
 };
 st7[0xDB]=function(){this.volume=this.int(0,15)}; /* VOL */
 st7[0xDC]=function(){this.autoStep=this.end()?0:this.int(0,63999)}; /* AUTO */
@@ -1120,6 +1138,7 @@ st7[0xEB]=function(){ /* DO */
   var at=this.here();at.p=this.stmt;
   if(this.is(0xFD)){if(!this.truth()){this.scan(0xEB,0xEC,E.loopnf);this.skipCond();return false}}
   else if(this.is(0xFC)){if(this.truth()){this.scan(0xEB,0xEC,E.loopnf);this.skipCond();return false}}
+  this.room('do');
   this.stack.push({t:'do',at:at});
 };
 B.truth=function(){var v=this.expr();return v!==0&&v!==''};
@@ -1201,13 +1220,18 @@ st7[0xFE0C]=function(){this.directory();return false}; /* CATALOG */
 st7[0xFE0D]=function(){ /* DOPEN#lfn,"NAME"[,W] */
   this.need(35);var lfn=this.byte();this.need(44);var n=this.fileName(),w=false;
   while(this.is(44)){var c=this.at();if(c===87){this.p++;w=true}else if(c===68){this.p++;this.int(0,1)}else if(c===85){this.p++;this.int(8,8)}else if(c===76){this.p++;this.byte()}else err(E.syntax)}
+  this.dOpen(lfn,n+(w?',S,W':',S,R'));
+};
+st7[0xFE0E]=function(){this.need(35);var lfn=this.byte();this.need(44);var n=this.fileName();this.dArgs();this.dOpen(lfn,n+',S,A')}; /* APPEND */
+B.dOpen=function(lfn,spec){ /* DOPEN and APPEND: the first channel free on the drive */
   if(this.files[lfn])err(E.open);
-  var sa=2;for(var k in this.files)if(this.files[k].dev===8&&this.files[k].sa===sa)sa++;
-  this.m.drive.open(sa,n+(w?',S,W':',S,R'));
+  if(Object.keys(this.files).length>=10)err(E.files);
+  var used={},sa=2;for(var k in this.files)if(this.files[k].dev===8)used[this.files[k].sa]=1;
+  while(used[sa])sa++;
+  if(sa>14)err(E.files);
+  this.m.drive.open(sa,spec);
   this.files[lfn]={dev:8,sa:sa};
 };
-st7[0xFE0E]=function(){this.need(35);var lfn=this.byte();this.need(44);var n=this.fileName();this.dArgs();
-  if(this.files[lfn])err(E.open);this.m.drive.open(3+lfn%10,n+',S,A');this.files[lfn]={dev:8,sa:3+lfn%10}}; /* APPEND */
 st7[0xFE0F]=function(){ /* DCLOSE */
   if(this.is(35)){this.close(this.byte());return}
   var self=this;Object.keys(this.files).forEach(function(k){if(self.files[k].dev===8)self.close(+k)});

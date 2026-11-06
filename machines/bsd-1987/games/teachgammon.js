@@ -137,8 +137,14 @@ P.command({names:['teachgammon'],run:function(a,raw,words){
     }
     function CEput(){if(G[tr])for(var x=tc;x<CO;x++)G[tr][x]=' '}
     function CDput(){CEput();for(var y=tr+1;y<LI;y++)G[y]=blankline()}
-    function view(){
-      S.draw(G.slice(0,S.rows).map(function(L){return L.slice(0,S.cols).join('').trimEnd()}),Math.max(0,Math.min(tr,S.rows-1)),Math.max(0,Math.min(tc,S.cols-1)));
+    var pan_y=0,pan_x=0;
+    function view(){ /* as backgammon's: narrower or shorter than the screen, the view follows the cursor */
+      var rows=Math.min(S.rows,LI),cols=Math.min(S.cols,CO),cy=Math.max(0,Math.min(tr,LI-1)),cx=Math.max(0,Math.min(tc,CO-1));
+      if(cy<pan_y||cy>=pan_y+rows)pan_y=cy-(rows>>1);
+      pan_y=Math.max(0,Math.min(LI-rows,pan_y));
+      if(cx<pan_x||cx>=pan_x+cols)pan_x=cx-(cols>>1);
+      pan_x=Math.max(0,Math.min(CO-cols,pan_x));
+      S.draw(G.slice(pan_y,pan_y+rows).map(function(L){return L.slice(pan_x,pan_x+cols).join('').trimEnd()}),cy-pan_y,cx-pan_x);
     }
     /* fancy.c: it keeps where it means to be apart from where the cursor is */
     var curr=0,curc=0,realr=0,realc=0,begscr=0,linect=zero(LI+1),oldb=zero(26),oldr=0,oldw=0;
@@ -1008,6 +1014,6 @@ P.command({names:['teachgammon'],run:function(a,raw,words){
     };
     step();
     return api;
-  },{tty:'teachgammon'});
+  },{tty:'teachgammon',fit:[CO,LI]});
 }});
 })(window.Phosphor);

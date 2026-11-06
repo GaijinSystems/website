@@ -207,7 +207,7 @@ function ref(forDim){ /* a variable or an array element: {get,set,name} */
 function has(o,k){return Object.prototype.hasOwnProperty.call(o,k)}
 function mkArray(n,d){
   var size=d.reduce(function(a,x){return a*(x+1)},1);
-  if(size>20000)E('OM');
+  if(38400-2049-progSize()-varSize()-(5+2*d.length+size*(isStr(n)?3:isInt(n)?2:5))<0)E('OM'); /* as FRE counts it */
   var v=new Array(size).fill(isStr(n)?'':0);
   return {dims:d,v:v};
 }
@@ -222,8 +222,8 @@ function num(){var v=expr();if(typeof v==='string')E('TM');return v}
 function str(){var v=expr();if(typeof v!=='string')E('TM');return v}
 var depth=0;
 function expr(){ /* OR, AND, NOT, relations, + -, * /, ^, then the signs and the values */
-  if(++depth>36){depth=0;E('ST')}
-  try{return orx()}finally{depth--}
+  depth++;
+  try{if(depth>36)E('ST');return orx()}finally{depth--}
 }
 function orx(){var a=andx();while(at()===T.OR){next();var b=andx();a=(truth(a)||truth(b))?1:0}return a}
 function andx(){var a=rel();while(at()===T.AND){next();var b=rel();a=(truth(a)&&truth(b))?1:0}return a}
@@ -690,6 +690,7 @@ function caught(x){ /* true: carry on running */
 }
 function step(budget){ /* run until the budget is spent, input is wanted, or it is over: 'more', 'wait', 'done' */
   spent=0;
+  var stmts=0; /* a loop that prints nothing still gives the page its turn */
   for(;;){
     if(want)return 'wait';
     try{
@@ -703,7 +704,7 @@ function step(budget){ /* run until the budget is spent, input is wanted, or it 
         continue;
       }
       if(!cur)return 'done';
-      if(spent>=budget||(speed<255&&spent>0))return 'more';
+      if(spent>=budget||(speed<255&&spent>0)||stmts>=3000)return 'more';
       var c=at();
       if(c===58){next();continue}
       if(c===0){
@@ -713,14 +714,15 @@ function step(budget){ /* run until the budget is spent, input is wanted, or it 
         cur=prog[line].t;pos=0;
         continue;
       }
-      if(running&&M.broken()){
+      var b=running&&M.broken();
+      if(b){
         stmtStart=pos;
-        if(trap(255,prog[line].n))continue;
+        if(b!=='hard'&&trap(255,prog[line].n))continue;
         brk();return 'done';
       }
       stmtStart=pos;
       if(trace&&running)out('#'+prog[line].n+' ');
-      jumped=false;
+      jumped=false;stmts++;
       var r=stmt();
       if(r&&r.wait){want=r;return 'wait'}
       if(cur&&!jumped&&!endStmt())E('SN');

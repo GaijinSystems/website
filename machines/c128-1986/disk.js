@@ -111,14 +111,17 @@ D.scratch=function(pats){
   this.set(1,n);this.keep();return n;
 };
 D.rename=function(to,from){
-  if(this.find(to,'')){return this.set(63)}
+  to=to.slice(0,16);
+  if(!to||/[*?,:=]/.test(to))return this.set(to?33:34);
+  if(this.named(to))return this.set(63);
   var f=this.named(from);
   if(!f)return this.set(62);
   if(f.prot)return this.set(26);
   if(f.factory){delete f.factory;this.gone.push(from)}
-  f.name=to.slice(0,16);this.set(0);this.keep();return 0;
+  f.name=to;this.set(0);this.keep();return 0;
 };
 D.copy=function(to,from){
+  if(from.charAt(0)==='$')return this.set(62); /* the directory is not a file to copy */
   var f=this.load(from);
   if(!f)return this.status[0];
   var src=this.find(this.parse(from).name,'');
@@ -164,9 +167,10 @@ D.open=function(sa,spec){
   if(!p.name){return this.set(34)}
   if(wr){
     var ex=this.find(p.name,'');
-    if(p.mode==='A'){if(!ex)return this.set(62);this.channels[sa]={write:true,name:ex.name,type:ex.type,data:Array.from(ex.data),replace:true};return this.set(0)}
+    var room=(this.free()+(ex&&(p.at||p.mode==='A')?blocks(ex):0))*254; /* what fits on the disk */
+    if(p.mode==='A'){if(!ex)return this.set(62);this.channels[sa]={write:true,name:ex.name,type:ex.type,data:Array.from(ex.data),replace:true,room:room};return this.set(0)}
     if(ex&&!p.at)return this.set(63);
-    this.channels[sa]={write:true,name:p.name,type:p.type||(sa===1?'PRG':'SEQ'),data:[],replace:p.at};
+    this.channels[sa]={write:true,name:p.name,type:p.type||(sa===1?'PRG':'SEQ'),data:[],replace:p.at,room:room};
     return this.set(0);
   }
   var f=this.find(p.name,p.type);
@@ -187,13 +191,14 @@ D.put=function(sa,b){
   var ch=this.channels[sa];
   if(sa===15){ch=this.channels[15]=this.channels[15]||{cmd:true,out:''};if(b===13){this.command(ch.out);ch.out=''}else ch.out+=String.fromCharCode(b);return true}
   if(!ch||!ch.write)return false;
+  if(ch.data.length>=ch.room){ch.full=true;this.set(72);return true} /* the disk is full: the byte is lost */
   ch.data.push(b);return true;
 };
 D.close=function(sa){
   var ch=this.channels[sa];
   delete this.channels[sa];
   if(sa===15){if(ch&&ch.out)this.command(ch.out);return}
-  if(ch&&ch.write)this.write(ch.name,ch.type,new Uint8Array(ch.data),ch.replace);
+  if(ch&&ch.write&&this.write(ch.name,ch.type,new Uint8Array(ch.data),ch.replace)&&ch.full)this.set(72);
 };
 D.closeAll=function(){var self=this;Object.keys(this.channels).forEach(function(k){if(+k!==15)self.close(+k)});this.channels={}};
 C.Drive=Drive;C.bytes=bytes;C.blocks=blocks;

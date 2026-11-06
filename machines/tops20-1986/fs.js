@@ -1,6 +1,7 @@
 /* PHOSPHOR-9 terminal: machine "tops20-1986", structure PS:. Files have generations: NAME.TYP.n,
    and <DIR.SUB> is the folder /dir/sub. The names in <GAMES> are the ones a real DEC-20 site of the
-   time kept there (SRI-NIC's, as its tapes show); those with no program behind them refuse in prime time.
+   time kept there (SRI-NIC's, as its tapes show); those with no program behind them refuse in prime time,
+   and on the load average after it.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 Phosphor.setup(function(P){
   'use strict';

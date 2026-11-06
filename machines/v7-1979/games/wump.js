@@ -1,7 +1,9 @@
 /* PHOSPHOR-9 terminal: machine "v7-1979", wump, hunt the wumpus. Ported to JavaScript for this terminal from V7's
    usr/src/games/wump.c. The binary on the V7 tape is older than that source, and where they differ this follows the
    binary, checked under a simulator: one line of the instructions, and the rand() it was linked with, which is the
-   Sixth Edition's. The source is under this notice:
+   Sixth Edition's. 4.3BSD ("bsd-1987") runs it too, as 4.3BSD's wump.c 4.1 has it, which its binary matches: the
+   source's two lines in place of that one, its own rand(), "Another game?" and "Same room setup?" taken as yes unless
+   the answer starts with n, and what is waiting to be read thrown away before each. The source is under this notice:
 
 Copyright(C) Caldera International Inc. 2001-2002. All rights reserved.
 
@@ -48,11 +50,20 @@ var INTRO=[
 '\tIf the arrow hits the wumpus, you win!','\tIf the arrow hits you, you lose!','','Warnings:','','When you are one or two rooms away from the wumpus,','the computer says:',
 "\t\t'I smell a Wumpus'",'When you are one room away from some other hazard, it says:',"\t\tBat    - 'Bats nearby'","\t\tPit    - 'I feel a draft'",''];
 P.command({names:['wump'],run:function(){
-  var rand=null,room=[],arrow,loc,wloc,tchar,i;
+  var bsd=P.machine==='bsd',rand=null,room=[],arrow,loc,wloc,tchar,i;
   for(i=0;i<NROOM;i++)room.push({tunn:[-1,-1,-1],flag:0});
   function rnum(n){
+    var t=Math.floor(Date.now()/1000);
+    if(bsd){ /* time() into short first[2], low half first on the VAX; srand((first[1]*first[0])^first[1]); rand()/2^31 */
+      if(!rand){
+        var x=t<<16>>16,y=(t>>16)<<16>>16||1;
+        x=Math.imul(y,x)^y;
+        rand=function(){x=(Math.imul(x,1103515245)+12345)&0x7fffffff;return x};
+      }
+      return Math.trunc(rand()/2147483648*n);
+    }
     if(!rand){ /* srand((first[1]*first[0])^first[1]), in 16-bit ints */
-      var t=Math.floor(Date.now()/1000),lo=t&0xffff,hi=Math.floor(t/65536)&0xffff;
+      var lo=t&0xffff,hi=Math.floor(t/65536)&0xffff;
       rand=P.v6rand(Math.imul(lo,hi)^lo);
     }
     return Math.trunc(rand()/32768*n);
@@ -179,19 +190,25 @@ P.command({names:['wump'],run:function(){
         }
       }
     }
+    function* yes(q){ /* V7 wants a y; 4.3BSD drains the input first, and takes anything but n */
+      if(bsd)io.drain();
+      io.print(q);
+      var r=yield* rline();
+      return bsd?r!=='n':r==='y';
+    }
     try{
       io.print('Instructions? (y-n) ');
-      if((yield* rline())==='y')io.print(INTRO.join('\n')+'\n');
+      var intro=INTRO.join('\n')+'\n';
+      if(bsd)intro=intro.replace("\tthe arrow's path - a list of room numbers.","\tThe arrow's path is a list of room numbers\n\ttelling the arrow which room to go to next.");
+      if((yield* rline())==='y')io.print(intro);
       var again=true;
       while(again){
         init();
         for(;;){
           setup();
           yield* play();
-          io.print('Another game? (y-n) ');
-          if((yield* rline())!=='y'){again=false;break}
-          io.print('Same room setup? (y-n) ');
-          if((yield* rline())!=='y')break;
+          if(!(yield* yes('Another game? (y-n) '))){again=false;break}
+          if(!(yield* yes('Same room setup? (y-n) ')))break;
         }
       }
     }catch(e){if(e!==END)throw e}
