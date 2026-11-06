@@ -13,7 +13,7 @@ function get(k){ /* a long name means its first eight and three, and so does a f
   return n&&(n.user||0)===user?n:undefined;
 }
 function write(k,L,full){ /* full: what to say when the name is another user area's (one name, one file here) */
-  k=P.fcb.cut(k); /* a new file's name is cut to eight and three, as the FCB holds it */
+  var g=get(k);k=g?g.name:P.fcb.cut(k); /* the file its eight and three find, or a new one cut to them, as the FCB holds it */
   var o=P.root.kids[k];
   if(o&&!o.prot&&(o.user||0)!==user){P.typeLine(full||'NO DIRECTORY SPACE');return}
   if(!P.writeFile(k,L,false)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
@@ -71,7 +71,7 @@ cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD *
   var n=get(q[2]),to=P.fcb.cut(q[1]);
   if(!n){P.typeLine('NO FILE');return}
   if(n.prot){P.typeLine('BDOS ERR ON A: FILE R/O');return}
-  if(P.root.kids[to]){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
+  if(P.root.kids[to]||get(q[1])){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
   delete P.root.kids[n.name];n.name=to;P.root.kids[to]=n;
 });
 cmd(['user'],null,function(a,raw,w){

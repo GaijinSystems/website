@@ -164,9 +164,9 @@ P.program(function(S){
     var L=[
       '',
       'DIRECTORY        WHAT IS ON THE DISK',
-      'DLOAD"NAME"      LOAD A PROGRAM, THEN RUN',
+      'DLOAD"NAME"      LOAD A PROGRAM',
       'LIST, NEW        SEE IT, THROW IT AWAY',
-      'DSAVE"NAME"      KEEP IT (IN THIS BROWSER)',
+      'DSAVE"NAME"      KEEP IT IN THE BROWSER',
       'GO 64            BE A COMMODORE 64',
       'ESC THEN X       40 OR 80 COLUMNS',
       'CTRL-C (TWICE)   RUN/STOP (+RESTORE)',

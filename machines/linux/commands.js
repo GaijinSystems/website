@@ -119,7 +119,7 @@ cmd('history','','display the command history','history [-c] [-d offset] [n]','l
       H.splice(at,1);P.setHist(H);return;
     }
     if(f==='s'){if(a.length>1){H.pop();H.push(a.slice(1).join(' '));P.setHist(H)}return} /* in place of the history -s line itself */
-    if(f==='p'){H.pop();P.setHist(H);lines(a.slice(1));return} /* nor is the history -p line kept */
+    if(f==='p'){if(a.length>1&&!P.subshell()){H.pop();P.setHist(H)}lines(a.slice(1));return} /* nor is the history -p line kept, unless bare or in a pipeline or $(...) */
     return; /* -a -n -r -w: to and from ~/.bash_history, which shows nothing */
   }
   if(a.length>1){bad('too many arguments',1);return}
