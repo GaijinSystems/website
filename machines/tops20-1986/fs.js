@@ -16,6 +16,8 @@ Phosphor.setup(function(P){
   f('/system/6-1-config.cmd.1',['TERMINAL 12 SPEED 9600','ENABLE LOGINS'],{prot:true});
   f('/system/monnam.txt.1',['DEC20, TOPS-20 Monitor 6.1(7030)']);
   f('/system/login.cmd.1',['DEFINE GAMES: PS:<GAMES>','DEFINE HLP: PS:<HELP>']);
+  /* what SYSJOB has PTYCON type at startup, to log in the OPR job: OPERATOR's password, in a file anyone may read */
+  f('/system/ptycon.ato.1',['SILENCE','LOG PTYCON.LOG','DEFINE 0 OPR','CONNECT 0','LOGIN OPERATOR '+String(P.profile.rootPassword||'').toUpperCase()+' OPERATOR','ENABLE','OPR']);
   [['mm',236],['finger',18],['kermit',61],['emacs',164],['edit',39],['macro',88],['link',97],['fortra',212],['pascal',143],['dumper',31],['filcom',12],['sysdpy',22],['mail',41],['rdmail',27]].forEach(function(x){exe('/subsys/'+x[0]+'.exe.1',x[1])});
   [['adventure',112],['old-adventure',74],['dungeon',96],['bkg',23],['brkout',14],['chess',38],['crime',61],['lugi',29],['moles',11],['startrek',44],['tech2',87],['sign',6]].forEach(function(x){exe('/games/'+x[0]+'.exe.1',x[1])});
   exe('/games/dtext.dat.1',41);

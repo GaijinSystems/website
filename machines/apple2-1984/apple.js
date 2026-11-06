@@ -519,9 +519,21 @@ function afterMonCpu(why){
 /* ---------- BASIC: the ] prompt, and running ---------- */
 function basicPrompt(){cr();prompt()}
 function prompt(){mode='busy';getln(']',immediate)}
+/* the terminal's own jokes, typed at the ] prompt only (in a program, BASIC has them as it always did):
+   the line, its spaces ignored, and what is said instead */
+var JOKES=[
+  [/^(XYZZY|PLUGH)$/,['A hollow voice says "Fool."']], /* as Zork on the disk says it */
+  [/^(PR|IN)#7$/,['NOTHING IN SLOT 7. THE CARD IS ON','BACK-ORDER: ALLOW SIX TO EIGHT WEEKS.']] /* a real empty slot hangs the machine */
+];
+function joke(text){
+  var u=text.replace(/ /g,'').toUpperCase(),j=JOKES.filter(function(x){return x[0].test(u)})[0];
+  if(!j)return false;
+  j[1].forEach(function(s){cr();say(s)});basicPrompt();return true;
+}
 function immediate(text){
   var w=(text.match(/^[A-Z]+/)||[''])[0],rest=text.slice(w.length);
   if(phosphor()&&w&&TERMINAL[w]&&!/^\s*=/.test(rest)){terminal(w,rest.trim(),function(){prompt()});return}
+  if(joke(text))return;
   var r;
   try{r=dos(text,false)}catch(e){if(e&&e.dos!==undefined){dosMessage(e.dos);basicPrompt();return}throw e}
   if(r!==null){afterDos(r,false,function(){prompt()});return}

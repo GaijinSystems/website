@@ -711,10 +711,10 @@ st2[0x9B]=function(){this.list();return false}; /* LIST */
 st2[0x9C]=function(){this.clr()}; /* CLR */
 st2[0x9D]=function(){var lfn=this.byte();if(!this.files[lfn])err(E.notopen);this.cmdLfn=lfn;if(this.is(44))this.printTo(lfn,true)}; /* CMD */
 st2[0x9E]=function(){ /* SYS */
-  var a=this.int(0,65535);
-  if(this.v7)while(this.is(44))if(!this.end()&&this.at()!==44)this.num();
+  var a=this.int(0,65535),R=[]; /* BASIC 7.0: then A, X, Y and the status, each a byte, any left out */
+  if(this.v7)while(this.is(44))R.push(!this.end()&&this.at()!==44?R.length<4?this.byte():this.num():undefined);
   this.need58();
-  if(this.m.sys(a)===false)return false;
+  if(this.m.sys(a,R)===false)return false;
 };
 st2[0x9F]=function(){this.open()}; /* OPEN */
 st2[0xA0]=function(){var lfn=this.byte();this.close(lfn)}; /* CLOSE */

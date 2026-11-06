@@ -15,6 +15,7 @@ perror:      yes
 not found:   bash: %s: command not found
 mail notice: You have new mail.
 login failed: Login incorrect
+root password: hunter2
 commands:    -ed, -cal, -make, -ifconfig, -sync
 offline:     ping: the only way out of this server is the way you came in.
 
