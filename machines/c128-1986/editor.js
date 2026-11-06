@@ -56,16 +56,15 @@ S.scroll1=function(){
 S.insertRow=function(at){ /* a blank row at at; the bottom row falls off */
   var n=this.cols;
   this.ch.copyWithin((at+1)*n,at*n,(this.rows-1)*n);this.co.copyWithin((at+1)*n,at*n,(this.rows-1)*n);
-  this.link.copyWithin(at+1,at,this.rows-1);
+  this.link.copyWithin(at+1,at,this.rows-1); /* the row pushed down keeps its own link */
   this.ch.fill(32,at*n,(at+1)*n);this.co.fill(this.colour,at*n,(at+1)*n);this.link[at]=0;
-  if(at+1<this.rows&&!this.link[at+1]){} /* the row pushed down keeps its own link */
   this.touch();
 };
 S.deleteRow=function(at){
   var n=this.cols;
   this.ch.copyWithin(at*n,(at+1)*n);this.co.copyWithin(at*n,(at+1)*n);this.link.copyWithin(at,at+1);
   this.ch.fill(32,(this.rows-1)*n);this.co.fill(this.colour,(this.rows-1)*n);this.link[this.rows-1]=0;
-  if(at<this.rows&&at===0)this.link[0]=0;
+  if(at===0)this.link[0]=0;
   this.touch();
 };
 S.down=function(){if(++this.r>=this.rows)this.scroll()};
@@ -96,7 +95,6 @@ S.left=function(){
   return false;
 };
 S.right=function(){if(++this.c>=this.cols){this.c=0;this.down()}};
-S.cells=function(r0,r1){var a=[];for(var r=r0;r<=r1;r++)for(var c=0;c<this.cols;c++)a.push(this.at(r,c));return a};
 S.del=function(){ /* DEL: the character left of the cursor goes, and the rest of the line moves up to fill it */
   var s=this.start(this.r);
   if(this.pend)this.pend=false;
@@ -104,9 +102,9 @@ S.del=function(){ /* DEL: the character left of the cursor goes, and the rest of
     if(this.r===s&&this.c===0)return;
     this.left();
   }
-  var cells=this.cells(s,this.end(this.r)),from=cells.indexOf(this.at(this.r,this.c));
-  for(var i=from;i<cells.length-1;i++){this.ch[cells[i]]=this.ch[cells[i+1]];this.co[cells[i]]=this.co[cells[i+1]]}
-  this.ch[cells[cells.length-1]]=32;this.touch();
+  var i=this.at(this.r,this.c),z=this.at(this.end(this.r),this.cols-1); /* the line's rows are one run of cells */
+  this.ch.copyWithin(i,i+1,z+1);this.co.copyWithin(i,i+1,z+1);
+  this.ch[z]=32;this.touch();
 };
 S.insert=function(){ /* INST: a space at the cursor, pushing the rest of the line on; one more row if the line has room */
   var e=this.end(this.r),last=this.at(e,this.cols-1);
@@ -116,12 +114,11 @@ S.insert=function(){ /* INST: a space at the cursor, pushing the rest of the lin
     else this.insertRow(e+1);
     this.link[e+1]=1;
   }
-  var cells=this.cells(this.start(this.r),this.end(this.r)),from=cells.indexOf(this.at(this.r,this.c));
-  for(var i=cells.length-1;i>from;i--){this.ch[cells[i]]=this.ch[cells[i-1]];this.co[cells[i]]=this.co[cells[i-1]]}
-  this.ch[cells[from]]=32;this.co[cells[from]]=this.colour;this.ins++;this.touch();
+  var i=this.at(this.r,this.c),z=this.at(this.end(this.r),this.cols-1);
+  this.ch.copyWithin(i+1,i,z);this.co.copyWithin(i+1,i,z);
+  this.ch[i]=32;this.co[i]=this.colour;this.ins++;this.touch();
 };
 S.home=function(){this.r=0;this.c=0};
-S.eraseLine=function(from,to){for(var c=from;c<to;c++){this.ch[this.at(this.r,c)]=32;this.co[this.at(this.r,c)]=this.colour}this.touch()};
 S.escape=function(p){ /* the C128's escape sequences that make sense on one screen */
   var k=String.fromCharCode(p&127).toUpperCase(),s=this.start(this.r);
   if(k==='Q'){for(var r=this.r;r<=this.end(this.r);r++){var c0=r===this.r?this.c:0;for(var c=c0;c<this.cols;c++)this.ch[this.at(r,c)]=32}this.touch()}
@@ -142,8 +139,7 @@ S.put=function(p){ /* CHROUT */
   if(this.esc){this.esc=false;this.escape(p);return}
   if(p===13||p===141){this.newline();return}
   var ctl=p<32||(p>=128&&p<160);
-  if(ctl&&(this.quote||this.ins)&&p!==20){this.glyph(controlSymbol(p));if(this.ins)this.ins--;return}
-  if(ctl&&this.ins&&p===20){this.glyph(controlSymbol(p));this.ins--;return}
+  if(ctl&&(this.ins||this.quote&&p!==20)){this.glyph(controlSymbol(p));if(this.ins)this.ins--;return} /* DEL shows in insert mode only */
   if(ctl){this.control(p);return}
   var s=toScreen(p);
   if(s<0)return;
@@ -171,7 +167,7 @@ S.control=function(p){
     case 12:if(this.onEsc)this.locked=false;break;
     case 27:this.esc=!!this.onEsc;break;
     case 7:if(this.onBell)this.onBell();break;
-    case 9:if(!this.onEsc){this.locked=false;break}if(this.onEsc){do{this.c++}while(this.c<this.cols-1&&!this.tabs[this.c]);if(this.c>=this.cols)this.c=this.cols-1}break; /* the C128's TAB; the C64 has none */
+    case 9:if(!this.onEsc){this.locked=false;break}do{this.c++}while(this.c<this.cols-1&&!this.tabs[this.c]);if(this.c>=this.cols)this.c=this.cols-1;break; /* the C128's TAB; the C64 has none */
   }
 };
 S.line=function(fromCol){ /* RETURN: the logical line the cursor is on, as PETSCII, trailing blanks dropped */
@@ -196,5 +192,5 @@ S.text=function(r){ /* a row as text, for the hidden copy of the screen */
   for(var c=0;c<this.cols;c++)o+=C.font.text(set[this.ch[this.at(r,c)]&127]);
   return o.replace(/\s+$/,'');
 };
-C.Screen=Screen;C.toScreen=toScreen;C.fromScreen=fromScreen;C.COLOURS=COLOURS;
+C.Screen=Screen;C.toScreen=toScreen;
 })(window.Phosphor);

@@ -83,7 +83,7 @@ P.command({names:['chess'],run:function(){
      buffer, so the two stay in order. To a pipe, printf's text waits in a 512-byte buffer until it fills
      or the program exits, and the two come out shuffled, as they did. */
   function emit(s){
-    var i,n;
+    var i;
     while((i=s.indexOf('\n'))>=0){P.typeLine(line+s.slice(0,i));line='';s=s.slice(i+1)}
     line+=s;
   }

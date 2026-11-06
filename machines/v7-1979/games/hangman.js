@@ -43,8 +43,7 @@ P.command({names:['hangman'],run:function(a,raw,words){
   if(D===null){P.typeLine('no dictionary','err');return}
   /* srand(tvec[1]+tvec[2]): tvec[2] is past the end of the C's array, so the low half of the clock is the part that counts.
      The binary on the V7 tape was linked with the Sixth Edition's rand(), checked under a simulator, so this uses that one */
-  var x=Math.floor(Date.now()/1000)&0xffff,at=0;
-  function rand(){x=(Math.imul(x,13077)+6925)&0o77777;return x}
+  var rand=P.v6rand(Math.floor(Date.now()/1000)&0xffff),at=0;
   function space(c){return c===' '||c==='\n'||c==='\t'}
   function fscan(){ /* fscanf(dict,"%s\n",buf); null at the end of the file */
     while(at<D.length&&space(D.charAt(at)))at++;

@@ -38,7 +38,7 @@ function wrap(t,w){ /* words onto lines of at most w */
 }
 function printer(lines,lower,last){ /* a BASIC program that prints these lines, in the colour in use */
   var B=[],n=10;
-  if(lower)B.push((n+=0)+' PRINT CHR$(14);');
+  if(lower)B.push(n+' PRINT CHR$(14);');
   (lines||[]).forEach(function(l){
     var x=P.lineOf(l),text=String(x[0]),href=x[2]&&x[2].href;
     if(href)text+=' ('+href+')';
@@ -84,5 +84,4 @@ C.disk=function(P){
   });
   return {name:pet((pr.host||'phosphor').toUpperCase(),false).slice(0,16),id:'85',files:F};
 };
-C.pet=pet;
 })(window.Phosphor);

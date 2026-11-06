@@ -2556,19 +2556,16 @@ P.command({names:['aardvark'],run:function(){
     }
   }
   function step(v){
-    for(;;){
-      var r;
-      try{r=G.next(v)}
-      catch(e){
-        if(e===STOP){flush();return}
-        if(e instanceof RangeError){flush();P.typeLine('aardvark: core dumped','err');return}
-        throw e;
-      }
-      if(r.done){flush();return}
-      var p=o;o='';
-      P.ask(p,step,true);
-      return;
+    var r;
+    try{r=G.next(v)}
+    catch(e){
+      if(e===STOP){flush();return}
+      if(e instanceof RangeError){flush();P.typeLine('aardvark: core dumped','err');return}
+      throw e;
     }
+    if(r.done){flush();return}
+    var p=o;o='';
+    P.ask(p,step,true);
   }
   G=main();
   P.queue(function(){step()});

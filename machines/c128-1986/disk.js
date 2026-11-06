@@ -10,7 +10,7 @@ var BLOCKS=1328,KEY='c128/disk';
 var MSG={0:' OK',1:' FILES SCRATCHED',20:'READ ERROR',21:'READ ERROR',26:'WRITE PROTECT ON',30:'SYNTAX ERROR',31:'SYNTAX ERROR',
   32:'SYNTAX ERROR',33:'SYNTAX ERROR',34:'SYNTAX ERROR',39:'SYNTAX ERROR',60:'WRITE FILE OPEN',61:'FILE NOT OPEN',
   62:' FILE NOT FOUND',63:' FILE EXISTS',64:'FILE TYPE MISMATCH',70:'NO CHANNEL',72:'DISK FULL',73:'CBM DOS V3.0 1571'};
-function b64(u){var s='';for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s)}
+function b64(u){return btoa(str(u))}
 function unb64(s){var t=atob(s),u=new Uint8Array(t.length);for(var i=0;i<t.length;i++)u[i]=t.charCodeAt(i);return u}
 function bytes(s){var u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i)&255;return u}
 function str(u){var s='';for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return s}
@@ -66,8 +66,11 @@ D.find=function(name,type){
   for(var i=0;i<this.files.length;i++){var x=this.files[i];if(f(x.name)&&(!type||x.type===type))return x}
   return null;
 };
+D.named=function(name){ /* the file of exactly this name */
+  var x=null;this.files.forEach(function(f){if(f.name===name)x=f});return x;
+};
 D.load=function(spec){ /* bytes of a program, or null with the status set */
-  if(spec==='$'||/^\$/.test(spec)){this.set(0);return this.dirPrg(spec.slice(1).replace(/^[01]?:/,''))}
+  if(spec.charAt(0)==='$'){this.set(0);return this.dirPrg(spec.slice(1).replace(/^[01]?:/,''))}
   var p=this.parse(spec);
   if(!p.name){this.set(34);return null}
   var f=this.find(p.name,'');
@@ -78,12 +81,10 @@ D.load=function(spec){ /* bytes of a program, or null with the status set */
 D.write=function(name,type,data,replace){ /* a whole file; false with the status set if it cannot be */
   if(!name||/[*?,:=]/.test(name)){this.set(name?33:34);return false}
   name=name.slice(0,16);
-  var ex=null;
-  for(var i=0;i<this.files.length;i++)if(this.files[i].name===name)ex=this.files[i];
+  var ex=this.named(name);
   if(ex&&!replace){this.set(63);return false}
   if(ex&&ex.prot){this.set(26);return false}
-  var need=Math.max(1,Math.ceil(data.length/254));
-  if(need>this.free()+(ex?blocks(ex):0)){this.set(72,36,0);return false}
+  if(blocks({data:data})>this.free()+(ex?blocks(ex):0)){this.set(72,36,0);return false}
   if(ex){
     ex.type=type;ex.data=data;
     if(ex.factory){delete ex.factory;this.gone.push(name)}
@@ -111,8 +112,7 @@ D.scratch=function(pats){
 };
 D.rename=function(to,from){
   if(this.find(to,'')){return this.set(63)}
-  var f=null;
-  for(var i=0;i<this.files.length;i++)if(this.files[i].name===from)f=this.files[i];
+  var f=this.named(from);
   if(!f)return this.set(62);
   if(f.prot)return this.set(26);
   if(f.factory){delete f.factory;this.gone.push(from)}
@@ -138,8 +138,8 @@ D.command=function(cmd){ /* the command channel, 15 */
   if((m=/^R[01]?:([^=]*)=(?:[01]?:)?(.*)$/.exec(cmd)))return this.rename(m[1],m[2]);
   if((m=/^C[01]?:([^=]*)=(?:[01]?:)?(.*)$/.exec(cmd)))return this.copy(m[1],m[2]);
   if((m=/^N[01]?:([^,]*)(?:,(..))?$/.exec(cmd))){this.header(m[1],m[2]);return 0}
-  if(/^(I|V)[01]?$/.test(cmd)||/^V[01]?:?$/.test(cmd)){this.set(0);return 0}
-  if(/^U[J:I]/.test(cmd)||/^U9/.test(cmd)){this.set(73);return 73}
+  if(/^(I[01]?|V[01]?:?)$/.test(cmd)){this.set(0);return 0}
+  if(/^U[J:I9]/.test(cmd)){this.set(73);return 73}
   if(cmd==='')return this.status[0];
   this.set(31);return 31;
 };
@@ -154,16 +154,7 @@ D.dirLines=function(pat){
   L.push([this.free(),'BLOCKS FREE.'+' '.repeat(13)]);
   return L;
 };
-D.dirPrg=function(pat){
-  var o=[1,4],addr=0x401;
-  this.dirLines(pat).forEach(function(l){
-    var t=bytes(l[1]),next=addr+4+t.length+1;
-    o.push(next&255,next>>8,l[0]&255,l[0]>>8);for(var i=0;i<t.length;i++)o.push(t[i]);o.push(0);
-    addr=next;
-  });
-  o.push(0,0);
-  return new Uint8Array(o);
-};
+D.dirPrg=function(pat){return C.linked(0x401,this.dirLines(pat).map(function(l){return {n:l[0],b:bytes(l[1])}}))};
 /* channels 2-14: sequential files, read and written a byte at a time */
 D.open=function(sa,spec){
   if(sa===15){if(spec)this.command(spec);this.channels[15]={cmd:true,out:''};return 0}
@@ -205,5 +196,5 @@ D.close=function(sa){
   if(ch&&ch.write)this.write(ch.name,ch.type,new Uint8Array(ch.data),ch.replace);
 };
 D.closeAll=function(){var self=this;Object.keys(this.channels).forEach(function(k){if(+k!==15)self.close(+k)});this.channels={}};
-C.Drive=Drive;C.bytes=bytes;C.str=str;C.blocks=blocks;
+C.Drive=Drive;C.bytes=bytes;C.blocks=blocks;
 })(window.Phosphor);

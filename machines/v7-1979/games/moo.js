@@ -3,12 +3,7 @@
 (function(P){
 'use strict';
 P.command({names:['moo'],run:function(){
-  var randx=0;
-  function rnd(n){ /* as in the binary on the V7 tape; 2.11BSD's etc.s has a later one */
-    if(!randx)randx=Math.floor(Date.now()/1000)&0xffff;
-    randx=(Math.imul(randx,13077)+6925)&0xffff;
-    return ((randx&0o77777)*2*n)>>>16;
-  }
+  var rnd=P.etcrand();
   P.cprog(function*(io){
     io.onint=function(){io.print('\n')};
     var act,ibuf,nguess,c,r,i,bulls,cows,END={};

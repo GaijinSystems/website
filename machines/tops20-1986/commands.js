@@ -39,11 +39,12 @@ function entries(dir,all){ /* every generation: {key,name,ext,gen,node}, newest 
     return {key:k,name:dot<0?b:b.slice(0,dot),ext:dot<0?'':b.slice(dot+1),gen:m?+m[2]:1,node:n};
   }).sort(function(a,b){return a.name<b.name?-1:a.name>b.name?1:a.ext<b.ext?-1:a.ext>b.ext?1:b.gen-a.gen});
 }
-function wild(p,t){return new RegExp('^'+p.replace(/[.+?^${}()|\\\[\]]/g,'\\$&').replace(/\*/g,'.*').replace(/%/g,'.')+'$').test(t)}
+function wild(p){return new RegExp('^'+p.replace(/[.+?^${}()|\\\[\]]/g,'\\$&').replace(/\*/g,'.*').replace(/%/g,'.')+'$')}
 function matches(S,dir,all){ /* name and type as given (a missing type is any, for a wildcard, else none) */
+  var name=wild(S.name||'*'),ext=S.ext!==null&&wild(S.ext);
   return entries(dir,all).filter(function(e){
-    if(!wild(S.name||'*',e.name))return false;
-    if(S.ext!==null)return wild(S.ext,e.ext);
+    if(!name.test(e.name))return false;
+    if(ext)return ext.test(e.ext);
     return /[*%]/.test(S.name)||!S.name||e.ext==='';
   });
 }
@@ -127,16 +128,16 @@ function program(spec,where){ /* the name alone looks in SYS:, a name with a dev
 
 /* ---------- recognition: what each field may be, and what escape fills in ---------- */
 function filesIn(text,kind){ /* names a partial filespec could become */
-  var m=text.match(/^(.*?[:>\]])?([^:>\]]*)$/),pre=m[1]||'',part=m[2].toLowerCase(),S=parse(pre+'x'),out=[];
+  var m=text.match(/^(.*?[:>\]])?([^:>\]]*)$/),pre=m[1]||'',part=up(m[2].toLowerCase()),S=parse(pre+'x'),out=[];
   if(kind==='dir'){
-    var tops=Object.keys(P.find('/',true).kids).filter(function(k){return P.find('/'+k,true).type==='d'&&k.charAt(0)!=='.'}).sort();
+    var K=P.root.kids,tops=Object.keys(K).filter(function(k){return K[k].type==='d'&&k.charAt(0)!=='.'}).sort();
     return {pre:'',list:tops.map(function(k){return '<'+up(k)+'>'}).filter(function(n){return n.indexOf(up(text))===0})};
   }
   S.dirs.forEach(function(abs){
     var dir=folder(abs);if(!dir||dir.prot)return;
     newest(entries(dir)).forEach(function(e){
-      var full=up(e.name+'.'+e.ext+'.'+e.gen);
-      if(full.indexOf(up(part))===0&&out.indexOf(full)<0)out.push(full);
+      var full=show(e);
+      if(full.indexOf(part)===0&&out.indexOf(full)<0)out.push(full);
     });
   });
   return {pre:pre,list:out};
@@ -267,7 +268,7 @@ cmd('UNDELETE','(FILES)','file',function(a){
   });
 });
 cmd('EXPUNGE','(DIRECTORY)','dir',function(a){
-  var abs=a[0]?parse(a[0]+(/[>\]]$/.test(a[0])?'':'')).dirs[0]:P.st.cwd,d=folder(abs),freed=0;
+  var abs=a[0]?parse(a[0]).dirs[0]:P.st.cwd,d=folder(abs),freed=0;
   if(!d){err('?No such directory name');return}
   if(!mine(abs)){err('?WHEEL or OPERATOR capability required');return}
   entries(d,true).forEach(function(e){if(e.node.del){freed+=pages(e.node);delete d.kids[e.key]}});
@@ -288,7 +289,7 @@ cmd('COPY','(FROM)','file',function(a){
   if(r.e.node.prot||r.e.node.type==='d'){err('?Read access required - "'+dirName(r.abs)+show(r.e)+'"');return}
   var T=parse(dst),dd={name:T.name==='*'||!T.name?r.e.name:T.name,ext:T.ext===null||T.ext==='*'?r.e.ext:T.ext};
   var to=(dst.match(/^(.*?[:>\]])?/)[1]||'')+dd.name+'.'+dd.ext,got=writeNew(to,P.text(r.e.node));
-  if(got)P.typeLine(' '+show(r.e)+' => '+up(got.name+'.'+got.ext+'.'+got.gen)+' [OK]');
+  if(got)P.typeLine(' '+show(r.e)+' => '+show(got)+' [OK]');
 },{args:['file','file'],then:'(TO)'});
 function nextGenOf(t){var d=folder(t.dirs[0]);return d?nextGen(d,t.name,t.ext||''):1}
 cmd('RENAME','(EXISTING FILE)','file',function(a){
@@ -379,18 +380,14 @@ cmd('LOGIN','','user',function(a){
   P.ask('Password: ',go,true,true);
 },{login:true,out:true,help:'User name'});
 function jobLine(n){return [' Job '+JOB+' on TTY'+TTY+' '+dt(n)+', Last Login '+dt(S.last)]}
-cmd('R','(PROGRAM)','prog',function(a){
-  if(!a[0]){err('?Missing program name');return}
-  var r=program(a[0],'sys');
+function run(a,where,missing){ /* R and RUN: the program the first word names, given the rest */
+  if(!a[0]){err('?Missing '+missing);return}
+  var r=program(a[0],where);
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
   runFile(r,a.slice(1));
-});
-cmd('RUN','(PROGRAM)','file',function(a){
-  if(!a[0]){err('?Missing file name');return}
-  var r=program(a[0]);
-  if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
-  runFile(r,a.slice(1));
-});
+}
+cmd('R','(PROGRAM)','prog',function(a){run(a,'sys','program name')});
+cmd('RUN','(PROGRAM)','file',function(a){run(a,null,'file name')});
 cmd('HELP','','text',function(a){helpOn(a[0])},{kw:function(){return helpTopics()},kwHelp:'RETURN for general help',kwHead:['  or one of the following:']});
 
 /* ---------- HELP: the files in HLP:, each a line or two ---------- */

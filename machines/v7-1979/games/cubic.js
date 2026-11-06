@@ -25,7 +25,7 @@ var LINES=[],AT=[],i;
 })();
 function name(n){return ''+(1+(n>>4))+(1+((n>>2)&3))+(1+(n&3))}
 var ME=1,YOU=2;
-/* the cell that would finish a line for who, or -1; with count, how many such cells there are */
+/* the cell that would finish a line for who, or -1; with all, every such cell */
 function finish(B,who,all){
   var R=[];
   LINES.forEach(function(L){

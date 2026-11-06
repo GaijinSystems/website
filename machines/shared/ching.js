@@ -2477,9 +2477,9 @@ function phxsrc(ch){
 }
 /* "more -s": blank lines squeezed to one, and a page of 23 lines at a time on the terminal */
 function more(L){
+  if(P.piped()){P.say(L);return}
   var o=[],i,at=0;
   for(i=0;i<L.length;i++)if(L[i]!==''||o[o.length-1]!=='')o.push(L[i]);
-  if(P.piped()){P.say(L);return}
   (function page(n){
     P.say(o.slice(at,at+n));at+=n;
     if(at>=o.length)return;
@@ -2488,10 +2488,12 @@ function more(L){
     P.queue(function(){if(k!=='q'&&k!=='Q'&&k!=='C-c')page(k==='Enter'?1:23)});
   })(23);
 }
+function chars(s){var t=0;for(var i=0;i<s.length;i++)t+=s.charCodeAt(i);return t+10} /* what cno adds up for a line of the question */
+function file(argv){return argv.filter(function(x){return x.charAt(0)!=='-'})[0]} /* a name on the line: nroff's file to read */
 function bsd(argv){
   var H=null;
   if(/^[6-9]/.test(argv[0]||''))H=argv.shift();
-  var bad=argv.filter(function(x){return x.charAt(0)!=='-'})[0];
+  var bad=file(argv);
   function out(pre,src){ /* phx's text through nroff, nroff stopping at a file it can't open */
     if(bad!==undefined){P.typeLine('Cannot open '+bad,'err');if(pre.length)more(pre);return}
     more(pre.concat(src?nroff(src):[]));
@@ -2503,7 +2505,6 @@ function bsd(argv){
   if(H!==null){var p=phx(H);if(p||bad!==undefined)out([],p);return}
   function cast(sum,any){out(['  '],any?phx(cast43(sum)):(P.typeLine('?','err'),null))}
   var I=P.stdin();
-  function chars(s){var t=0;for(var i=0;i<s.length;i++)t+=s.charCodeAt(i);return t+10}
   if(I){var t=I.reduce(function(t,l){return t+chars(l)},0);cast(t,t>0);return}
   var sum=0;
   (function question(){
@@ -2519,7 +2520,7 @@ P.command({names:['ching'],run:function(a,raw,words){
   if(P.machine!=='v7'){bsd(argv);return}
   /* the shell script's "set H=$1" never did set H: a hexagram on the line is shifted away, and the oracle cast as usual */
   if(/^[6-9]/.test(argv[0]||''))argv=argv.slice(1);
-  var bad=argv.filter(function(x){return x.charAt(0)!=='-'})[0];
+  var bad=file(argv);
   function finish(sum,any){
     /* with an empty question cno says nothing, and phx asks what it was given */
     if(bad!==undefined){if(!any)P.typeLine('?','err');P.typeLine('Cannot open '+bad,'err');return}
@@ -2527,7 +2528,6 @@ P.command({names:['ching'],run:function(a,raw,words){
     P.say(answer(cast(sum)));
   }
   var I=P.stdin();
-  function chars(s){var t=0;for(var i=0;i<s.length;i++)t+=s.charCodeAt(i);return t+10}
   if(I){finish(I.reduce(function(t,l){return t+chars(l)},0),I.length>0);return}
   var sum=0,any=false;
   (function more(){

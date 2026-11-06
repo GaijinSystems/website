@@ -53,8 +53,7 @@ P.command({names:['wump'],run:function(){
   function rnum(n){
     if(!rand){ /* srand((first[1]*first[0])^first[1]), in 16-bit ints */
       var t=Math.floor(Date.now()/1000),lo=t&0xffff,hi=Math.floor(t/65536)&0xffff;
-      var x=Math.imul(lo,hi)^lo;
-      rand=function(){x=(Math.imul(x,13077)+6925)&0o77777;return x};
+      rand=P.v6rand(Math.imul(lo,hi)^lo);
     }
     return Math.trunc(rand()/32768*n);
   }

@@ -8,7 +8,8 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
   ip4:'203.0.113.24',ip6:'2001:db8:4f2::24',gw:'203.0.113.1',mac:'52:54:00:3a:7c:1e',cpu:'AMD EPYC-Rome Processor',ncpu:2,
   mem:{MemTotal:2014976,MemFree:1352196,MemAvailable:1689556,Buffers:31220,Cached:409852,Shmem:1124,SReclaimable:25228},
   links:{'/bin':'usr/bin','/sbin':'usr/sbin','/lib':'usr/lib','/lib64':'usr/lib64','/etc/os-release':'../usr/lib/os-release',
-    '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'}
+    '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'},
+  loads:loads
 };
 var BOOT=null,OLD=null,SEQ=0;
 P.setup(function(){
@@ -473,6 +474,7 @@ function procs(){ /* user, pid, ppid, vsz, rss, tty, stat, start, time, command 
     [P.st.user,656,655,21308,3428,'?','S',l,'0:00','(sd-pam)'],[P.st.user,662,553,8084,4864,'ttyS0','S',l,'0:00','-bash']];
   return R;
 }
+function comm(c){return c.replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1')} /* the command's name, as ps and top show it */
 function self(c){var n=700+(SEQ++)*3;return [P.st.user,n,662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
 cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]',[
   'lists processes. with no options, those on your terminal. ps aux lists everyone\'s, with the user, cpu, memory and start time of each; ps -ef the same in the System V style.'],function(a,raw,w){
@@ -496,7 +498,7 @@ cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]'
     return;
   }
   out(['    PID TTY          TIME CMD'].concat(R.map(function(r){
-    return String(r[1]).padStart(7)+' '+r[5].padEnd(8)+' 00:00:00 '+r[9].replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1');
+    return String(r[1]).padStart(7)+' '+r[5].padEnd(8)+' 00:00:00 '+comm(r[9]);
   })));
 });
 cmd('top','/usr/bin','display Linux processes','top [options]',[
@@ -513,17 +515,17 @@ cmd('top','/usr/bin','display Linux processes','top [options]',[
         'MiB Swap:       0.0 total,       0.0 free,       0.0 used. '+mb(M.MemAvailable)+' avail Mem','',
         '    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND'];
       R.slice().sort(function(x,y){return (y===me)-(x===me)||x[1]-y[1]}).forEach(function(r){
-        var c=r===me?'0.3':r[1]===1&&cpu[0]%4===0?'0.3':'0.0',k=r[9].replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1');
+        var c=r===me?'0.3':r[1]===1&&cpu[0]%4===0?'0.3':'0.0',k=comm(r[9]);
         L.push(String(r[1]).padStart(7)+' '+r[0].padEnd(9)+(r[6].indexOf('<')>=0?'  0 -20':' 20   0')+String(r[3]).padStart(8)+String(r[4]).padStart(7)+String(Math.floor(r[4]*.6)).padStart(7)+' '+r[6].charAt(0)+'  '+c.padStart(4)+'  '+(r[4]*100/M.MemTotal).toFixed(1).padStart(4)+'   0:00.'+p2(r===me?cpu[1]:r[1]===1?84:2)+' '+k);
       });
       return L.slice(0,rows).map(function(l){return l.slice(0,cols)});
   }
   P.program(function(S,done){
     function draw(){S.draw(screen(S.rows,S.cols),5,0)}
-    var t=S.every(3000,function(){cpu[0]++;cpu[1]=Math.min(99,cpu[1]+1);draw()});
+    S.every(3000,function(){cpu[0]++;cpu[1]=Math.min(99,cpu[1]+1);draw()});
     draw();
     return {feed:function(k){
-      if(k==='q'||k==='Q'||k==='C-c'){S.cancel(t);S.close();done();return}
+      if(k==='q'||k==='Q'||k==='C-c'){S.close();done();return}
       if(k===' '||k==='Enter'){draw()}
     },draw:draw};
   });
@@ -640,10 +642,10 @@ function apt(a,get){
   if(!get&&verb==='list'){
     var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
-    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(p[0]==='base-files'?'amd64':/^(cowsay|fortunes|unattended)/.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
+    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(/^(cowsay|fortunes|unattended)/.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
     return;
   }
-  if(!get&&verb==='search'||get===2&&verb==='search'){
+  if(verb==='search'&&get!==true){
     var q=(o.ops[1]||'').toLowerCase();
     if(!q){err(E+'You must give at least one search pattern');P.status(100);return}
     if(get!==2)lines(['Sorting... Done','Full Text Search... Done']);

@@ -16,11 +16,12 @@ cmd('touch','make a file, or update its time','touch file ...','makes each file 
   a.forEach(function(x){if(!P.writeFile(x,[],true))P.oopsW('touch',x,'touch: cannot touch '+x)});
 });
 cmd('mkdir','make a folder','mkdir dir ...','makes each folder named.',function(a){
-  if(!operands(a).length){P.typeLine(P.profile.perror?'usage: mkdir directory ...':'mkdir: arg count','err');return}
-  operands(a).forEach(function(x){
-    var abs=P.norm(x);
-    if(P.find(abs,true)&&P.profile.perror){P.typeLine('mkdir: '+x+': File exists','err');return}
-    if(P.find(abs,true)||!P.canWrite(abs)){P.oopsW('mkdir',x,'mkdir: cannot make directory '+x);return}
+  var F=operands(a);
+  if(!F.length){P.typeLine(P.profile.perror?'usage: mkdir directory ...':'mkdir: arg count','err');return}
+  F.forEach(function(x){
+    var abs=P.norm(x),there=P.find(abs,true);
+    if(there&&P.profile.perror){P.typeLine('mkdir: '+x+': File exists','err');return}
+    if(there||!P.canWrite(abs)){P.oopsW('mkdir',x,'mkdir: cannot make directory '+x);return}
     P.put(abs,'d',{owner:P.st.user,date:P.now()});
   });
 });
@@ -49,13 +50,13 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
-  var n=P.find(a[0],true),to=target(a[1],a[0]),there=P.find(to,true);
-  if(!n||n.prot||n===P.root||!P.canWrite(P.norm(a[0]))||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
+  var n=P.find(a[0],true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true);
+  if(!n||n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if(there&&there!==n&&(there.prot||there.dev)){P.typeLine('mv: cannot unlink '+a[1],'err');return}
-  if((to+'/').indexOf(P.pathOf(n)+'/')===0&&to!==P.pathOf(n)){P.typeLine('mv: directory rename only','err');return}
+  var was=P.pathOf(n);
+  if((to+'/').indexOf(was+'/')===0&&to!==was){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
-  var from=P.norm(a[0]),was=P.pathOf(n);
   delete P.find(P.dirOf(from),true).kids[from.split('/').pop()]; /* by the name given: a link has its own */
   parent.kids[name]=n;
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
@@ -99,16 +100,15 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
   });
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
-  var fl=flags(a);
-  P.input(operands(a),function(L){
-    if(operands(a).length&&!P.find(operands(a)[0]))return; /* it said so, and moves on */
+  var fl=flags(a),F=operands(a),o=F[0];
+  P.input(F,function(L){
+    if(F.length&&!P.find(o))return; /* it said so, and moves on */
     var words=0,chars=0;
     L.forEach(function(l){var t=l.trim();if(t)words+=t.split(/\s+/).length;chars+=l.length+1});
     var c=[];
     if(!fl||/l/.test(fl))c.push(L.length);
     if(!fl||/w/.test(fl))c.push(words);
     if(!fl||/c/.test(fl))c.push(chars);
-    var o=operands(a)[0];
     P.typeLine(c.map(function(n){return String(n).padStart(7)}).join('')+(o?' '+o:''));
   });
 });

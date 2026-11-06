@@ -138,7 +138,7 @@ function lineBytes(L){return 5+L.t.length}
 P.applesoft=function(M){ /* M: the machine around it (screen, keyboard, memory, DOS) */
 var prog=[],byNum={},vars={},arrays={},fns={},stack=[],data=null,dataLine=0,dataPos=0;
 var cur=null,line=-1,pos=0,running=false,cont=null,trace=false,onerr=null,errLine=0,errCode=0,errAt=null;
-var direct=null,want=null,listing=null,speed=255,spent=0;
+var want=null,listing=null,speed=255,spent=0;
 function reindex(){byNum={};prog.forEach(function(L,i){byNum[L.n]=i})}
 function find(n){if(byNum[n]===undefined)E('US');return byNum[n]}
 function progSize(){return prog.reduce(function(a,L){return a+lineBytes(L)},2)}
@@ -294,9 +294,7 @@ function prim(){
     next();var n=name();
     var f=fns[n];
     if(!f)E('UF');
-    var x=num();
-    if(at()!==41&&false)E('SN');
-    return callFn(f,x);
+    return callFn(f,num());
   }
   if(c===T.SCRN){next();eat(40);num();eat(44);num();eat(41);return 0}
   if(c>=T.SGN&&c<=T['MID$']){next();return func(c)}
@@ -339,7 +337,7 @@ function func(t){
     return t===T['LEFT$']?s.slice(0,n):s.slice(Math.max(0,s.length-n));
   case T['MID$']:
     eat(40);s=sx(expr());eat(44);n=byte(num());m=255;
-    if(at()===44){next();m=byte(num(),true)}
+    if(at()===44){next();m=byte(num())}
     eat(41);
     if(n===0)E('FC');
     return s.substr(n-1,m);
@@ -347,7 +345,7 @@ function func(t){
   E('SN');
 }
 function sx(v){if(typeof v!=='string')E('TM');return v}
-function byte(v,zero){v=Math.floor(v);if(v<0||v>255)E('FC');return v}
+function byte(v){v=Math.floor(v);if(v<0||v>255)E('FC');return v}
 function addr(v){v=Math.floor(v);if(v<-65535||v>65535)E('FC');return v<0?v+65536:v}
 function val(s){ /* VAL and INPUT: blanks do not count, and the number ends where the digits do */
   var t=s.replace(/ /g,''),m=t.match(/^[+-]?(\d*\.?\d*)(E[+-]?\d*)?/);
@@ -365,7 +363,6 @@ var S={};
 S[T.END]=function(){stop(false)};
 S[T.STOP]=function(){stop(true)};
 function stop(brk){
-  if(!running&&!brk)return finish();
   if(running)cont={line:line,pos:pos,cur:cur};
   if(brk){cr();out('BREAK');if(running)out(' IN '+prog[line].n)}
   finish();
@@ -405,7 +402,8 @@ S[T.LET]=function(){let_()};
 function let_(){var r=ref();eat(T['=']);assign(r,expr())}
 S[T.GOTO]=function(){go(lineNum())};
 function go(n){var i=find(n);if(!running){running=true;stack=[];cont=null}line=i;cur=prog[i].t;pos=0;jumped=true}
-S[T.GOSUB]=function(){var n=lineNum();push({g:true,line:line,pos:pos,cur:cur,size:5});go(n)};
+S[T.GOSUB]=function(){gosub(lineNum())};
+function gosub(n){push({g:true,line:line,pos:pos,cur:cur,size:5});go(n)}
 S[T.RETURN]=function(){
   for(var i=stack.length-1;i>=0;i--)if(stack[i].g){var G=stack[i];stack.length=i;line=G.line;pos=G.pos;cur=G.cur;skipStmt();jumped=true;return}
   E('RG');
@@ -429,8 +427,7 @@ S[T.ON]=function(){
   var k=1,n=-1;
   for(;;){var x=lineNum();if(k===v)n=x;if(at()!==44)break;next();k++}
   if(n<0)return;
-  if(t===T.GOSUB)push({g:true,line:line,pos:pos,cur:cur,size:5});
-  go(n);
+  if(t===T.GOSUB)gosub(n);else go(n);
 };
 S[T.RESTORE]=function(){data=null};
 S[T.READ]=function(){
@@ -576,8 +573,7 @@ S[T.INPUT]=function(){
   var prompt='?';
   if(at()===34){prompt=prim();eat(59)}
   if(!running){out(prompt);E('ID')}
-  var refs=[],save=pos;
-  return inputFrom(prompt,save);
+  return inputFrom(prompt,pos);
 };
 function inputFrom(prompt,save){
   return {wait:'line',prompt:prompt,then:function(text){return takeInput(text,save,prompt)}};
@@ -618,8 +614,7 @@ function splitInput(t){ /* items split at commas; quotes keep commas; leading bl
   return o;
 }
 S[T['&']]=function(){var p0=pos,r=M.amper(rest());if(r===false){pos=p0;return}return r};
-S[T.LOAD]=function(){return M.tape()};
-S[T.SAVE]=function(){return M.tape()};
+S[T.LOAD]=S[T.SAVE]=function(){return M.tape()};
 function rest(){ /* the rest of the statement, as text, for &: tokens spelled out */
   var s='',q=false;
   while(pos<cur.length){
@@ -657,10 +652,8 @@ function listLine(L){ /* the way LIST prints it: tokens with a blank on each sid
   }
   cr();
 }
-function detok(t){return t.map(function(c){return c>=0x80?KW[c-0x80]:String.fromCharCode(c)}).join('')}
 
 /* ---------- the loop ---------- */
-var errorHook=null;
 function error(k){ /* the message, or ONERR's line */
   var e=ERR[k];
   var where=running?(errLineOverride!==null?errLineOverride:prog[line].n):null;
@@ -763,9 +756,13 @@ function enter(text){ /* a line typed at the ] prompt: a program line, or someth
     store(n,t);
     return 'stored';
   }
-  direct=parse(text.slice(i));
-  cur=direct;pos=0;running=false;line=-1;
+  cur=parse(text.slice(i));pos=0;running=false;line=-1;
   return 'run';
+}
+function chain(){ /* RUN, and CHAIN: from the first line, keeping the variables */
+  want=null;running=true;stack=[];line=0;
+  if(!prog.length){running=false;cur=null;return}
+  cur=prog[0].t;pos=0;
 }
 function store(n,t){
   var at0=byNum[n];
@@ -779,23 +776,19 @@ function store(n,t){
 }
 return {
   step:step,enter:enter,answer:answer,want:function(){return want},
-  running:function(){return running},listing:function(){return !!listing},
+  running:function(){return running},
   speed:function(){return speed},spent:function(){return spent},
   load:function(lines,keep){prog=lines.map(function(L){return {n:L[0],t:L[1].slice()}});reindex();want=null;listing=null;if(!keep)clear();else{stack=[];data=null;cont=null}},
   program:function(){return prog.map(function(L){return [L.n,L.t.slice()]})},
-  size:progSize,parse:parse,detok:detok,
-  run:function(){want=null;clear();if(!prog.length){running=false;cur=null;return}running=true;stack=[];line=0;cur=prog[0].t;pos=0},
-  chain:function(){want=null;running=true;stack=[];line=0;if(!prog.length){running=false;cur=null;return}cur=prog[0].t;pos=0},
+  run:function(){clear();chain()},
+  chain:chain,
   stop:function(){running=false;cur=null;want=null;listing=null},
   fail:function(code){want=null;try{caught({dos:code})}catch(e){running=false;cur=null}},
   newProg:function(){prog=[];reindex();clear()},
-  errInfo:function(){return {code:errCode,line:errLine||0,on:onerr!==null}},trap:trap,brk:brk,
-  setErr:function(c,l){errCode=c;errLine=l||0},
-  clearOnerr:function(){onerr=null},
-  error:error,cr:cr,out:out,
-  dosHere:function(){return {line:line,cur:cur,pos:pos}}
+  errInfo:function(){return {code:errCode,line:errLine||0,on:onerr!==null}},brk:brk,
+  clearOnerr:function(){onerr=null}
 };
 };
-P.applesoft.fout=fout;P.applesoft.fr=fr;P.applesoft.parse=parse;P.applesoft.KW=KW;P.applesoft.T=T;P.applesoft.rnd=rnd;
+P.applesoft.parse=parse;
 P.setup(function(){});
 })(window.Phosphor);

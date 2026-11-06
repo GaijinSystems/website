@@ -8,6 +8,21 @@ P.v7rand=function(seed){
   var x=seed&0xffff;
   return function(){x=(Math.imul(x,1103515245)+12345)|0;return (x>>16)&0o77777};
 };
+/* the Sixth Edition's rand(), which the V7 binaries of hangman and wump were linked with */
+P.v6rand=function(seed){
+  var x=seed;
+  return function(){x=(Math.imul(x,13077)+6925)&0o77777;return x};
+};
+/* rnd(n), 0 to n-1, as in the V7 binaries of bj and moo, seeded from the clock at its first call;
+   2.11BSD's etc.s has a later one */
+P.etcrand=function(){
+  var randx=0;
+  return function(n){
+    if(!randx)randx=Math.floor(Date.now()/1000)&0xffff;
+    randx=(Math.imul(randx,13077)+6925)&0xffff;
+    return ((randx&0o77777)*2*n)>>>16;
+  };
+};
 /* run the program; body(io) is a generator. io.print writes (a line is sent when its newline comes); yield* io.getc()
    gives one character, or null at the end of the input; yield* io.gets() a line without its newline, or null.
    io.onint: what the interrupt does: return true to read on, false or nothing to stop. No handler stops the program. */

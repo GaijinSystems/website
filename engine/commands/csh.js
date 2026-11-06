@@ -170,7 +170,7 @@ builtin(['limit'],function(){
 function perror(p){return p.csh&&p.perror} /* these came with Berkeley, not with every csh */
 function place(x){
   var d=P.has(P.paths,x)&&P.paths[x];
-  return d?d+'/'+x:(P.env.PATH||'').split(':').map(function(o){return (o||'.')+'/'+x}).filter(function(f){return (function(n){return n&&n.type!=='d'&&n.bin})(P.find(f))})[0];
+  return d?d+'/'+x:(P.env.PATH||'').split(':').map(function(o){return (o||'.')+'/'+x}).filter(function(f){var n=P.find(f);return n&&n.type!=='d'&&n.bin})[0];
 }
 P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
   a.forEach(function(x){

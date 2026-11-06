@@ -10,6 +10,7 @@ function args(words){return words.slice(1)}
 function switches(a){return a.filter(function(x){return x.charAt(0)==='/'}).join('').toLowerCase()}
 function names(a){return a.filter(function(x){return x.charAt(0)!=='/'})}
 function shown(k,n){return !n.hidden&&k.charAt(0)!=='.'}
+function rest(raw){return raw.replace(/^\s*\S+\s?/,'')} /* the line after the command word */
 function stampD(d){return String(d.getMonth()+1).padStart(2)+'-'+P.p2(d.getDate())+'-'+P.p2(d.getFullYear()%100)}
 function stampT(d){var h=d.getHours();return String(h%12||12).padStart(2)+':'+P.p2(d.getMinutes())+(h<12?'a':'p')}
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -42,7 +43,11 @@ function notReady(drive,then){
   };
   again();
 }
-function isFloppy(s){return /^[abAB]:/.test(s||'')}
+function floppy(s){ /* A: or B: named: the drive is asked, and the command goes no further */
+  if(!/^[abAB]:/.test(s||''))return false;
+  notReady(s.charAt(0).toUpperCase());
+  return true;
+}
 function resolve(x){ /* what a DIR-style name means: a folder, a file or a pattern in a folder */
   var abs=P.norm(x||'.'),n=/[*?]/.test(abs)?null:P.find(abs,true);
   if(n&&n.type==='d')return {dir:n,pat:'*.*',at:abs};
@@ -53,10 +58,12 @@ function entries(R){
   var m=matcher(R.pat);
   return Object.keys(R.dir.kids).sort().filter(function(k){return shown(k,R.dir.kids[k])&&m(k)});
 }
+function files(R){return entries(R).filter(function(k){return R.dir.kids[k].type!=='d'})}
+function none(){P.typeLine('        0 File(s) copied')}
 
 cmd(['dir'],'list files',function(a,raw,w){
   var sw=switches(args(w)),N=names(args(w));
-  if(isFloppy(N[0])){notReady(N[0].charAt(0).toUpperCase());return}
+  if(floppy(N[0]))return;
   var R=resolve(N[0]);
   if(!R.dir){P.typeLine('Path not found');return}
   var E=entries(R),L=['',' Volume in drive C is FROBOZZ',' Directory of  '+dosPath(R.at),''];
@@ -110,7 +117,7 @@ cmd(['rd','rmdir'],null,function(a,raw,w){
 function del(pat){
   var R=resolve(pat);
   if(!R.dir){P.typeLine('Path not found');return}
-  var E=entries(R).filter(function(k){return R.dir.kids[k].type!=='d'});
+  var E=files(R);
   if(!E.length){P.typeLine('File not found');return}
   E.forEach(function(k){
     var n=R.dir.kids[k];
@@ -140,12 +147,12 @@ cmd(['ren','rename'],null,function(a,raw,w){
 cmd(['copy'],null,function(a,raw,w){
   var N=names(args(w));
   if(!N.length){P.typeLine('Required parameter missing');return}
-  if(isFloppy(N[1])){notReady(N[1].charAt(0).toUpperCase());return}
+  if(floppy(N[1]))return;
   var from=N[0].toLowerCase(),to=N[1]||split(from.replace(/^.*[\\\/]/,'')).join('.').replace(/\.$/,'');
-  if(from===to.toLowerCase()){P.typeLine('File cannot be copied onto itself');P.typeLine('        0 File(s) copied');return}
+  if(from===to.toLowerCase()){P.typeLine('File cannot be copied onto itself');none();return}
   function write(L){
     var d=P.find(to,true),at=d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to;
-    if(!P.writeFile(at,L,false)){P.typeLine('Access denied');P.typeLine('        0 File(s) copied');return}
+    if(!P.writeFile(at,L,false)){P.typeLine('Access denied');none();return}
     P.typeLine('        1 File(s) copied');
   }
   if(from==='con'){ /* copy con: typed until ctrl-z */
@@ -157,7 +164,7 @@ cmd(['copy'],null,function(a,raw,w){
     return;
   }
   var n=P.find(from,true);
-  if(!n||n.type==='d'){P.typeLine('File not found - '+N[0].toUpperCase());P.typeLine('        0 File(s) copied');return}
+  if(!n||n.type==='d'){P.typeLine('File not found - '+N[0].toUpperCase());none();return}
   if(n.prot){P.typeLine('Access denied');return}
   write(P.text(n));
 });
@@ -179,23 +186,23 @@ cmd(['time'],null,function(){
   })();
 });
 cmd(['echo'],null,function(a,raw,w){
-  var t=raw.replace(/^\s*\S+\s?/,'');
+  var t=rest(raw);
   if(!t.trim()){P.typeLine('ECHO is '+(echoOn?'on':'off'));return}
   if(/^on$/i.test(t.trim())){echoOn=true;return}
   if(/^off$/i.test(t.trim())){echoOn=false;return}
   P.typeLine(t);
 });
 cmd(['set'],null,function(a,raw){
-  var t=raw.replace(/^\s*\S+\s?/,''),m=t.match(/^([^=]+)=(.*)$/);
+  var m=rest(raw).match(/^([^=]+)=(.*)$/);
   if(m){var k=m[1].trim().toUpperCase();if(m[2])P.env[k]=m[2];else delete P.env[k];return}
   P.say(P.envRows());
 });
 cmd(['path'],null,function(a,raw){
-  var t=raw.replace(/^\s*\S+\s?/,'').trim();
+  var t=rest(raw).trim();
   if(t){P.env.PATH=t.toUpperCase();return}
   P.typeLine('PATH='+(P.env.PATH||''));
 });
-cmd(['prompt'],null,function(a,raw){promptStr=raw.replace(/^\s*\S+\s?/,'').trim()||'$N$G'});
+cmd(['prompt'],null,function(a,raw){promptStr=rest(raw).trim()||'$N$G'});
 cmd(['pause'],null,function(){
   P.queue(function(){return P.readKey('Strike a key when ready . . . ')});
 });
@@ -210,8 +217,7 @@ cmd(['ctty'],null,function(){P.typeLine('Invalid device')});
 
 /* the programs in C:\DOS */
 cmd(['chkdsk'],null,function(a,raw,w){
-  var N=names(args(w));
-  if(isFloppy(N[0])){notReady(N[0].charAt(0).toUpperCase());return}
+  if(floppy(names(args(w))[0]))return;
   P.say(['','Volume FROBOZZ','',
     '  21309440 bytes total disk space','     53248 bytes in 3 hidden files','     20480 bytes in 5 directories',
     '    192512 bytes in 24 user files',FREE.toString().padStart(10)+' bytes available on disk','',
@@ -236,9 +242,9 @@ cmd(['format'],null,function(a,raw,w){
   P.typeLine('Invalid drive specification');
 });
 cmd(['find'],null,function(a,raw,w){
-  var m=raw.match(/"([^"]*)"/),rest=raw.replace(/^\s*\S+\s*/,'').replace(/"[^"]*"/,'').trim().split(/\s+/).filter(Boolean);
+  var m=raw.match(/"([^"]*)"/),W=raw.replace(/^\s*\S+\s*/,'').replace(/"[^"]*"/,'').trim().split(/\s+/).filter(Boolean);
   if(!m){P.typeLine('FIND: Invalid number of parameters');return}
-  var sw=rest.filter(function(x){return x.charAt(0)==='/'}).join('').toLowerCase(),F=rest.filter(function(x){return x.charAt(0)!=='/'});
+  var sw=switches(W),F=names(W);
   function run(L,head){
     var hits=[];
     L.forEach(function(l,i){if((l.indexOf(m[1])>=0)!==/v/.test(sw))hits.push((/n/.test(sw)?'['+(i+1)+']':'')+l)});
@@ -284,7 +290,7 @@ cmd(['label'],null,function(){P.say(['Volume in drive C is FROBOZZ','','Volume l
 cmd(['attrib'],null,function(a,raw,w){
   var N=names(args(w)),R=resolve(N[0]||'*.*');
   if(!R.dir){P.typeLine('Path not found');return}
-  var E=entries(R).filter(function(k){return R.dir.kids[k].type!=='d'});
+  var E=files(R);
   if(!E.length){P.typeLine('File not found');return}
   P.say(E.map(function(k){return '  A  '+dosPath((R.at==='/'?'':R.at)+'/'+k)}));
 });
@@ -348,20 +354,16 @@ P.fallback=function(word,raw){
     else P.typeLine('File not found');
     return true;
   }
-  var base=w.replace(/\.(bat|com|exe)$/,''),n;
-  if(/[\\\/]/.test(w)||/\.bat$/.test(w)||P.find(base+'.bat',true)){
-    n=P.find(base+'.bat',true);
-    if(n&&n.body){
-      var L=P.text(n);
-      L.forEach(function(l){
-        var quiet=l.charAt(0)==='@',t=quiet?l.slice(1):l;
-        P.queue(function(){
-          if(!quiet&&echoOn)P.typeLine(currentPrompt()+t);
-          P.runScript([t]);
-        });
+  var n=P.find(w.replace(/\.(bat|com|exe)$/,'')+'.bat',true);
+  if(n&&n.body){
+    P.text(n).forEach(function(l){
+      var quiet=l.charAt(0)==='@',t=quiet?l.slice(1):l;
+      P.queue(function(){
+        if(!quiet&&echoOn)P.typeLine(currentPrompt()+t);
+        P.runScript([t]);
       });
-      return true;
-    }
+    });
+    return true;
   }
   return false;
 };
