@@ -1708,7 +1708,7 @@ function submit(){
   var cmd=buf;leavePrompt();
   if(MODE==='read'){var r=READ;READ=null;r(cmd);return}
   if(MODE==='login'){login(cmd);return}
-  if(MODE==='password'&&PENDROOT&&cmd.toLowerCase()===PENDROOT.word.toLowerCase()){
+  if(MODE==='password'&&PENDROOT&&(PROFILE.caseless?cmd.toLowerCase()===PENDROOT.word.toLowerCase():cmd===PENDROOT.word)){ /* case counts where the machine's does */
     var who=PENDROOT.name;
     PENDROOT=null;setRoot(false);ST.user=who;ST.login=now();welcome();prompt();
     return;
@@ -2013,7 +2013,7 @@ function banner(){ /* terminal self-test from the machine's == banner == section
 }
 function welcome(){
   say(PROFILE.welcome);
-  if(PROFILE.mail.length)typeLine(PROFILE.mailNotice);
+  if(PROFILE.mail.length&&!RP)typeLine(PROFILE.mailNotice); /* the letter is the guest's, not root's */
   if(coarse)typeLine('(tap the screen for a keyboard.)','dim');
 }
 boot();

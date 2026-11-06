@@ -70,25 +70,27 @@ P.program(function(S){
   /* the 1985 ROM's hidden credits, SYS 32800,123,45,6 in C128 mode: clear, lower case, as it prints them (Herdware is the ROM's own pun) */
   var CREDITS='\x93\x0e\x12   Brought to you by...   \r\rSoftware:\r Fred Bowen\r Terry Ryan\r Von Ertwine\r\rHerdware:\r Bil Herd\r Dave Haynie\r Frank Palaia\r\r\x12Link arms,don\'t make them.\r';
   /* the terminal's own jokes, not Commodore's: other machines' commands typed at READY., which BASIC would only call a
-     ?SYNTAX ERROR, answered by a Commodore owner of 1985. Each: the line (spaces ignored), the mode (64, 128 or both),
-     and what it says. Keep each line under 40 characters. Not a BASIC keyword in that mode, and never inside a program. */
+     ?SYNTAX ERROR, answered by a Commodore owner of 1985. Each: the whole line, the mode (64, 128 or both), and what it
+     says. Keep each line under 40 characters. Not a BASIC keyword in that mode, and never inside a program. SYSTEM is
+     BASIC's SYS TEM, a jump to the address in TEM: the joke only while TEM is 0, where a real one would crash. A
+     two-space ERROR is the C64's way; the C128 says it with one. */
   var RIVALS=[
-    [/^C(LOAD|SAVE)("[^"]*"?)?$/,0,['?TRASH-80  ERROR','THIS ONE LOADS ITS TAPES WITH LOAD.']],
+    [/^C(LOAD|SAVE) *("[^"]*"?)?$/,0,['?TRASH-80  ERROR','THIS ONE LOADS ITS TAPES WITH LOAD.']],
     [/^SYSTEM$/,0,["*?  (THAT'S WHAT A TRASH-80 WOULD SAY.)",'THIS ONE HAS COLOR, SOUND AND SPRITES.']],
-    [/^(TRASH-?80|TRS-?80)$/,0,['TRASH-80? NEVER HEARD OF IT.','FOR THE MASSES, NOT THE CLASSES.']],
+    [/^(TRASH-? *80|TRS-? *80)$/,0,['TRASH-80? NEVER HEARD OF IT.','FOR THE MASSES, NOT THE CLASSES.']],
     [/^CLS$/,0,['CLS? SHIFT AND CLR/HOME. WE HAVE A KEY','FOR THAT.']],
-    [/^CALL-151$/,64,["CALL -151? THIS ISN'T AN APPLE. FOR THE",'PRICE OF ONE, YOU COULD BUY FIVE OF US.']],
-    [/^CALL-151$/,128,['CALL -151? NO NEED: TYPE MONITOR.','THE C128 HAS ONE BUILT IN, FOR FREE.']],
+    [/^CALL *- *151$/,64,["CALL -151? THIS ISN'T AN APPLE. FOR THE",'PRICE OF ONE, YOU COULD BUY FIVE OF US.']],
+    [/^CALL *- *151$/,128,['CALL -151? NO NEED: TYPE MONITOR.','THE C128 HAS ONE BUILT IN, FOR FREE.']],
     [/^CATALOG$/,64,["CATALOG? THIS ISN'T AN APPLE.",'LOAD"$",8 AND LIST, LIKE A GROWN-UP.']],
-    [/^PR#[0-7]$/,0,["PR#? THERE ARE NO SLOTS IN HERE. IT'S",'ALL ON THE BOARD, AND IT COST LESS.']],
+    [/^PR# *[0-7]$/,0,["PR#? THERE ARE NO SLOTS IN HERE. IT'S",'ALL ON THE BOARD, AND IT COST LESS.']],
     [/^HGR2?$/,0,['HGR? WE HAVE SPRITES, SIXTEEN COLORS','AND A SID CHIP. IT EVEN SINGS.']],
     [/^DOS$/,0,["DOS? THIS ISN'T AN ATARI. THE 1541",'DRIVE IS A COMPUTER ALL BY ITSELF.']],
     [/^ATARI$/,0,["ATARI? JACK BOUGHT THE PLACE IN '84."]]
   ];
   function rival(t){
-    var w=t.replace(/ +/g,''),hit=RIVALS.filter(function(r){return (!r[1]||r[1]===M.mode)&&r[0].test(w)})[0];
-    if(!hit)return false;
-    say('\r'+hit[2].join('\r'));ok();return true;
+    var w=t.trim(),hit=RIVALS.filter(function(r){return (!r[1]||r[1]===M.mode)&&r[0].test(w)})[0];
+    if(!hit||w==='SYSTEM'&&M.basic.get('TE'))return false;
+    say('\r'+hit[2].join('\r').replace(/  ERROR/g,M.mode===128?' ERROR':'  ERROR'));ok();return true;
   }
   /* ---------- what BASIC sees ---------- */
   var machine={

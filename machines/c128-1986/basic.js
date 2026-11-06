@@ -712,7 +712,7 @@ st2[0x9C]=function(){this.clr()}; /* CLR */
 st2[0x9D]=function(){var lfn=this.byte();if(!this.files[lfn])err(E.notopen);this.cmdLfn=lfn;if(this.is(44))this.printTo(lfn,true)}; /* CMD */
 st2[0x9E]=function(){ /* SYS */
   var a=this.int(0,65535),R=[]; /* BASIC 7.0: then A, X, Y and the status, each a byte, any left out */
-  if(this.v7)while(this.is(44))R.push(!this.end()&&this.at()!==44?R.length<4?this.byte():this.num():undefined);
+  if(this.v7)while(this.is(44)){if(R.length>3||this.end())err(E.syntax);R.push(this.at()===44?undefined:this.byte())} /* a fifth, or a comma with nothing after: ?SYNTAX ERROR */
   this.need58();
   if(this.m.sys(a,R)===false)return false;
 };
