@@ -9,8 +9,8 @@ Placeholders and loose ends in the site's own files.
 
 ## Generic or unfinished
 
-- `site/content.js`, the letter: the spellsign row links to https://spellsign.gaijin.systems, which does not
-  answer yet (a certificate mismatch, then a 404). Drop the `->` part until it is live.
+- `site/content.js`, the letter: the spellsign row has no link yet. Add ` -> https://spellsign.gaijin.systems`
+  back when that site answers.
 - `site/home.js`, the `attic` file: `nothing up here yet.` True for now.
 - `site/config.js`, `protected:`: `photo01.pic`, `photo02.pic`, `photo03.pic`, `.trash/core` and
   `.old/terminal.rom` are locked, empty teaser files, with nothing behind them even as root. Only `secrets` has text.
