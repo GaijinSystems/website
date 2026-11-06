@@ -1,4 +1,4 @@
-/* gaijin.systems: the home folder (/usr/guest). Dot names are hidden (ls -a). */
+/* gaijin.systems: the home folder (/usr/guest on V7). Dot names are hidden (ls -a). */
 Phosphor.content(String.raw`
 
 # Retired and discontinued projects, moved here from the letter. Read it with: cat attic

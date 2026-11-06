@@ -5,7 +5,7 @@
    or on January 1, so the clock is never earlier than the machine; a machine of today takes the visitor's own
    year with new Date().getFullYear(). dir and files: what to
    load, in order (.js and .css). A site chooses with "machine:" and "machines:". random:false leaves a machine
-   out of "machine: random" (unless it is the only one allowed); the address, connect and those settings still reach it.
+   out of "machine: random" (unless only such machines are allowed); the address, connect and those settings still reach it.
    Listed oldest first; connect lists them by year whatever order a site gives. */
 Phosphor.machines({
   v7:{name:'pdp-11/70, version 7 unix',year:1979,dir:'machines/v7-1979',files:['later.js','machine.js','fs.js']},

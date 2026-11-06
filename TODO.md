@@ -10,8 +10,8 @@ Placeholders and loose ends in the site's own files.
 ## Generic or unfinished
 
 - `site/home.js`, the `attic` file: `nothing up here yet.` True for now.
-- `site/config.js`, `protected:`: `photo01.pic`, `photo02.pic` and `photo03.pic` are locked, empty teaser
-  files, with nothing behind them even as root. Only `secrets` has text.
+- `site/config.js`, `protected:`: `photo01.pic`, `photo02.pic`, `photo03.pic`, `.trash/core` and
+  `.old/terminal.rom` are locked, empty teaser files, with nothing behind them even as root. Only `secrets` has text.
 
 ## Example content kept from the template
 
