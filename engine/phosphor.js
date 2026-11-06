@@ -102,7 +102,8 @@ function setting(name){ /* one site setting, read early: settings end at a block
   return v;
 }
 function pickMachine(){
-  var all=Object.keys(PH.catalog);
+  var byYear=function(a,b){return PH.catalog[a].year-PH.catalog[b].year}; /* oldest first, the catalog's order among equals */
+  var all=Object.keys(PH.catalog).sort(byYear);
   if(!all.length)return null; /* an index.html that lists its machine's script tags itself */
   var known=function(x){
     if(has(PH.catalog,x))return true;
@@ -110,7 +111,7 @@ function pickMachine(){
     return false;
   };
   var want=(setting('machines')||'').split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean).filter(known);
-  PH.allowed=want.length?want:all;
+  PH.allowed=want.length?want.sort(byYear):all;
   var def=(setting('machine')||'').toLowerCase(),asked=(new URLSearchParams(location.search).get('machine')||'').toLowerCase();
   if(def==='random')def=PH.allowed.indexOf(asked)>=0?'':randomMachine(); /* an address that names one wins, and leaves the pick alone */
   if(def&&PH.allowed.indexOf(def)<0){PH.early.push('machine: "'+def+'" is not one of the machines allowed');def=''}
