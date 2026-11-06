@@ -6295,8 +6295,9 @@ P.command({names:['nethack'],run:function(a,raw,words){
 
    1. The patch against the released source (nethack-367-src.tgz) for the files the game is translated from.
       Build settings: sys/unix/setup.sh sys/unix/hints/linux, with these changes to the Makefiles it makes: its
-      -DCOMPRESS (gzip) removed, the tty interface only (no curses), linked with src/fakecap.c instead of a termcap
-      library, installed under a private prefix without chown and chgrp. Every file is preprocessed with:
+      -DCOMPRESS (gzip) and CURSES_GRAPHICS removed (the tty interface only), and src/fakecap.c linked instead of a
+      termcap library. HACKDIR and SYSCF_FILE are Debian's /usr/lib/games/nethack and /etc/nethack/sysconf, given in
+      the flags every file is preprocessed with:
       gcc -E -undef -D__linux__ -nostdinc -I/nh/libc -Iinclude -DNOTPARMDECL -DDLB -DSYSCF -DSYSCF_FILE=\"/etc/nethack/sysconf\" -DSECURE -DTIMED_DELAY -DHACKDIR=\"/usr/lib/games/nethack\" -DDUMPLOG -DCONFIG_ERROR_SECURE=FALSE
       (-I/nh/libc: the headers in 3. below). onames.h, pm.h, date.h and vis_tab.c are made by makedefs as usual.
 

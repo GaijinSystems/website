@@ -103,7 +103,7 @@ body{
   box-shadow:0 0 6px rgba(var(--phos-rgb),.9),0 0 22px rgba(var(--phos-rgb),.35);
 }
 #full .line{white-space:pre;word-break:normal;overflow:hidden}
-#full{min-height:100%;touch-action:pan-y pinch-zoom} /* a sideways drag is the engine's: it pans a view wider than the glass */
+#full{min-height:100%} /* touch-action is set as it draws: a sideways drag is the engine's when it pans a view wider than the glass */
 .edge{ /* where that view cuts content off: a faint mark at the side, in the padding beside the text */
   position:absolute;z-index:5;top:50%;transform:translateY(-50%);pointer-events:none;
   font-size:calc(var(--fs)*1.5);line-height:1;color:var(--phos);opacity:.4;

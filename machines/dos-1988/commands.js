@@ -148,7 +148,7 @@ cmd(['ren','rename'],null,function(a,raw,w){
   if(N.length<2){P.typeLine('Required parameter missing');return}
   var n=lookup(N[0]),to=P.fcb.cut(N[1].toLowerCase());
   if(!n||n.type==='d'){P.typeLine('File not found');return}
-  if(n.bin||n.prot||n.parent.kids[to]||/^\.|[\\\/:*?]/.test(to)){P.typeLine('Duplicate file name or File not found');return} /* no wildcards, and no name that is all extension, like .. */
+  if(n.bin||n.prot||n.parent.kids[to]||/^\.|[\\\/:*?]/.test(N[1])){P.typeLine('Duplicate file name or File not found');return} /* no wildcards, and no name that is all extension, like .. */
   delete n.parent.kids[n.name];
   n.name=to;n.parent.kids[to]=n;
 });
@@ -159,7 +159,7 @@ cmd(['copy'],null,function(a,raw,w){
   var from=N[0].toLowerCase(),to=N[1]||split(from.replace(/^.*[\\\/]/,'')).join('.').replace(/\.$/,'');
   if(from===to.toLowerCase()){P.typeLine('File cannot be copied onto itself');none();return}
   function write(L){
-    var d=P.find(to,true),at=(d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to).replace(/[^\\\/]*$/,P.fcb.cut); /* the new name, cut to eight and three */
+    var d=P.find(to,true),at=(d&&d.type==='d'?P.norm(to)+'/'+from.replace(/^.*[\\\/]/,''):to).replace(/[^\\\/:]*$/,P.fcb.cut); /* the new name, cut to eight and three */
     if(!P.writeFile(at,L,false)){P.typeLine('Access denied');none();return}
     P.typeLine('        1 File(s) copied');
   }
