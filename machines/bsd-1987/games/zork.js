@@ -23,6 +23,8 @@ C WRITTEN BY R. M. SUPNIK
    - The carriage control the FORTRAN writes for (a blank first column) is obeyed, as DEC's did, not printed, as f2c's does.
    - The random number generator is machdep.f's. It is seeded with 11, from the date routine that returns 11s: every game has the same dice.
    - ^C does nothing, as zork.c's signal(2,1) arranged. ^D ends the game, where f2c's runtime stops with an error. A number that is not one, which only the implementers' GDT asks for, stops it as f2c's does.
+   - The TOPS-20 machine runs this file as DUNGEON: there the game prints its own welcome and first room, with no zork.c in front of it,
+     and ^C goes back to the EXEC, as it did on a DEC-20.
  */
 (function(P){
 'use strict';
@@ -3001,7 +3003,8 @@ function Z(n){var a=new Array(n);for(var i=0;i<n;i++)a[i]=0;return a}
 function CZ(a,k,n){for(var i=0;i<n;i++)a[k+i]='\0'}
 function DIV(a,b){if(b===0)throw new RangeError('divide');return Math.trunc(a/b)|0}
 function ICHAR(c){return c===0?0:String(c).charCodeAt(0)}
-P.command({names:['zork'],run:function(){
+P.command({names:['zork','dungeon'],run:function(a,raw,words){
+var DEC=String(words&&words[0]||'').toLowerCase()==='dungeon'; /* TOPS-20's DUNGEON: the game greets and shows the room itself, and ^C goes back to the EXEC */
 var o='',pipe=P.stdin(),np=0,G;
 /* ---------- output, a record at a time; the first character of each is carriage control ---------- */
 function pr(s){
@@ -7671,7 +7674,7 @@ return L_INFEST[0];
 /* dgame.f */
 function* GAME(){
 var pc=0;L:for(;;)switch(pc){case 0:
-MUTE=true;RSPEAK([1],0);
+MUTE=!DEC;RSPEAK([1],0);
 L_GAME[4]=(yield* RMDESC([3],0));MUTE=false;
 case 100:
 C_PLAY[0]=C_AINDEX[0];
@@ -13311,9 +13314,11 @@ return L_THIEFP[2];
 function EXIT_(){throw STOP}
 /* ---------- zork.c: the first room is out on the terminal before the program behind it has been loaded ---------- */
 function* start(){
-  pr('You are in an open field west of a big white house with a boarded\n');
-  pr('front door.\n');
-  pr('There is a small mailbox here.\n'); /* zork.c prints the > too; here the game's own first prompt is that one */
+  if(!DEC){
+    pr('You are in an open field west of a big white house with a boarded\n');
+    pr('front door.\n');
+    pr('There is a small mailbox here.\n'); /* zork.c prints the > too; here the game's own first prompt is that one */
+  }
   yield* DUNGEO();
 }
 function flush(){if(o){P.say([o]);o=''}}
@@ -13330,7 +13335,7 @@ function step(v){
     if(pipe){if(np>pipe.length+2){flush();return}v=np<pipe.length?pipe[np]:null;np++;continue} /* the end of a pipe is the end of the input, as it was */
     var p=o;o='';
     P.ask(p,function again(l){
-      if(l===P.INT){P.ask('',again,true);return} /* signal(2,1) */
+      if(l===P.INT){if(DEC){flush();return}P.ask('',again,true);return} /* signal(2,1) */
       step(l);
     },true);
     return;
