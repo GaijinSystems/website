@@ -151,14 +151,14 @@ function build(){
 var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
-    cord:{turns:7,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
+    cord:{turns:7,desktop:0,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:PH.machine&&PH.catalog[PH.machine].year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',effects:'auto',
     welcome:null,about:[],mail:[],commands:[],files:[],dirs:[],man:{},aliases:[],sec:{},raw:{},problems:[]};
   var secs=[];
   function yes(v){return !/^(no|false|off|0)$/i.test(v)}
   function list(v){return v.split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean)}
-  var CL={turns:[1,40],width:[6,80],thickness:[1,8],gap:[0,10],straight:[0,200],sway:[0,10]};
+  var CL={turns:[1,40],desktop:[0,40],width:[6,80],thickness:[1,8],gap:[0,10],straight:[0,200],sway:[0,10]};
   function setKey(k,v){
     var ck=k.match(/^cord (\w+)$/);
     if(ck&&has(CL,ck[1])){var x=parseFloat(v),L=CL[ck[1]];if(!isNaN(x))P.cord[ck[1]]=Math.min(L[1],Math.max(L[0],x));return}
@@ -1729,11 +1729,18 @@ function path(d,stroke,w){
   return p;
 }
 /* cord settings come from site/config.js */
-var CORD=PROFILE.cord,rx=CORD.width/2,sw=CORD.thickness,edge=sw+1.4,gap=CORD.gap,tilt=.35,turns=Math.max(1,Math.round(CORD.turns));
+var CORD=PROFILE.cord,rx=CORD.width/2,sw=CORD.thickness,edge=sw+1.4,gap=CORD.gap,tilt=.35;
 var pitch=edge+gap;                        /* drop per turn = cord + rim + gap. gap 0 = turns touching */
-var coilLen=2*tilt*rx+(turns+.5)*pitch;
+var narrow=matchMedia('(max-width:640px)'); /* a phone: the cable sits under the monitor in a fixed height */
+var turns,coilLen;
+function coilFor(){ /* "cord desktop" turns on a wide screen, "cord turns" on a phone */
+  turns=Math.max(1,Math.round(!narrow.matches&&CORD.desktop?CORD.desktop:CORD.turns));
+  coilLen=2*tilt*rx+(turns+.5)*pitch;
+}
+coilFor();
 var lastW,lastH,lastNub; /* what the cable was last drawn for */
 function drawCable(){
+  var t=turns;coilFor();if(turns!==t)lastW=null; /* crossing the phone width changes the coil */
   var nub=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nub'))||11; /* strain-relief bottom */
   /* cable height = nub + straight + coil + straight, so the two straights are always equal */
   var want=Math.round(nub+2*CORD.straight+coilLen); /* phone cable height; desktop fills the gap below the monitor */
