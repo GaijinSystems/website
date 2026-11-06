@@ -117,7 +117,7 @@ function runFile(r,a){ /* r from find1: start what is behind it, with the rest o
   var nm=r.e.name;
   if(r.abs==='/games'&&P.has(GAMEMAP,nm)&&P.has(P.cmds,GAMEMAP[nm])){P.cmds[GAMEMAP[nm]]([],GAMEMAP[nm],[GAMEMAP[nm]]);return}
   if(r.abs==='/subsys'&&P.has(PROG,nm)){PROG[nm](a||[]);return}
-  if(r.abs==='/games'){err(prime()?'?Games may not be played during prime time':'?Load average too high for games - try again later');return}
+  if(r.abs==='/games'&&prime()){err('?Games may not be played during prime time');return} /* the site's rule; after hours the EXEC's own answer below */
   if(r.e.ext!=='exe'||!r.e.node.bin){err('?File is not in SAVE or EXE format');return}
   err('?Execute access required - "'+dirName(r.abs)+show(r.e)+'"');
 }

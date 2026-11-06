@@ -22034,7 +22034,8 @@ P.command({names:['moria'],noHelpFlag:true,run:function(a,raw,words){
       if(s.cy<oy)oy=s.cy<r?0:s.cy;else if(s.cy>=oy+r)oy=s.cy-r+1;
       if(s.cx<ox)ox=s.cx<c-4?0:s.cx-4;else if(s.cx>=ox+c)ox=Math.min(80-c,s.cx-c+5);
       oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
-      S.drawGrid(s.scr.slice(oy,oy+r).map(function(R){return R.slice(ox,ox+c)}),s.cy-oy,s.cx-ox);
+      var x=S.pan(ox,80-c,s.cx);
+      S.drawGrid(s.scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),s.cy-oy,s.cx-x);
     }
     function quit(){
       if(over)return;

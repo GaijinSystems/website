@@ -390,7 +390,8 @@ function $show(){
   if($cury<$oy)$oy=$cury<r?0:$cury;else if($cury>=$oy+r)$oy=$cury-r+1;
   if($curx<$ox)$ox=$curx<c-4?0:$curx-4;else if($curx>=$ox+c)$ox=Math.min(COLS-c,$curx-c+5);
   $oy=Math.max(0,Math.min($oy,LINES-r));$ox=Math.max(0,Math.min($ox,COLS-c));
-  S0.drawGrid($cur.slice($oy,$oy+r).map(function(R){return R.slice($ox,$ox+c)}),$cury-$oy,$curx-$ox);
+  var ox=S0.pan($ox,COLS-c,$curx);
+  S0.drawGrid($cur.slice($oy,$oy+r).map(function(R){return R.slice(ox,ox+c)}),$cury-$oy,$curx-ox);
 }
 function* getch(){
   var c=yield {key:true};
@@ -489,7 +490,8 @@ function save_game(){
   if(!P.save('empire/save',rec)){topmsg(3,"Cannot save empsave.dat",0,0,0,0,0,0,0,0);return}
   var n=P.find($SAVEAT,true),size=JSON.stringify(rec).length; /* the file in [GUEST] that stands for the record: DELETE it for a new game */
   if(n){n.date=P.now();n.size=size}
-  else P.put($SAVEAT,'f',{owner:'guest',date:P.now(),bin:true,size:size});
+  else P.put($SAVEAT,'f',{owner:'guest',date:P.now(),bin:true,size:size,store:'empire/save'});
+  $movieFlush(); /* the movie so far, kept with the game */
   topmsg(3,"Game saved.",0,0,0,0,0,0,0,0);
 }
 var $SAVEAT='/guest/empsave.dat;1';

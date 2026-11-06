@@ -21,5 +21,5 @@ Phosphor.setup(function(P){
   f('/sys0/sysmgr/systartup.com;1',['$ ! Site-specific startup','$ SET LOGINS /INTERACTIVE=64','$ MOUNT/SYSTEM DUA1: USERDISK','$ ! FIELD still has its default password. Ask DIGITAL to change it.','$ EXIT']);
   f('/guest/login.com;2',['$ ! Your login file','$ SET PROMPT="$ "','$ SET TERMINAL/INQUIRE','$ ! Games are in [GAMES]. Not during prime shift.','$ ADVENTURE :== $DUA0:[GAMES]ADVENTURE','$ STARTREK :== $DUA0:[GAMES]STARTREK','$ EMPIRE :== $DUA0:[GAMES]EMPIRE','$ MORIA :== $DUA0:[GAMES]MORIA','$ EXIT']);
   f('/guest/login.com;1',['$ ! Your first login file','$ EXIT']);
-  if(P.saved('empire/save'))P.put('/guest/empsave.dat;1','f',{owner:'guest',date:SD,bin:true,size:30720}); /* a saved EMPIRE: DELETE it to start again */
+  if(P.saved('empire/save'))P.put('/guest/empsave.dat;1','f',{owner:'guest',date:SD,bin:true,size:30720,store:'empire/save'}); /* a saved EMPIRE: DELETE it to start again */
 });

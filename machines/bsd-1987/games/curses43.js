@@ -153,7 +153,7 @@ P.curses43=function(S){ /* a fresh curses for one run of a game on S; initscr() 
        is still smaller, the view follows the cursor */
     function view(S){
       var rows=S.rows,cols=S.cols,cy=curscr.cury,cx=curscr.curx;
-      var top=rows<LINES?Math.max(0,Math.min(LINES-rows,cy-(rows>>1))):0,lft=cols<COLS?Math.max(0,Math.min(COLS-cols,cx-(cols>>1))):0;
+      var top=rows<LINES?Math.max(0,Math.min(LINES-rows,cy-(rows>>1))):0,lft=S.pan(cols<COLS?Math.max(0,Math.min(COLS-cols,cx-(cols>>1))):0,COLS-cols,cx);
       S.draw(curscr.lines.slice(top,top+rows).map(function(L){return L.slice(lft,lft+cols).join('').trimEnd()}),Math.min(cy-top,rows-1),Math.max(0,Math.min(cx-lft,cols-1)));
     }
   var K={LINES:LINES,COLS:COLS,NOCHANGE:NOCHANGE,initscr:function(){initscr();K.stdscr=stdscr;K.curscr=curscr}};

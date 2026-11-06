@@ -12227,7 +12227,8 @@ P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
       if(cy<oy)oy=cy<r?0:cy;else if(cy>=oy+r)oy=cy-r+1;
       if(cx<ox)ox=cx<c-4?0:cx-4;else if(cx>=ox+c)ox=Math.min(80-c,cx-c+5);
       oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
-      S.drawGrid($scr.slice(oy,oy+r).map(function(R){return R.slice(ox,ox+c)}),cy-oy,cx-ox);
+      var x=S.pan(ox,80-c,cx);
+      S.drawGrid($scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),cy-oy,cx-x);
     }
     $show=show;
     function quit(bare){ /* bare: ^Y or ^C, which leave nothing of the screen behind */

@@ -315,7 +315,7 @@ function announce(s){
   trim(log,50);
 }
 var coarse=matchMedia('(pointer:coarse)').matches;
-var chain=Promise.resolve(),buf='',bufNode=null,hist=[],hi=0;
+var chain=Promise.resolve(),buf='',bufNode=null,hist=[],hi=0,HMAX=50; /* what was typed, for !n and the arrows: the last HMAX lines */
 if(PROFILE.title)document.title=PROFILE.title;
 var badge=$('.badge');if(badge)badge.textContent=PROFILE.badge;
 
@@ -530,14 +530,31 @@ function ask(p,then,trap,hidden){ /* readLine, then carry on with what was typed
 }
 /* The glass as a screen: a program draws whole lines, and every key comes to it. Used by vi. */
 var KEYS=null;
-function fullscreen(keys,onResize){
+function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (the view dragged aside); onResize if not given */
   var el=document.createElement('div');el.id='full';
   out.style.display='none';term.classList.remove('idle');term.appendChild(el);
-  KEYS=keys;
+  var edge=['l','r'].map(function(x){ /* faint marks at a side where the view cuts content off */
+    var d=document.createElement('div');d.className='edge '+x;d.hidden=true;d.setAttribute('aria-hidden','true');
+    d.textContent=x==='l'?'\u2039':'\u203a';term.parentNode.appendChild(d);return d;
+  });
+  /* content wider than the glass: a sideways drag pans the view, and the next key or a resize goes back to following the cursor */
+  var U=-1,cw=8,view={at:0,max:0},next=null,drag=null,glide=0;
+  KEYS=function(k){if(U>=0){follow();again()}keys(k)};
+  redraw=redraw||onResize;
   var said='',T=[],S={
     rows:24,cols:80,
+    pan:function(want,max,cx){ /* the first column shown of content wider than the glass: want (where the program follows the cursor)
+      unless the visitor has dragged the view aside. max: the furthest it goes; cx: the cursor's column in the content, -1 if not in it */
+      max=Math.max(0,max);
+      var at=U<0?want:Math.min(max,Math.round(U));
+      next={at:at,max:max,off:U>=0&&cx>=0&&(cx<at||cx>=at+S.cols)};
+      return at;
+    },
     draw:function(lines,r,c){
       var i;
+      view=next||{at:0,max:0};next=null;
+      if(view.off)r=-1; /* the cursor is out of the dragged view */
+      edge[0].hidden=!(view.at>0);edge[1].hidden=!(view.at<view.max);
       for(i=0;i<lines.length;i++){
         var was=el.children[i];
         if(was&&i!==r&&sameRow(was,lines[i]))continue;
@@ -578,9 +595,9 @@ function fullscreen(keys,onResize){
     onThrow:null,
     close:function(){
       while(T.length)S.cancel(T[0]);
-      KEYS=null;window.removeEventListener('resize',size);
+      KEYS=null;follow();window.removeEventListener('resize',size);
       if(window.visualViewport)visualViewport.removeEventListener('resize',size);
-      el.remove();out.style.display='';refit();
+      el.remove();edge.forEach(function(d){d.remove()});out.style.display='';refit();
       term.scrollTop=term.scrollHeight;
     }
   };
@@ -591,13 +608,52 @@ function fullscreen(keys,onResize){
   }
   function measure(){
     var r=charBox(el),cs=getComputedStyle(el);
-    var cw=r.width/10,lh=parseFloat(cs.lineHeight)||r.height||16;
+    var lh=parseFloat(cs.lineHeight)||r.height||16;
+    cw=r.width/10;
     var w=el.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
     var h=term.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
     S.cols=Math.max(20,cw>0?Math.floor(w/cw+.01):80);
     S.rows=Math.max(5,Math.floor(h/lh+.01));
   }
-  function size(){measure();if(onResize&&KEYS)onResize()}
+  function size(){follow();measure();if(onResize&&KEYS)onResize()}
+  function again(){if(KEYS&&redraw)redraw()}
+  function follow(){U=-1;drag=null;cancelAnimationFrame(glide)}
+  function to(u){ /* the view dragged to column u */
+    U=Math.max(0,Math.min(view.max,u));
+    if(Math.round(U)!==view.at)again();
+    return U>0&&U<view.max;
+  }
+  el.addEventListener('touchstart',function(e){
+    cancelAnimationFrame(glide);drag=null;
+    if(view.max<=0||e.touches.length!==1)return;
+    var t=e.touches[0];drag={x:t.clientX,y:t.clientY,on:false,px:t.clientX,t:e.timeStamp,v:0};
+  },{passive:true});
+  el.addEventListener('touchmove',function(e){
+    if(!drag)return;
+    var t=e.touches[0],dx=t.clientX-drag.x,dy=t.clientY-drag.y;
+    if(!drag.on){ /* sideways, or it is the glass's own vertical scroll */
+      if(Math.abs(dy)>=Math.abs(dx)){if(Math.abs(dy)>8)drag=null;return}
+      if(Math.abs(dx)<8)return;
+      drag.on=true;drag.x=t.clientX;drag.from=view.at;
+    }
+    if(e.cancelable)e.preventDefault();
+    to(drag.from-(t.clientX-drag.x)/cw);
+    var dt=e.timeStamp-drag.t;
+    if(dt>0)drag.v=.7*(drag.px-t.clientX)/cw/dt+.3*drag.v; /* columns a millisecond */
+    drag.px=t.clientX;drag.t=e.timeStamp;
+  },{passive:false});
+  function drop(e){
+    var d=drag;drag=null;
+    if(!d||!d.on)return;
+    if(e.cancelable)e.preventDefault(); /* a drag is not a tap: no keyboard */
+    if(e.timeStamp-d.t>80||calm.matches||document.documentElement.classList.contains('lite'))return; /* held still, or no motion wanted */
+    var v=d.v,last=performance.now();
+    glide=requestAnimationFrame(function step(now){ /* a little momentum */
+      var dt=Math.min(50,now-last);last=now;
+      if(to(U+v*dt)&&Math.abs(v*=Math.pow(.99,dt))>.003)glide=requestAnimationFrame(step);
+    });
+  }
+  el.addEventListener('touchend',drop);el.addEventListener('touchcancel',drop);
   measure();
   window.addEventListener('resize',size);
   if(window.visualViewport)visualViewport.addEventListener('resize',size); /* a phone keyboard opening or changing height */
@@ -613,7 +669,7 @@ function program(make,o){ /* a full-screen program: make(S,done) returns its {fe
       var V,S;
       function crash(e){if(crashed)return;console.error(e);crashed=true;S.close();res()} /* never leave a dead screen up */
       function fit(){if(o.fit)S.fit(o.fit[0],o.fit[1],o)}
-      S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{fit();if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}});
+      S=fullscreen(function(k){try{V.feed(k)}catch(e){crash(e)}},function(){try{fit();if(V.resize)V.resize();else V.draw()}catch(e){crash(e)}},function(){try{V.draw()}catch(e){crash(e)}});
       S.onThrow=crash;
       fit();
       try{V=make(S,res)}catch(e){crash(e)}
@@ -744,7 +800,7 @@ function writeFile(p,lines,append){ /* false if it cannot be written */
     for(var i=0,n=0;n+lineOf(L[i])[0].length+1<=DISK;i++)n+=lineOf(L[i])[0].length+1;
     L=L.slice(0,i);
     typeLine(PROFILE.dcl?'%SYSTEM-F-EXDISKQUOTA, disk quota exceeded':PROFILE.dos?'Insufficient disk space':
-      PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 1/0','err'); /* V7's kernel: root on rp0 */
+      PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 6/0','err'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
   }
   if(!ex)put(abs,'f',{body:L,owner:ST.user,date:now()});
   else{ex.body=L;ex.size=0;ex.date=now()}
@@ -912,7 +968,8 @@ PH.runLater=function(files,def,a,raw,w){
 var ENV={PATH:':/bin:/usr/bin',TERM:'p9'},CSHV=Object.create(null); /* CSHV: csh's own variables, from set */
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},
-  hist:function(){return hist.slice()},setPrompt:function(f){promptFn=f},readKey:readKey,oops:oops,oopsW:oopsW,shvars:CSHV,
+  hist:function(){return hist.slice()},setHist:function(L){hist=L.slice(-HMAX);hi=hist.length}, /* a shell's history -c, -d or -s */
+  setPrompt:function(f){promptFn=f},readKey:readKey,oops:oops,oopsW:oopsW,shvars:CSHV,
   /* what a game keeps between visits, in this browser only; false or null when the browser refuses */
   saved:function(k){try{return JSON.parse(localStorage.getItem('phosphor-9/'+k))}catch(e){return null}},
   save:function(k,v){
@@ -1658,7 +1715,7 @@ function submit(){
     if(bad){typeLine(bad,'err');prompt();return}
     if(cmd!==had)typeLine(cmd);
   }
-  if(cmd.trim()){hist.push(cmd);if(hist.length>50)hist.shift()}
+  if(cmd.trim()){hist.push(cmd);if(hist.length>HMAX)hist.shift()}
   hi=hist.length;
   run(cmd);
 }

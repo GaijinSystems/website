@@ -144,7 +144,8 @@ P.command({names:['teachgammon'],run:function(a,raw,words){
       pan_y=Math.max(0,Math.min(LI-rows,pan_y));
       if(cx<pan_x||cx>=pan_x+cols)pan_x=cx-(cols>>1);
       pan_x=Math.max(0,Math.min(CO-cols,pan_x));
-      S.draw(G.slice(pan_y,pan_y+rows).map(function(L){return L.slice(pan_x,pan_x+cols).join('').trimEnd()}),cy-pan_y,cx-pan_x);
+      var px=S.pan(pan_x,CO-cols,cx);
+      S.draw(G.slice(pan_y,pan_y+rows).map(function(L){return L.slice(px,px+cols).join('').trimEnd()}),cy-pan_y,cx-px);
     }
     /* fancy.c: it keeps where it means to be apart from where the cursor is */
     var curr=0,curc=0,realr=0,realc=0,begscr=0,linect=zero(LI+1),oldb=zero(26),oldr=0,oldw=0;

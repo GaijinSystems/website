@@ -103,7 +103,15 @@ body{
   box-shadow:0 0 6px rgba(var(--phos-rgb),.9),0 0 22px rgba(var(--phos-rgb),.35);
 }
 #full .line{white-space:pre;word-break:normal;overflow:hidden}
-#full{min-height:100%}
+#full{min-height:100%;touch-action:pan-y pinch-zoom} /* a sideways drag is the engine's: it pans a view wider than the glass */
+.edge{ /* where that view cuts content off: a faint mark at the side, in the padding beside the text */
+  position:absolute;z-index:5;top:50%;transform:translateY(-50%);pointer-events:none;
+  font-size:calc(var(--fs)*1.5);line-height:1;color:var(--phos);opacity:.4;
+  text-shadow:0 0 6px rgba(var(--phos-rgb),.6);
+}
+.edge.l{left:calc(var(--fs)*.45)}
+.edge.r{right:calc(var(--fs)*.45)}
+.edge[hidden]{display:none}
 .fcur{background:var(--phos);color:#020603;text-shadow:none}
 #term.idle .cursor{animation:blink 1.06s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
@@ -199,6 +207,7 @@ html.lite .line{text-shadow:0 0 4px rgba(var(--phos-rgb),.75)}
 html.lite .line.dim{text-shadow:0 0 4px rgba(var(--dim-rgb),.7)}
 html.lite .line.err{text-shadow:0 0 4px rgba(var(--err-rgb),.75)}
 html.lite .line.warn{text-shadow:0 0 4px rgba(255,209,102,.7)}
+html.lite .edge{text-shadow:none}
 html.lite .cursor{box-shadow:0 0 4px rgba(var(--phos-rgb),.75)}
 html.lite .band{mix-blend-mode:normal;animation-timing-function:steps(95)}
 html.lite .flicker{animation:none;opacity:.67}
