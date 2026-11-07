@@ -24,7 +24,7 @@ function currentPrompt(){
 }
 P.setup(function(){
   delete P.env.TERM;
-  P.env.PATH='C:\\DOS';P.env.COMSPEC='C:\\COMMAND.COM';
+  P.env.PATH='C:\\DOS;C:\\COMM';P.env.COMSPEC='C:\\COMMAND.COM';
   P.setPrompt(currentPrompt);
 });
 
@@ -279,6 +279,16 @@ cmd(['sort'],null,function(a){
   });
 });
 cmd(['more'],null,function(){P.input([],function(L){P.say(L)})});
+/* TERM, in C:\COMM: a terminal program for the modem on COM2, which can call the board (../shared/modem.js, bbs.js) */
+cmd(['term'],'terminal program for the modem',function(){
+  var ok=false;
+  P.queue(function(){return P.load(['../shared/modem.js','../shared/bbs.js']).then(function(x){ok=x})});
+  P.queue(function(){
+    if(!ok){P.typeLine('Program too big to fit in memory');return}
+    P.modem.terminal({speed:2400,banner:['TERM 2.3   COM2: 2400 baud, 8-N-1','Commands go to the modem; ^C goes back to DOS.','',
+      'Dialing directory:'].concat(P.bbs.directory().map(function(d){return '  '+d[0].padEnd(18)+' '+d[1].padEnd(9)+' '+d[2]})).concat(['']),bye:['','TERM ended.']});
+  });
+});
 cmd(['tree'],null,function(){
   var L=['','DIRECTORY PATH LISTING',''];
   (function walk(n,at){

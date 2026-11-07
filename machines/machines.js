@@ -9,6 +9,9 @@
    Listed oldest first; connect lists them by year whatever order a site gives. */
 Phosphor.machines({
   v7:{name:'pdp-11/70, version 7 unix',year:1979,dir:'machines/v7-1979',files:['later.js','machine.js','fs.js']},
+  vm370:{name:'ibm system/370, vm/370 release 6',year:1980,dir:'machines/vm370-1980',files:['machine.js','disk.js','cp.js','edit.js','exec.js','sys.js','cms.js']},
+  trs80:{name:'trs-80 model iii, trsdos 1.3',year:1981,dir:'machines/trs80-1981',files:['trs80.css','machine.js','basic.js','disk.js','trs80.js']},
+  multics:{name:'honeywell level 68, multics mr8.0',year:1981,dir:'machines/multics-1981',files:['machine.js','commands.js','qedx.js','fs.js','info.js']},
   cpm:{name:'s-100 z80, cp/m 2.2',year:1982,dir:'machines/cpm-1982',files:['machine.js','../shared/zork.js','../shared/fcb.js','fs.js','commands.js']},
   apple2:{name:'apple iie, dos 3.3',year:1984,dir:'machines/apple2-1984',files:['machine.js','cpu.js','basic.js','disk.js','apple.js']},
   tops20:{name:'decsystem-2060, tops-20 v6.1',year:1986,dir:'machines/tops20-1986',files:['later.js','machine.js','fs.js','commands.js']},
@@ -16,6 +19,7 @@ Phosphor.machines({
   bsd:{name:'vax-11/780, 4.3bsd',year:1987,dir:'machines/bsd-1987',files:['later.js','commands.js','machine.js','fs.js']},
   dos:{name:'ibm pc/at, ms-dos 3.30',year:1988,dir:'machines/dos-1988',files:['machine.js','../shared/zork.js','../shared/fcb.js','fs.js','commands.js']},
   vms:{name:'vax-11/785, vax/vms v4.6',year:1988,dir:'machines/vms-1988',files:['later.js','machine.js','fs.js','commands.js']},
+  bbs:{name:'dial-up bulletin board, 2400 bps',year:1990,random:false,dir:'machines/bbs-1990',files:['machine.js','../shared/modem.js','../shared/bbs.js','dialer.js']},
   irix:{name:'silicon graphics crimson, irix 4.0.5',year:1993,dir:'machines/irix-1993',files:['machine.js','commands.js','fs.js']},
   linux:{name:'kvm virtual server, debian 13',year:new Date().getFullYear(),dir:'machines/linux',files:['later.js','machine.js','commands.js','fs.js']}
 });
