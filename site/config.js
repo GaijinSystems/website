@@ -24,6 +24,6 @@ cord width:     18
 cord thickness: 3.2
 cord gap:       1.8
 cord straight:  7.35
-cord sway:      2.5
+cord sway:      4
 
 `);
