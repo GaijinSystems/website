@@ -62,26 +62,28 @@ function fix(E,t){ /* a line as the file will hold it: the case, the truncation 
   if(t.length>E.trunc){out('TRUNCATED');t=t.slice(0,E.trunc);out(t)}
   return t;
 }
-/* attention (^C) at the editor's read: the edit carries on, as on Release 6, where only QUIT or FILE ends it */
+/* attention (^C) at the editor's read: the edit carries on, as on Release 6, where only QUIT or FILE ends it.
+   ^C while it types stops the typing, and the next line typed is still the editor's: V.edRead keeps its read for that */
 function attn(l,again){if(l===P.INT){again();return true}return false}
+function read(then){var r=function(l){if(V.edRead===r)V.edRead=null;then(l)};V.edRead=r;V.read(r,true)}
 function loop(E){
-  V.read(function(l){
+  read(function(l){
     if(l===null||attn(l,function(){loop(E)}))return;
     var r=sub(E,l);
     if(r==='input'){input(E);return}
     if(r==='end')return;
     loop(E);
-  },true);
+  });
 }
 function input(E){
   if(E.verify)out('INPUT:');
   (function more(){
-    V.read(function(l){
+    read(function(l){
       if(l===null||attn(l,more))return;
       if(l===''){if(E.verify)out('EDIT:');loop(E);return}
       ins(E,fix(E,l));
       more();
-    },true);
+    });
   })();
 }
 function ins(E,t){if(E.cur>=E.lines.length)E.cur=E.lines.length-1;E.lines.splice(E.cur+1,0,t);E.cur++;changed(E)}
@@ -306,7 +308,7 @@ function save(E,auto){
 }
 /* CMS SUBSET: a few CMS commands from inside the editor, then RETURN goes back to it */
 function subset(E){
-  V.read(function(l){
+  read(function(l){
     if(l===null||attn(l,function(){subset(E)}))return;
     var w=up(l.trim()).split(/\s+/)[0]||'';
     if(w==='RETURN'){out('EDIT:');loop(E);return}
@@ -316,6 +318,6 @@ function subset(E){
       else{var rc=V.command(l,{});V.ready(rc)}
     }
     subset(E);
-  },true);
+  });
 }
 });

@@ -852,7 +852,7 @@ cmd(['ready_off','rdf'],function(){S.ready=false});
 cmd(['ready_on','rdn'],function(){S.ready=true});
 cmd(['ready','rdy'],function(){out(readyLine());settle()});
 cmd(['new_proc'],function(){
-  S.level=1;P.st.cwd=S.home;M.drop();
+  S.level=1;P.st.cwd=S.home;M.drop();EC.run++;EC.depth=0; /* and any exec_com that ran it stops */
   out('');
   startUp('new_proc');
 });
@@ -860,10 +860,10 @@ cmd(['new_proc'],function(){
 /* ---------- exec_com ---------- */
 var EC={depth:0,run:0,steps:0}; /* exec_coms inside one another; run changes when the stack overflows and they all stop */
 function ecRun(p,args,first){ /* one exec_com: its lines, &-statements, and the commands in it */
-  if(EC.depth>=64){ /* MR12.8 runs out of stack 64 exec_coms down */
+  if(EC.depth>=64){ /* MR12.8 runs out of stack 64 exec_coms down; the message is MR8's (CH26-00, 3-20) */
     EC.depth=0;EC.run++;S.level++;
     say(['','Error:  storage condition by directory_commands_$get_wdir_|6773','(>system_library_standard>bound_fscom1_)',
-      'Not enough room in stack to complete processing.','system handler for error returns to command level']);
+      'Attempt to reference beyond end of stack. Stack has been extended.','system handler for error returns to command level']);
     return;
   }
   var r=path(/\.ec$/.test(p)?p:p+'.ec');
@@ -1029,8 +1029,8 @@ cmd(['read_mail','rdm'],function(a){
       else if(x==='last'||x==='l')N.push(live().pop());
       else if(x==='current'||x==='c')N.push(cur);
       else if((m=x.match(/^(\d+)(?::(\d+))?$/))){ /* past the last, one number is enough to say so */
-        var hi=Math.min(m[2]?+m[2]:+m[1],Math.max(+m[1],L.length+1));
-        for(var n=+m[1];n<=hi;n++)N.push(n);
+        var lo=+m[1],hi=Math.min(m[2]?+m[2]:lo,L.length+1);
+        if(lo>L.length)N.push(lo);else for(var n=lo;n<=hi;n++)N.push(n);
       }
       else{err('read_mail: Invalid message specifier. '+x);return null}
     }
@@ -1162,7 +1162,7 @@ cmd(['logout'],function(a){
   var secs=Math.round(S.used+S.cpu),units=(S.used*3+((n-S.login)/36e5)*2+0.4).toFixed(1),cost=(0.05+secs*0.07+(n-S.login)/36e5*1.9).toFixed(2);
   if(!brief)say([S.person+'.'+S.project+' logged out '+dt(n),'CPU usage '+secs+' sec, memory usage '+units+' units, cost $'+cost+'.']);
   M.changed();
-  LAST[S.person]=S.login;S.on=false;S.priv=false;S.level=1;M.drop();S.cpu=0;S.used=0;S.ready=true;S.accepting=false;
+  LAST[S.person]=S.login;S.on=false;S.priv=false;S.level=1;M.drop();S.cpu=0;S.used=0;S.ready=true;S.accepting=false;EC.run++;EC.depth=0;
   P.st.user=GUEST.person.toLowerCase();P.st.cwd=P.st.home=GUEST.home;S.home='';
   if(hold){if(!brief){out('');banner()}else out('');return}
   hangup();

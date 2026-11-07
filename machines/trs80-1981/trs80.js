@@ -189,6 +189,7 @@ function okFile(f){return f&&typeof f.n==='string'&&/^[A-Z][A-Z0-9]{0,7}(\/[A-Z0
   (f.t==='B'&&Array.isArray(f.src)&&f.src.every(srcLine)||f.t==='T'&&typeof f.text==='string'||f.t==='C'&&Number.isInteger(f.size)&&f.size>=0&&f.size<=130000)}
 function srcLine(l){return typeof l==='string'&&/^\d+ /.test(l)}
 function saveDisk(){return P.save(DISKKEY,disk)}
+function full(){return P.save('trs80/probe',null)} /* after a failed save: true if the browser keeps data but is out of room, false if it keeps none (then this visit's disk and tape still work) */
 function bytesOf(f){
   if(f.t==='C')return f.size;
   if(f.t==='T')return f.text.length;
@@ -222,7 +223,7 @@ function spec(s){ /* a file specification: NAME/EXT.PASSWORD:D; null if it is no
 function writeFile(f){
   var old=findFile(f.n),i=old?disk.files.indexOf(old):-1;
   if(i>=0)disk.files[i]=f;else disk.files.push(f);
-  if(freeGrans()<0||!saveDisk()){if(i>=0)disk.files[i]=old;else disk.files.pop();return 27} /* the browser's storage full: Disk full too */
+  if(freeGrans()<0||(!saveDisk()&&full())){if(i>=0)disk.files[i]=old;else disk.files.pop();return 27} /* the browser's storage full: Disk full too */
   return 0;
 }
 
@@ -518,7 +519,7 @@ function cassette(w,done){
     var was=tape.files;
     tape.files=tape.files.filter(function(f){return f.n!==w.name});
     tape.files.push({n:w.name,src:src});
-    if(!P.save(TAPEKEY,tape)){tape.files=was;done('OM');return} /* the browser's storage full */
+    if(!P.save(TAPEKEY,tape)&&full()){tape.files=was;relay();done('OM');return} /* the browser's storage full */
     var ms=Math.min(6000,800+src.join('\r').length*8/1.5);
     sleep(ms,function(){relay();done()});
     return;
