@@ -126,6 +126,7 @@ function sub(E,raw){
       if(isNaN(n1)){bad(E,raw);return}
       var m=A.length?n1:1,col=A[1]==='*'?null:A[1]?+A[1]:E.vcol;
       if(E.cur<0){out('TOF:');if(m>1){E.cur=0;m--}else return}
+      if(E.cur>=E.lines.length){out('EOF:');return}
       for(var i=0;i<m&&E.cur<E.lines.length;i++){var t=lineText(E.lines[E.cur]);out(col?t.slice(0,col):t.replace(/\s+$/,''));if(i<m-1)E.cur++}
       if(m===Infinity){E.cur=E.lines.length;out('EOF:')}
       return;
