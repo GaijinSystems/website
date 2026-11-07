@@ -336,7 +336,7 @@ function help(){
 /* a few words the menu never offered, each starting with a letter no command takes, and what the board says to them */
 var ASIDE=Object.assign(Object.create(null),{
   ver:version,version:version,
-  elite:function(){return '|cThere is no elite section. There is a file area, and the sysop reads every upload.'},
+  elite:function(){return '|cThere is no '+(year()<1983?'private':'elite')+' section. There is a file area, and the sysop reads every upload.'},
   sysop:function(){return S.sysop?'|7That is you. Nobody else is here to blame.':'|7The sysop is here in spirit, and in the drive light. C pages; don\'t count on it.'}});
 function version(){return '|f'+esc(S.C.name)+' |7v2.3, home-grown: the sysop wrote it in '+(os()==='CP/M'?'BASIC':'Turbo Pascal')+', three winters running.'}
 function command(l){
