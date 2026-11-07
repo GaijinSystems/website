@@ -78,7 +78,8 @@ V.formatGuest=function(){V.gone=['*'];V.keepGuest()}; /* the visitor formatted i
 V.keepGuest=function(){
   var d=V.guest191;if(!d)return;
   var mine=d.list().filter(function(f){return !f.factory}).map(function(f){
-    return [f.fn,f.ft,f.fm,f.recfm,f.lrecl,f.lines.map(V.text),f.date?f.date.getTime():0];
+    var r=[f.fn,f.ft,f.fm,f.recfm,f.lrecl,f.lines.map(V.text),f.date?f.date.getTime():0];
+    return f.prot?r.concat(1,f.bin||0):r; /* a locked site file the visitor renamed: still locked after a reload */
   });
   P.save(KEY,{gone:V.gone,files:mine});
 };
@@ -90,6 +91,7 @@ function restore(d){ /* onto the guest's new, empty disk, with keep off */
     if(!Array.isArray(r)||!V.okName(r[0]||'')||!V.okName(r[1]||'')||!Array.isArray(r[5]))return;
     var lines=r[5].filter(function(x){return typeof x==='string'}).map(function(x){return x.slice(0,255)});
     var f=V.file(r[0],r[1],lines,{fm:/^[0-6]$/.test(r[2])?r[2]:'1',recfm:r[3]==='F'?'F':'V',lrecl:Math.min(255,Math.max(1,+r[4]||80)),date:new Date(+r[6]||P.now().getTime())});
+    if(r[7]===1){f.prot=true;if(r[8]>0)f.bin=Math.min(+r[8],999)}
     d.put(f);
   });
 };

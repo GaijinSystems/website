@@ -281,7 +281,7 @@ cmd(['sort'],null,function(a){
 cmd(['more'],null,function(){P.input([],function(L){P.say(L)})});
 /* TERM, in C:\COMM: a terminal program for the modem on COM2, which can call the board (../shared/modem.js, bbs.js) */
 cmd(['term'],'terminal program for the modem',function(){
-  var on=['.'].concat((P.env.PATH||'').split(';')).some(function(d){ /* TERM.EXE, here or on the PATH, as COMMAND.COM looks */
+  var on=['.'].concat((P.env.PATH||'').split(';')).some(function(d){ /* TERM.EXE, here or on the PATH, typed as term (not by its path or with .EXE) */
     var n=d.trim()&&P.find(d.trim().replace(/[\\\/]+$/,'')+'\\term.exe',true);return !!n&&n.type!=='d';
   });
   if(!on){P.typeLine('Bad command or file name');return}

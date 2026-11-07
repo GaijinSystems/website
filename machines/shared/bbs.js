@@ -180,11 +180,12 @@ function areas(){
   A.forEach(function(a){a.files.forEach(function(f){if(f.text&&!f.size)f.size=textSize(f.text)})});
   return A;
 }
+function bps(b){return year()>=1985?(b||'2400'):'1200'} /* a board's modem: 2400s only from 1985 on */
 function bbsList(){
   var C=S.C;
   return [['Boards in the area, at the last count','',undefined],['',''],
-    [(C.name.slice(0,18).padEnd(19)+C.number.padEnd(10)+'2400  this one'),''],
-  ].concat(OTHERS.map(function(b){return [b[0].padEnd(19)+b[1].padEnd(10)+b[2].padEnd(6)+b[4],'']}));
+    [(C.name.slice(0,18).padEnd(19)+C.number.padEnd(10)+bps()+'  this one'),''],
+  ].concat(OTHERS.map(function(b){return [b[0].padEnd(19)+b[1].padEnd(10)+bps(b[2]).padEnd(6)+b[4],'']}));
 }
 function site(){return P.bbs.welcome||P.profile.welcome} /* the site's welcome: the bbs machine keeps it from the terminal's boot */
 function rules(){
@@ -534,7 +535,7 @@ function doorMenu(){
     var n=parseInt(l,10);
     if(!(n>=1&&n<=DOORS.length)){prompt();return}
     var d=DOORS[n-1],ok=false;
-    put('|7Opening '+d[1]+'... writing DOOR.SYS');
+    put('|7Opening '+d[1]+'...'+(year()>=1988?' writing DOOR.SYS':''));
     P.queue(function(){return P.load(['../shared/bbs-doors.js']).then(function(x){ok=x})},true);
     P.queue(function(){
       if(off())return;
@@ -673,7 +674,7 @@ function end(carrier){
 }
 P.bbs={
   numbers:numbers,
-  directory:function(){var c=conf();return [[c.name,c.number,'2400']].concat(OTHERS.map(function(b){return b.slice(0,3)}))}, /* for a terminal program's dialing list */
+  directory:function(){var c=conf();return [[c.name,c.number,bps()]].concat(OTHERS.map(function(b){return [b[0],b[1],bps(b[2])]}))}, /* for a terminal program's dialing list */
   /* a call that has gone through: M is the modem (modem.js), done() is told when the line drops */
   call:function(M,done){
     S={M:M,C:conf(),user:null,handle:'',sysop:false,ansi:false,on:Date.now(),gone:false,done:done,baud:P.baud()};

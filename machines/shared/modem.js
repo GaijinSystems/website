@@ -13,7 +13,7 @@ function audio(){
   if(!P.sound())return null;
   try{
     if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();
-    if(AC.state==='suspended')AC.resume();
+    if(AC.state!=='running')AC.resume();
   }catch(e){return null}
   return AC;
 }

@@ -12,9 +12,12 @@ function err(s){V.em(s,'err')}
 V.stack=[];V.level=0;
 V.globals=[1,1,1,1,1,1,1,1,1,1];
 
-/* a line from the console stack if there is one, else from the terminal */
+/* a line from the console stack if there is one, else from the terminal. A stack that keeps filling itself (EDIT's
+   STACK reading STACK back) lets the terminal breathe every few hundred lines, so ^C can stop it */
+var fromStack=0;
 V.read=function(then,trap){
-  if(V.stack.length){var l=V.stack.shift();P.queue(function(){then(l)});return}
+  if(V.stack.length){var l=V.stack.shift();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
+  fromStack=0;
   V.ask(then,trap);
 };
 
@@ -27,7 +30,7 @@ V.exec=function(W,ctx){ /* W: [fn, args...] in CMS's tokens; runs the EXEC; its 
   if(V.level>=19){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - TOO MANY NESTED EXECS');return 813}
   if(r.f.prot&&!V.mayRead()){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - ERROR READING FILE');return 806}
   var f=r.f,S={fn:f.fn,lines:f.lines.map(function(l){var t=V.text(l);return f.recfm==='F'?t.slice(0,72):t}),pc:0,vars:{},
-    control:'CMS',time:false,msg:true,error:null,loops:[],rc:0,args:[],reading:0,profile:!!ctx.profile};
+    control:'CMS',time:false,msg:true,error:null,loops:[],rc:0,args:[],reading:0,profile:!!ctx.profile,n:0};
   setArgs(S,args);
   V.level++;
   V.rc=0;
@@ -128,9 +131,8 @@ function show(S,T){if(S.control==='ALL')out(T.join(' '))}
 var SPACEMAX=1000; /* &SPACE: more blank lines than a page or two of fanfold is only a long wait */
 
 function run(S){
-  var n=0;
   while(!S.stop&&S.pc<S.lines.length){
-    if(++n>250){P.pause(1);P.queue(function(){run(S)});return} /* a loop of &-statements alone: let the terminal breathe, and ^C stop it */
+    if(++S.n%250===0){P.pause(1);P.queue(function(){run(S)});return} /* every 250 statements, CMS commands and &READs among them: let the terminal breathe, and ^C stop it */
     var raw=S.lines[S.pc];S.pc++;
     var r=stmt(S,raw);
     loopEnd(S);
