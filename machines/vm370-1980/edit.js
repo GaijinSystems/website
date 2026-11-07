@@ -110,7 +110,7 @@ function sub(E,raw){
     if(again)sub(E,again);for(var j=0;j<k;j++){var x=sub(E,E.last||'');if(x)return x}return}
   if(l.charAt(0)==='/'){w='LOCATE';rest=l}
   var name=w?V.lookup(SUB,up(w)):null;
-  if(!name){if(!l){show(E);return}bad(E,raw);return}
+  if(!name){if(!l){if(E.verify)show(E);return}bad(E,raw);return}
   if(name!=='REUSE')E.last=raw;
   var A=up(rest).trim().split(/\s+/).filter(Boolean),n1=A[0]==='*'?Infinity:A.length?parseInt(A[0],10):1;
   switch(name){
@@ -163,7 +163,7 @@ function sub(E,raw){
         if(c<cnt-1){if(E.cur<E.lines.length-1)E.cur++;else break}
       }
       if(!hit)out('NOT FOUND');else changed(E);
-      if(cnt===Infinity){E.cur=E.lines.length;if(E.verify)out('EOF:')}
+      if(cnt===Infinity){E.cur=E.lines.length;out('EOF:')}
       return;}
     case 'ALTER':{
       var ch=A[0],c2=A[1];
@@ -208,7 +208,7 @@ function sub(E,raw){
       if(!A.length){out(String(E.zone[0]).padStart(4)+String(E.zone[1]).padStart(4));return}
       var z0n=A[0]==='*'?1:+A[0],z1n=A[1]===undefined||A[1]==='*'?E.lrecl:+A[1];
       if(!(z0n>=1&&z1n>=z0n&&z1n<=E.lrecl)){bad(E,raw);return}
-      E.zone=[z0n,z1n];show(E);return;
+      E.zone=[z0n,z1n];if(E.verify)show(E);return;
     case 'TRUNC':
       if(!A.length){out(String(E.trunc).padStart(5));return}
       var tr=A[0]==='*'?E.lrecl:+A[0];
@@ -216,7 +216,7 @@ function sub(E,raw){
       E.trunc=tr;return;
     case 'CASE':
       if(!A.length){out('CASE '+(E.caseU?'U':'M'));return}
-      if(A[0]==='U'||A[0]==='M'){E.caseU=A[0]==='U';show(E);return}
+      if(A[0]==='U'||A[0]==='M'){E.caseU=A[0]==='U';if(E.verify)show(E);return}
       bad(E,raw);return;
     case 'RECFM':
       if(!A.length){out('RECFM '+E.recfm);return}
