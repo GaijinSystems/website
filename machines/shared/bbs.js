@@ -333,12 +333,19 @@ function help(){
   }
   put('|7+++ on a line by itself talks to the modem: ATH hangs up, ATO goes back.','dim');
 }
+/* a few words the menu never offered, each starting with a letter no command takes, and what the board says to them */
+var ASIDE=Object.assign(Object.create(null),{
+  ver:version,version:version,
+  elite:function(){return '|cThere is no elite section. There is a file area, and the sysop reads every upload.'},
+  sysop:function(){return S.sysop?'|7That is you. Nobody else is here to blame.':'|7The sysop is here in spirit, and in the drive light. C pages; don\'t count on it.'}});
+function version(){return '|f'+esc(S.C.name)+' |7v2.3, home-grown: the sysop wrote it in '+(os()==='CP/M'?'BASIC':'Turbo Pascal')+', three winters running.'}
 function command(l){
   var c=l.trim().toLowerCase();
   if(!c){prompt();return}
   if(terminalWord(l)){P.queue(prompt,true);return}
   var k=c.charAt(0);
   if(c==='help'||k==='?'){help();prompt();return}
+  if(P.has(ASIDE,c)){put(ASIDE[c]());prompt();return}
   if(/^(bye|logoff|quit|exit|off)$/.test(c))k='g';
   var F={b:function(){bulletinMenu(false)},m:baseMenu,n:newScan,p:function(){post(null,null,prompt)},f:fileMenu,d:doorMenu,
     w:wall,u:userList,l:lastCallers,c:page,t:stats,a:ansiToggle,g:goodbye,'*':sysopMenu};

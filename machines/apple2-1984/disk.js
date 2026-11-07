@@ -5,8 +5,8 @@
    The BASIC programs are typed in as their authors would have typed them; DOS stores them tokenized.
    GUESS, BAGELS, LANDER and KINGDOM are new programs written for this terminal, in the manner of the type-in
    games of the time, under the AGPL with the rest of this file. PHOSPHOR is the terminal card's own program:
-   it points & at itself (the bytes below are 6502 code), and the card does the rest. ZORK I and ZORK II start
-   Infocom's games, whose disks booted on their own and are in drive 2 for that. */
+   it points & at itself (the bytes below are 6502 code), and the card does the rest. ZORK I, ZORK II and ZORK III
+   start Infocom's games, whose disks booted on their own and are in drive 2 for that. */
 (function(P){
 'use strict';
 P.a2disk=function(){return [
@@ -23,6 +23,10 @@ P.a2disk=function(){return [
 '10 REM ZORK II: THE WIZARD OF FROBOZZ',
 '20 REM INFOCOM DISK IN DRIVE 2',
 '30 & "ZORK II"'].join('\n')},
+{n:'ZORK III',t:'A',src:[
+'10 REM ZORK III: THE DUNGEON MASTER',
+'20 REM INFOCOM DISK IN DRIVE 2',
+'30 & "ZORK III"'].join('\n')},
 {n:'GUESS',t:'A',src:[
 '10 HOME',
 '20 PRINT "GUESS":PRINT',

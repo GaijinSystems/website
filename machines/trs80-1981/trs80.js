@@ -606,8 +606,8 @@ var MACH={
 };
 
 /* ---------- the terminal's own words, PHOSPHOR/CMD's doing ---------- */
-/* jokes typed at TRSDOS Ready or BASIC's > (never inside a program): Commodore's words, answered by a Model III
-   owner of 1981, and Zork's magic word. Each: the line (spaces squeezed), and what is said. Keep lines under 64. */
+/* jokes typed at TRSDOS Ready or BASIC's > (never inside a program): Commodore's words and a few others, answered
+   by a Model III owner of 1981, and Zork's magic word. Each: the line (spaces squeezed), and what is said. Keep lines under 64. */
 var JOKES=[
   [/^(XYZZY|PLUGH)$/,['A hollow voice says "Fool."']],
   [/^TRASH-? ?80$/,['Trash-80, eh? Said the owner of a 22-column screen.','Radio Shack has a store in your town. Does Commodore?']],
@@ -616,7 +616,10 @@ var JOKES=[
   [/^COMMODORE$/,['Commodore? Calculators and wristwatches, last we looked.']],
   [/^SYS ?64738$/,["SYS? This isn't a Commodore. The reset button is the","orange one, and it doesn't need a number."]],
   [/^LOAD ?"\$" ?, ?8$/,['LOAD"$",8? Commodore disk talk. Here it is DIR at TRSDOS',"Ready, and the drive is inside the case, where it belongs."]],
-  [/^(GO ?64|GO ?128)$/,['GO where? This one went to 7,000 Radio Shack stores.']]
+  [/^(GO ?64|GO ?128)$/,['GO where? This one went to 7,000 Radio Shack stores.']],
+  [/^MODEL ?(I|1)$/,['The Model I? It talked to every TV on the street, so','the FCC sent it home. This one keeps its voice down.']],
+  [/^APPLE( ?(II|\]\[|2)\+?)?$/,['An Apple? Ask it for a small letter. This one has','lower case built in, and its disk drives too.']],
+  [/^(BATTERY|BATTERIES)$/,['Bring your Battery Club card: one free a month.',"And they'll want your address at the register."]]
 ];
 function joke(u){
   var t=u.trim().replace(/ +/g,' '),j=JOKES.filter(function(x){return x[0].test(t)})[0];

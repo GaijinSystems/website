@@ -319,6 +319,11 @@ function one(c,fromEc){
   }
   exec(W);
 }
+/* other systems' words, which Multics never had: after its own message, a word from a Multics hand of 1981 */
+var ELSEWHERE=Object.assign(Object.create(null),{unix:'One of whatever Multics is many of.  Try Murray Hill.',
+  cat:'That is UNIX.  Here it is print (pr).',rm:'That is UNIX.  Here it is delete (dl).',mkdir:'That is UNIX.  Here it is create_dir (cd).',
+  man:'That is UNIX.  Here it is help.',chmod:'That is UNIX.  Here it is set_acl (sa).',
+  logoff:'This is Multics.  The word is logout.',bye:'This is Multics.  The word is logout.',exit:'This is Multics.  The word is logout.'});
 function exec(W){
   var n=W[0],a=W.slice(1);
   charge();
@@ -327,7 +332,9 @@ function exec(W){
   if(!P.has(CMD,n)){
     var r=path(n); /* a segment of that name in the working directory is found, and is not a program */
     if(!r.err&&r.n&&r.n.type==='f'&&!r.n.bin&&n.indexOf('>')<0){err('command_processor_: Linkage section not found. '+n);return}
-    err('Segment '+n.split('>').pop()+' not found.');return;
+    err('Segment '+n.split('>').pop()+' not found.');
+    if(P.has(ELSEWHERE,n))out(ELSEWHERE[n]);
+    return;
   }
   var c=CMD[n];
   c.run(a,n);
