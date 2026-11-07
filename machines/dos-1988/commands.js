@@ -282,11 +282,12 @@ cmd(['more'],null,function(){P.input([],function(L){P.say(L)})});
 /* TERM, in C:\COMM: a terminal program for the modem on COM2, which can call the board (../shared/modem.js, bbs.js) */
 cmd(['term'],'terminal program for the modem',function(){
   var on=['.'].concat((P.env.PATH||'').split(';')).some(function(d){ /* TERM.EXE, here or on the PATH, typed as term or term.exe; by its path, see P.fallback */
-    var n=d.trim()&&P.find(d.trim().replace(/[\\\/]+$/,'')+'\\term.exe',true);return !!n&&n.type!=='d';
+    return d.trim()&&isFile(d.trim().replace(/[\\\/]+$/,'')+'\\term.exe');
   });
   if(!on){P.typeLine('Bad command or file name');return}
   term();
 });
+function isFile(p){var n=P.find(p,true);return !!n&&n.type!=='d'}
 function term(){
   var ok=false;
   P.queue(function(){return P.load(['../shared/modem.js','../shared/bbs.js']).then(function(x){ok=x})});
@@ -379,10 +380,7 @@ P.fallback=function(word,raw){
     else P.typeLine('File not found');
     return true;
   }
-  if(/[:\\\/]term(?:\.exe)?$/.test(w)&&P.has(P.cmds,'term')){ /* TERM.EXE by its path, C:\COMM\TERM */
-    var t=P.find(w.replace(/\.exe$/,'')+'.exe',true);
-    if(t&&t.type!=='d'){term();return true}
-  }
+  if(/[:\\\/]term(?:\.exe)?$/.test(w)&&P.has(P.cmds,'term')&&isFile(w.replace(/\.exe$/,'')+'.exe')){term();return true} /* TERM.EXE by its path, C:\COMM\TERM */
   var n=P.find(w.replace(/\.(bat|com|exe)$/,'')+'.bat',true);
   if(n&&n.body){
     P.text(n).forEach(function(l){
