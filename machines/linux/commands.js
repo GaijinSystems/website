@@ -759,7 +759,7 @@ var AVAIL=[['bsdgames','2.17-35','collection of classic textual unix games'],['c
   ['fortunes','1:1.99.1-9','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
   ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nginx','1.26.3-3+deb13u7','small, powerful, scalable web/proxy server'],
   ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)'],['tmux','3.5a-3','terminal multiplexer']];
-function mark(p){return PKGS.indexOf(p)<0?'':p[4]?' [installed,automatic]':' [installed]'}
+function entry(p){var i=PKGS.indexOf(p)>=0;return p[0]+'/stable'+(i?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(!i?'':p[4]?' [installed,automatic]':' [installed]')} /* a package's line in apt list and apt search */
 function pkg(n){return PKGS.concat(AVAIL).filter(function(p){return p[0]===n})[0]}
 var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremove|autoclean|clean|reinstall|satisfy|build-dep|source|edit-sources|modernize-sources)$/;
 function apt(a,get){
@@ -781,7 +781,7 @@ function apt(a,get){
   if(!get&&verb==='list'){
     var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
-    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+mark(p)}));
+    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(entry));
     return;
   }
   if(verb==='search'&&get!==true){
@@ -790,7 +790,7 @@ function apt(a,get){
     if(get!==2)lines(['Sorting... Done','Full Text Search... Done']);
     PKGS.concat(AVAIL).sort().filter(function(p){return (p[0]+' '+p[2]).toLowerCase().indexOf(q)>=0}).forEach(function(p){
       if(get===2)P.typeLine(p[0]+' - '+p[2]);
-      else{P.typeLine(p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now':'')+' '+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+mark(p));P.typeLine('  '+p[2]);P.typeLine('')}
+      else{P.typeLine(entry(p));P.typeLine('  '+p[2]);P.typeLine('')}
     });
     return;
   }

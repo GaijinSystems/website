@@ -195,10 +195,16 @@ function basicLines(src){
 }
 function saveDisk(){return P.save(KEY,disk)}
 function put(f,n,t,d){ /* SAVE and BSAVE: file f, or a new one named n, of type t now holds d. The browser's storage full is a full disk, and the file is not written. A browser that keeps nothing still has this visit's disk */
-  var undo;
-  if(f){if(f.l)throw {dos:10};if(f.t!==t)throw {dos:13};var keep=f.d;f.d=d;undo=function(){f.d=keep};if(used()>496){undo();throw {dos:9}}}
-  else{f={n:n,t:t,l:false,d:d};addFile(f);undo=function(){disk.files[disk.files.indexOf(f)]=null}}
+  if(!f){create(n,t,d);return}
+  if(f.l)throw {dos:10};if(f.t!==t)throw {dos:13};
+  var keep=f.d,undo=function(){f.d=keep};f.d=d;
+  if(used()>496){undo();throw {dos:9}}
   commit(undo,9);
+}
+function create(n,t,d){ /* a new file n of type t holding d, on the disk and in the browser (DISK FULL when the browser's storage is) */
+  var f={n:n,t:t,l:false,d:d};addFile(f);
+  commit(function(){disk.files[disk.files.indexOf(f)]=null},9);
+  return f;
 }
 function commit(undo,code){ /* keeps the disk in the browser; when the browser's storage is full, undo() puts the disk back as it was and DOS says code. A browser that keeps nothing still has this visit's disk */
   if(saveDisk()||!P.save(KEY+'-probe',null))return;
@@ -318,12 +324,11 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
     put(f,D.name,'B',{a:D.opt.A,b:b});return 'ok';
   case 'OPEN':
     if(f&&f.t!=='T')throw {dos:13};
-    if(!f){f={n:D.name,t:'T',l:false,d:''};addFile(f);commit(function(){disk.files[disk.files.indexOf(f)]=null},9)}
+    if(!f)f=create(D.name,'T','');
     DOS.open[D.name]={f:f,at:0,keep:f.d};return 'ok';
   case 'CLOSE': /* the text written goes to the disk now; with the browser's storage full, DISK FULL and the files as they were */
-    var shut=D.name?(DOS.open[D.name]?[DOS.open[D.name]]:[]):Object.keys(DOS.open).map(function(k){return DOS.open[k]});
+    var shut=(D.name?[DOS.open[D.name]]:Object.keys(DOS.open).map(function(k){return DOS.open[k]})).filter(function(o){return o&&o.wrote});
     if(D.name)delete DOS.open[D.name];else DOS.open={};
-    shut=shut.filter(function(o){return o.wrote});
     if(shut.length)commit(function(){shut.forEach(function(o){o.f.d=o.keep})},9);else saveDisk();
     return 'ok';
   case 'APPEND':
