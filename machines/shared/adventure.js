@@ -1018,7 +1018,7 @@ function Adventure(resume){
   }
   function slot(n){return 'adventure/'+P.fold(n)} /* a save's key: its file name, as this machine's file system has it (VMS and TOPS-20 know no case) */
   function* restore(name){ /* the wait, and the wizard who can waive it */
-    var G=P.saved(slot(name));
+    var G=P.saved(slot(name))||P.saved('adventure/'+name); /* or as it was typed: a save from before, or from 4.3BSD */
     if(!G){write("adventure: can't open file\n");exit()}
     if(!fits(G)){rspeak(202);P.save(slot(name),null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
     var delay=Math.floor(Date.now()/60000)-Math.floor(G.when/60000); /* whole clock minutes, as datime() counts */
