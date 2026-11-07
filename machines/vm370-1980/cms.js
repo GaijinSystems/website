@@ -110,8 +110,8 @@ V.command=function(l,ctx){ /* one CMS command line; its return code */
   if(name&&V.find(name,'MODULE','*'))return V.module(name,split(W),l);
   if(V.find(w,'MODULE','*'))return V.module(w,split(W),l);
   if(V.opt.impcp){var rc=V.cp(l,'cms');if(rc!==null)return rc}
-  if(ctx.typed&&osWords(w)){V.unknown=false;return 0}
   P.typeLine('UNKNOWN '+(V.opt.impcp?'CP/CMS':'CMS')+' COMMAND','err'); /* without its code, whatever EMSG says */
+  if(ctx.typed)osWords(w); /* and a word from across the room after it */
   V.unknown=!!ctx.typed; /* at the terminal, no ready message follows */
   return -3;
 };
