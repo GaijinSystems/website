@@ -685,6 +685,7 @@ P.setup(function(){
   V.lmTime=new Date(P.now().getTime()-((P.now().getHours()+6)*36e5));V.lmTime.setHours(7,58,12);
   V.setupDirectory();
   V.setupDisks();
+  P.setPrompt(function(){return ''}); /* a typewriter on CP and CMS: no prompt, whatever prompt: the site sets for the shells */
   ['help','mail','about','source','sound','fill','effects','connect'].forEach(function(k){
     if(!P.has(P.cmds,k))return;
     TERM[k]=P.cmds[k];

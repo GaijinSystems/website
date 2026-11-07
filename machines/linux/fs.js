@@ -151,8 +151,8 @@ Phosphor.setup(function(P){
   sys('/var/log/wtmp','f',{mode:'-rw-rw-r--',group:'utmp',bin:true,size:12288,date:P.now()});
   sys('/var/log/apt','d');
   sys('/var/log/apt/term.log','f',{mode:'-rw-r-----',group:'adm',prot:true,size:48211,date:UPG});
-  sys('/var/log/apt/history.log','f',{date:UPG,body:['','Start-Date: 2025-11-02  19:03:40','Commandline: apt install frotz sl cowsay fortune-mod cmatrix','Requested-By: '+OWNER+' (1000)',
-    'Install: frotz:amd64 (2.55+dfsg-2), sl:amd64 (5.02-1+b1), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-9), fortunes-min:amd64 (1:1.99.1-9, automatic), cmatrix:amd64 (2.0-6), librecode3:amd64 (3.7.15-1, automatic)',
+  sys('/var/log/apt/history.log','f',{date:UPG,body:['','Start-Date: 2025-11-02  19:03:40','Commandline: apt install frotz sl cowsay fortune-mod cmatrix nethack-console','Requested-By: '+OWNER+' (1000)',
+    'Install: frotz:amd64 (2.55+dfsg-2), sl:amd64 (5.02-1+b1), cowsay:amd64 (3.03+dfsg2-8), fortune-mod:amd64 (1:1.99.1-9), fortunes-min:amd64 (1:1.99.1-9, automatic), cmatrix:amd64 (2.0-6), librecode3:amd64 (3.7.15-1, automatic), nethack-console:amd64 (3.6.7-1+b2), nethack-common:amd64 (3.6.7-1+b2, automatic)',
     'End-Date: 2025-11-02  19:04:02','','Start-Date: 2026-10-14  06:24:31','Commandline: /usr/bin/unattended-upgrade','Install: linux-image-'+D.krel+':amd64 (6.12.111-1, automatic)','Upgrade: linux-image-amd64:amd64 (6.12.107-1, 6.12.111-1)',
     'End-Date: 2026-10-14  06:25:11']});
   sys('/var/log/dpkg.log','f',{date:UPG,body:['2026-10-14 06:24:33 startup archives unpack','2026-10-14 06:24:41 install linux-image-'+D.krel+':amd64 <none> 6.12.111-1','2026-10-14 06:24:58 status installed linux-image-'+D.krel+':amd64 6.12.111-1',

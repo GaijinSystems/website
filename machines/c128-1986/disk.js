@@ -37,8 +37,8 @@ D.mount=function(){ /* the disk as it was left: the files it came with, less wha
   this.gone=gone;
   this.holes=ok&&Array.isArray(s.holes)?s.holes.filter(function(x){return typeof x==='number'}):[]; /* directory slots scratched files left, filled first */
 };
-D.keep=function(){ /* everything that differs from the disk as it came */
-  this.store.save(KEY,{name:this.name,id:this.id,gone:this.gone,holes:this.holes,
+D.keep=function(){ /* everything that differs from the disk as it came; false if the browser would not keep it */
+  return this.store.save(KEY,{name:this.name,id:this.id,gone:this.gone,holes:this.holes,
     files:this.files.filter(function(f){return !f.factory}).map(function(f){return [f.name,f.type,b64(f.data),f.order]})});
 };
 D.free=function(){var u=0;this.files.forEach(function(f){u+=blocks(f)});return Math.max(0,BLOCKS-u)};
@@ -85,16 +85,22 @@ D.write=function(name,type,data,replace){ /* a whole file; false with the status
   if(ex&&!replace){this.set(63);return false}
   if(ex&&ex.prot){this.set(26);return false}
   if(blocks({data:data})>this.free()+(ex?blocks(ex):0)){this.set(72,36,0);return false}
+  var was=ex&&{type:ex.type,data:ex.data,factory:ex.factory},holes=this.holes.slice(),gone=this.gone.slice(),made=null;
   if(ex){
     ex.type=type;ex.data=data;
     if(ex.factory){delete ex.factory;this.gone.push(name)}
   }
   else{
     var order=this.holes.length?this.holes.shift():this.files.reduce(function(m,f){return Math.max(m,f.order)},0)+1;
-    this.files.push({name:name,type:type,data:data,order:order});
+    this.files.push(made={name:name,type:type,data:data,order:order});
     this.files.sort(function(a,b){return a.order-b.order});
   }
-  this.set(0);this.keep();return true;
+  if(this.keep()===false&&this.store.save(KEY+'-probe',null)){ /* the browser's storage full: a full disk, and the file is not written. One that keeps nothing still has this visit's disk */
+    if(was)Object.assign(ex,was);else this.files.splice(this.files.indexOf(made),1);
+    this.holes=holes;this.gone=gone;this.keep();
+    this.set(72,36,0);return false;
+  }
+  this.set(0);return true;
 };
 D.scratch=function(pats){
   var n=0,self=this;
