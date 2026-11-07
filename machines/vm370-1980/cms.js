@@ -65,7 +65,11 @@ function cmsLine(l){
   }
   var quiet=false;
   if(l.trim())P.queue(function(){V.rc=V.command(l,{typed:true});if(V.rc===-3&&V.unknown)quiet=true;V.unknown=false});
-  P.queue(function(){if(V.state==='cms'&&!V.cpMode&&!quiet)V.ready(V.rc)});
+  P.queue(function(){
+    if(V.state!=='cms'||V.cpMode)return;
+    if(!quiet)V.ready(V.rc);
+    if(V.stack.length)cmsLine(V.stack.shift()); /* what an EXEC left in the console stack: CMS reads it as its next commands */
+  });
 }
 
 /* ---------- words: CMS reads a line as eight-character tokens, and ( starts the options ---------- */
@@ -234,6 +238,7 @@ C.LISTFILE=function(a,o){
   if(opt.EXEC||opt.APPEND){
     if(!rw('LST','A'))return 36;
     var lines=R.map(function(r){return ' &1 &2 '+row(r)}),old=V.acc.A.disk.get('CMS','EXEC');
+    if(opt.APPEND&&old&&old.prot&&!V.mayRead()){err('DMSLST104S ERROR \'3\' READING FILE \''+fid(old,'A')+'\' FROM DISK');return 100}
     if(opt.APPEND&&old)lines=old.lines.concat(lines);
     if(!V.write('LST','A',V.file('CMS','EXEC',lines,{recfm:'F',lrecl:80})))return 100;
     return 0;
@@ -256,7 +261,7 @@ C.TYPE=function(a,o){
   if(fm&&fm!=='*'&&badMode(fm)){err('DMSTYP048E INVALID MODE \''+fm+'\'');return 24}
   var r=V.find(fn,ft,fm||null);
   if(!r){err('DMSTYP002E FILE \''+fn+' '+ft+' '+(fm||'A')+'\' NOT FOUND');return 28}
-  if(r.f.prot&&!V.privileged()){err('DMSTYP104S ERROR \'3\' READING FILE \''+fid(r.f,r.mode)+'\' FROM DISK');return 100}
+  if(r.f.prot&&!V.mayRead()){err('DMSTYP104S ERROR \'3\' READING FILE \''+fid(r.f,r.mode)+'\' FROM DISK');return 100}
   var L=V.records(r.f),n1=1,n2=L.length;
   if(from&&from!=='*'){if(!/^\d+$/.test(from)){err('DMSTYP049E INVALID LINE NUMBER \''+from+'\'');return 24}n1=+from}
   if(to&&to!=='*'){if(!/^\d+$/.test(to)){err('DMSTYP049E INVALID LINE NUMBER \''+to+'\'');return 24}n2=Math.min(+to,L.length)}
@@ -265,6 +270,7 @@ C.TYPE=function(a,o){
   if(col)S=S.map(function(l){var x=P.lineOf(l);return [String(x[0]).slice(col[0]-1,col[1]),x[1]||'',x[2]]});
   if(hex){var k=n1;S.forEach(function(l){var t=V.text(l),h=V.hex(t);out(' RECORD '+String(k++).padStart(5)+' LENGTH='+String(t.length).padStart(6));for(var i=0;i<h.length;i+=10)out(' '+h.slice(i,i+10).join('  '))});return 0}
   if(r.f.ft==='LISTING')S=S.map(function(l){return V.text(l).slice(1)});
+  /* no more than 130 characters of a record: so the Release 6 reference says, and so TYPE does under Hercules */
   P.say(S.map(function(l){return Array.isArray(l)?[String(l[0]).slice(0,130),l[1]||'',l[2]]:String(l).slice(0,130)}));
   return 0;
 };
@@ -345,7 +351,7 @@ C.COPYFILE=function(a,o){
   var many=/\*/.test(s[0]+s[1]),rc=0;
   for(i=0;i<R.length;i++){
     var f=R[i].f;
-    if(f.prot&&!V.privileged()){err('DMSCPY104S ERROR \'3\' READING FILE \''+fid(f,R[i].mode)+'\' FROM DISK');return 100}
+    if(f.prot&&!V.mayRead()){err('DMSCPY104S ERROR \'3\' READING FILE \''+fid(f,R[i].mode)+'\' FROM DISK');return 100}
     var nf=t[0]==='='||t[0]==='*'?f.fn:t[0],nt=t[1]==='='||t[1]==='*'?f.ft:t[1],tm=t[2].charAt(0),tn=t[2].charAt(1)||f.fm;
     if(!V.okName(nf)||!V.okName(nt)){err('DMSCPY062E INVALID CHAR \'*\' IN FILEID');return 20}
     var D=V.acc[tm].disk,ex=D.get(nf,nt),same=ex===f;
@@ -354,6 +360,7 @@ C.COPYFILE=function(a,o){
     if(Array.isArray(f.lines[0])&&!opt.UPCASE&&!opt.LOWCASE)lines=f.lines.slice();
     var recfm=opt.RECFM||(opt.APPEND&&ex?ex.recfm:f.recfm),lrecl=opt.LRECL||(opt.APPEND&&ex?ex.lrecl:f.lrecl);
     if(recfm==='F')lines=lines.map(function(l){return Array.isArray(l)?l:String(l).slice(0,lrecl)});
+    if(opt.APPEND&&ex&&ex.prot&&!V.mayRead()){err('DMSCPY104S ERROR \'3\' READING FILE \''+fid(ex,tm)+'\' FROM DISK');return 100} /* the locked file's lines would come out in the copy */
     if(opt.APPEND&&ex)lines=ex.lines.concat(lines);
     if(opt.TYPE||many&&!opt.NOTYPE&&!/\*/.test(t[0]+t[1]))out('DMSCPY721I COPY \''+fid(f,R[i].mode)+'\' '+(opt.APPEND&&ex?'APPEND':'TO')+' \''+nf+' '+nt+' '+tm+tn+'\' ('+(ex?'OLD':'NEW')+' FILE)');
     var g=V.file(nf,nt,lines,{fm:tn,recfm:recfm,lrecl:recfm==='F'?lrecl:0,date:opt.OLDDATE?f.date:P.now()});
@@ -382,7 +389,7 @@ function spoolOut(mod,dev,a,o){
   if(!V.devs[dev]){err('DMS'+mod+'113S '+(dev==='00D'?'PUNCH':'PRINTER')+' ('+dev+') NOT ATTACHED');return 100}
   R.forEach(function(r){
     var f=r.f;
-    if(f.prot&&!V.privileged()){err('DMS'+mod+'104S ERROR \'3\' READING FILE \''+fid(f,r.mode)+'\' FROM DISK');return}
+    if(f.prot&&!V.mayRead()){err('DMS'+mod+'104S ERROR \'3\' READING FILE \''+fid(f,r.mode)+'\' FROM DISK');return}
     var L=f.lines.map(V.text);
     if(hdr)L=[V.readCard(f,r.mode,r.disk.label)].concat(L);
     V.closeSpool(dev,L,f.fn,f.ft);
@@ -423,14 +430,14 @@ C.DISK=function(a,o){
     if(a.length<3){err('DMSDSK054E INCOMPLETE FILEID SPECIFIED');return 24}
     var r=V.find(a[1],a[2],a[3]||'A');
     if(!r){err('DMSDSK002E FILE \''+a[1]+' '+a[2]+' '+(a[3]||'A')+'\' NOT FOUND');return 28}
-    if(r.f.prot&&!V.privileged()){err('DMSDSK104S ERROR \'3\' READING FILE \''+fid(r.f,r.mode)+'\' FROM DISK');return 100}
+    if(r.f.prot&&!V.mayRead()){err('DMSDSK104S ERROR \'3\' READING FILE \''+fid(r.f,r.mode)+'\' FROM DISK');return 100}
     V.closeSpool('00D',[V.readCard(r.f,r.mode,r.disk.label)].concat(r.f.lines.map(V.text)),r.f.fn,r.f.ft);
     return 0;
   }
   if(w==='LOAD'){
     if(!V.rdr.length){err('DMSDSK205W READER EMPTY OR NOT READY');return 8}
-    var f=V.rdr[0],L=f.lines.map(V.text),h=L.length&&/^:READ /.test(L[0])?L.shift().slice(5).trim().split(/\s+/):null;
-    if(!h){err('DMSDSK078E INVALID CARD IN INPUT DECK');return 32}
+    var f=V.rdr[0],L=f.lines.map(V.text),h=L.length&&/^:READ /.test(L[0])?up(L.shift().slice(5)).trim().split(/\s+/):null;
+    if(!h||!V.okName(h[0]||'')||!V.okName(h[1]||'')||h[2]&&badMode(h[2])){err('DMSDSK078E INVALID CARD IN INPUT DECK');return 32} /* a :READ card it cannot use */
     if(!rw('DSK','A'))return 36;
     var fmn=(h[2]||'A1').charAt(1)||'1';
     if(!V.write('DSK','A',V.file(h[0],h[1],L,{fm:fmn})))return 100;
@@ -542,6 +549,7 @@ C.SYNONYM=function(a,o){
   if(a.length){
     var fm=a[2]||'A1',r=V.find(a[0],'SYNONYM',a[2]||'*');
     if(!r){err('DMSSYN002E FILE \''+a[0]+' SYNONYM '+(fm.length<2?fm+'1':fm)+'\' NOT FOUND');return 28}
+    if(r.f.prot&&!V.mayRead()){err('DMSSYN104S ERROR \'3\' READING FILE \''+fid(r.f,r.mode)+'\' FROM DISK');return 100}
     V.syn={};
     r.f.lines.forEach(function(l){var x=V.text(l).slice(0,72).trim().toUpperCase().split(/\s+/);if(x[0]&&x[1])V.syn[x[1].slice(0,8)]=x[0].slice(0,8)});
     return 0;
@@ -613,6 +621,8 @@ V.compare=function(a){
   var x=V.find(a[0],a[1],a[2]),y=V.find(a[3]==='='?a[0]:a[3],a[4]==='='?a[1]:a[4],a[5]==='='?a[2]:a[5]);
   if(!x){err('DMSCMP002E FILE \''+a[0]+' '+a[1]+' '+a[2]+'\' NOT FOUND');return 28}
   if(!y){err('DMSCMP002E FILE \''+a.slice(3,6).join(' ')+'\' NOT FOUND');return 28}
+  var locked=[x,y].filter(function(r){return r.f.prot&&!V.mayRead()})[0];
+  if(locked){err('DMSCMP104S ERROR \'3\' READING FILE \''+fid(locked.f,locked.mode)+'\' FROM DISK');return 100}
   var A=x.f.lines.map(V.text),B=y.f.lines.map(V.text),n=Math.max(A.length,B.length),diff=0;
   for(var i=0;i<n;i++){
     if((A[i]||'').trimEnd()!==(B[i]||'').trimEnd()){diff++;if(A[i]!==undefined)out(A[i]);if(B[i]!==undefined)out(B[i]);out('')}
@@ -624,6 +634,7 @@ V.sort=function(a){
   if(a.length<6){err('DMSSRT054E INCOMPLETE FILEID SPECIFIED');return 24}
   var x=V.find(a[0],a[1],a[2]);
   if(!x){err('DMSSRT002E FILE \''+a[0]+' '+a[1]+' '+a[2]+'\' NOT FOUND');return 28}
+  if(x.f.prot&&!V.mayRead()){err('DMSSRT104S ERROR \'3\' READING FILE \''+fid(x.f,x.mode)+'\' FROM DISK');return 100}
   out('DMSSRT604R ENTER SORT FIELDS:');
   V.ask(function(l){
     if(l===null||l===P.INT)return;
@@ -637,7 +648,7 @@ V.sort=function(a){
 };
 
 /* ---------- the terminal's own words ---------- */
-var TERM={};
+var TERM=Object.create(null); /* no __proto__ or constructor among them */
 V.termWord=function(w,l){
   var k=w.toLowerCase(),f=TERM[k];
   if(!f)return false;

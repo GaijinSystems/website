@@ -20,6 +20,7 @@ function audio(){
 function hush(){ /* everything still sounding or still to come stops: a hang-up, or a key that aborts the dial */
   live.forEach(function(g){try{g.gain.cancelScheduledValues(0);g.gain.value=0;g.disconnect()}catch(e){}});
   live=[];
+  if(AC&&AC.state==='running')try{AC.suspend()}catch(e){} /* a quiet line costs the browser nothing; audio() wakes it */
 }
 function Speaker(vol){ /* a group of sounds laid out on one time line, from now; at(ms) and the rest add to it. vol 0: silent (ATM0) */
   var a=vol===0?null:audio(),g=null,t0=0;
@@ -58,7 +59,7 @@ function digits(s){return String(s||'').replace(/[^0-9*#]/g,'')}
 /* where a number goes: the board, the other boards on its list (busy, or nobody home), or nowhere */
 function lineFor(num){
   var d=digits(num),B=P.bbs&&P.bbs.numbers?P.bbs.numbers():{};
-  for(var k in B)if(P.has(B,k)){var n=digits(k);if(n&&d.length>=7&&d.slice(-n.length)===n)return B[k]}
+  for(var k in B)if(P.has(B,k)){var n=digits(k);if(n&&(d===n||n.length>=7&&d.slice(-n.length)===n))return B[k]} /* a prefix (1, an area code) before a full number is fine */
   return 'none';
 }
 /* the whole call, laid out in time: [ms, what] steps for the speaker, and when the result comes */

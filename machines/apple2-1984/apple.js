@@ -652,7 +652,7 @@ function amper(t){
   return false;
 }
 function welcome(){ /* the site's welcome, word-wrapped to the screen */
-  var L=WELCOME.concat(MAILNOTE?['',MAILNOTE]:[],P.columns&&coarse()?['','(tap the screen for a keyboard.)']:[]);
+  var L=WELCOME.concat(MAILNOTE?['',MAILNOTE]:[],coarse()?['','(tap the screen for a keyboard.)']:[]);
   L.forEach(function(l){
     var t=String(Array.isArray(l)?l[0]:l).replace(/[\u0001-\u0004]/g,'');
     wrap(t,39).forEach(function(x){say(x);cr()});

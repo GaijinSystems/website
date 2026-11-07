@@ -25,6 +25,7 @@ V.exec=function(W,ctx){ /* W: [fn, args...] in CMS's tokens; runs the EXEC; its 
   var r=V.find(name,'EXEC','*');
   if(!r){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - FILE NOT FOUND');return 801}
   if(V.level>=19){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - TOO MANY NESTED EXECS');return 813}
+  if(r.f.prot&&!V.mayRead()){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - ERROR READING FILE');return 806}
   var f=r.f,S={fn:f.fn,lines:f.lines.map(function(l){var t=V.text(l);return f.recfm==='F'?t.slice(0,72):t}),pc:0,vars:{},
     control:'CMS',time:false,msg:true,error:null,loops:[],rc:0,args:[],reading:0,profile:!!ctx.profile};
   setArgs(S,args);
@@ -36,12 +37,13 @@ V.exec=function(W,ctx){ /* W: [fn, args...] in CMS's tokens; runs the EXEC; its 
 };
 function setArgs(S,args){
   S.args=args.slice(0,30).map(function(a){return a==='%'?'':a});
-  S.vars['&INDEX']=String(S.args.length);
+  S.vars['&INDEX']=String(S.args.length); /* as the arguments were given: &5 = X later does not change it (so on Release 6) */
 }
-/* the interpreter's errors, with the return codes it gave them (801 to 812 checked against Release 6) */
-var ERR={GOTO:[802,'&SKIP OR &GOTO ERROR'],COND:[808,'INVALID FORM OF CONDITION'],CONV:[812,'CONVERSION ERROR'],END:[803,'MISSING &END'],
-  WORD:[804,'INVALID CONTROL WORD'],LOOP:[805,'INVALID &LOOP'],DEPTH:[806,'TOO MANY NESTED LOOPS'],ASSIGN:[807,'INVALID ASSIGNMENT'],
-  READ:[809,'INVALID &READ'],FUNC:[810,'INVALID FUNCTION'],ARGS:[811,'TOO MANY ARGUMENTS']};
+/* the interpreter's errors and their return codes, as the Release 6 Command and Macro Reference lists them (801, 802,
+   805, 808, 810, 812 and 814 also seen on Release 6 under Hercules) */
+var ERR={GOTO:[802,'&SKIP OR &GOTO ERROR'],COND:[808,'INVALID FORM OF CONDITION'],CONV:[812,'CONVERSION ERROR'],WORD:[816,'INVALID CONTROL WORD'],
+  DEPTH:[805,'MAX DEPTH OF LOOP NESTING EXCEEDED'],SPECIAL:[810,'MISUSE OF SPECIAL VARIABLE'],
+  FUNC:[814,'MISUSE OF BUILT-IN FUNCTION']};
 function fail(S,k){
   var e=ERR[k];
   err('DMSEXT072E ERROR IN EXEC FILE '+S.fn+', LINE '+S.pc+' - '+e[1]);
@@ -73,12 +75,13 @@ function value(S,k){
 function tokens(t){ /* EXEC scans a line into eight-character tokens, with parentheses as tokens of their own */
   return t.replace(/\(/g,' ( ').replace(/\)/g,' ) ').trim().split(/\s+/).filter(Boolean).map(function(w){return w.slice(0,8)});
 }
-function subst(S,tok,keepFirst){ /* every symbol in every token, again and again until none is left; null tokens drop out */
+function subst(S,tok,keepFirst,test){ /* every symbol in every token, again and again until none is left; null tokens drop out.
+                                         test: a condition, where &* and &$ stand for the arguments and stay as they are */
   var o=[];
   for(var i=0;i<tok.length;i++){
     var t=tok[i];
     if(t==='&LITERAL'&&i+1<tok.length){o.push(tok[++i]);continue}
-    if(i===0&&keepFirst){o.push(t);continue}
+    if(i===0&&keepFirst||test&&(t==='&*'||t==='&$')){o.push(t);continue}
     for(var n=0;n<20&&/&/.test(t);n++){
       var r=t.replace(/&[A-Z0-9$#@*?]*/g,function(m){return m==='&'?m:value(S,m)});
       if(r===t)break;t=r;
@@ -122,9 +125,12 @@ function label(S,l){ /* the line of a -label: after this one, round to the top, 
   return -1;
 }
 function show(S,T){if(S.control==='ALL')out(T.join(' '))}
+var SPACEMAX=1000; /* &SPACE: more blank lines than a page or two of fanfold is only a long wait */
 
 function run(S){
+  var n=0;
   while(!S.stop&&S.pc<S.lines.length){
+    if(++n>250){P.pause(1);P.queue(function(){run(S)});return} /* a loop of &-statements alone: let the terminal breathe, and ^C stop it */
     var raw=S.lines[S.pc];S.pc++;
     var r=stmt(S,raw);
     loopEnd(S);
@@ -136,7 +142,7 @@ function loopEnd(S){ /* the end of a loop's body: back to its top, or out */
   if(!L||S.stop)return;
   if(S.pc<=L.end)return;
   L.done++;
-  if(L.times!=null?L.done>=L.times:cond(S,subst(S,L.cond))===true){S.loops.pop();if(S.loops.length)loopEnd(S);return}
+  if(L.times!=null?L.done>=L.times:cond(S,subst(S,L.cond,false,true))===true){S.loops.pop();if(S.loops.length)loopEnd(S);return}
   S.pc=L.start;
 }
 function stmt(S,raw){
@@ -149,8 +155,7 @@ function stmt(S,raw){
   if(w==='&BEGTYPE'||w==='&BEGSTACK'||w==='&BEGEMSG'||w==='&BEGPUNCH'){
     var all=T.indexOf('ALL')>0,L=[];
     while(S.pc<S.lines.length&&!/^&END\b/i.test(S.lines[S.pc])){L.push(S.lines[S.pc]);S.pc++}
-    if(S.pc>=S.lines.length){fail(S,'END');return}
-    S.pc++;
+    S.pc++; /* no &END: the rest of the file, and no complaint */
     if(w==='&BEGTYPE')P.say(L.map(function(l){return all?l:l.slice(0,72)}));
     else if(w==='&BEGSTACK'){if(T.indexOf('LIFO')>0)V.stack=L.reverse().concat(V.stack);else V.stack=V.stack.concat(L)}
     else if(w==='&BEGEMSG')L.forEach(function(l){err('DMS'+l)});
@@ -161,8 +166,8 @@ function stmt(S,raw){
   /* an assignment: &X = value */
   if(/^&/.test(w)&&T[1]==='='&&!/^&(IF|LOOP|TYPE|READ|STACK|CONTROL|GOTO|SKIP|EXIT|ERROR|ARGS)$/.test(w)){
     var lhs='&'+(subst(S,[w.slice(1)],false)[0]||''),R=subst(S,T.slice(2)); /* the leftmost symbol is the name, not its value */
-    if(lhs.length<2&&!/^&/.test(w)){fail(S,'ASSIGN');return}
-    if(/^&\d+$/.test(w)){var n=+w.slice(1);if(n<1||n>30){fail(S,'ASSIGN');return}}
+    /* &31 on, and what only EXEC sets, may not be assigned; &0 and a name that comes to nothing may (so on Release 6) */
+    if(/^&\d+$/.test(lhs)?+lhs.slice(1)>30:/^&(INDEX|EXEC|TYPEFLAG|READFLAG|LINENUM|DOS|DISK.)$/.test(lhs)){fail(S,'SPECIAL');return}
     var v;
     if(R[0]==='&CONCAT')v=R.slice(1).join('').slice(0,8);
     else if(R[0]==='&LENGTH')v=String((R[1]||'').length);
@@ -171,7 +176,7 @@ function stmt(S,raw){
     else if(R.length>1&&R.every(function(x,k){return k%2?x==='+'||x==='-':num(x)})){v=+R[0];for(var k=1;k<R.length;k+=2)v=R[k]==='+'?v+(+R[k+1]):v-(+R[k+1]);v=String(v)}
     else if(R.length>1&&R.some(function(x){return x==='+'||x==='-'})){fail(S,'CONV');return}
     else v=(R[0]||'').slice(0,8);
-    if(/^&\d+$/.test(lhs)){S.args[+lhs.slice(1)-1]=v;return}
+    if(/^&\d+$/.test(lhs)&&lhs!=='&0'){S.args[+lhs.slice(1)-1]=v;return}
     var g=lhs.match(/^&GLOBAL(\d)$/);
     if(g){if(!num(v)){fail(S,'CONV');return}V.globals[+g[1]]=+v;return}
     if(lhs==='&RETCODE'){V.rc0=+v||0;return}
@@ -224,7 +229,7 @@ function control(S,w,T,raw){
     case '&TYPE':
       A=subst(S,T.slice(1));show(S,['&TYPE'].concat(A));out(A.join(' '));return;
     case '&SPACE':
-      var n=+(subst(S,T.slice(1))[0]||1);for(var i=0;i<n;i++)out('');return;
+      var n=Math.min(+(subst(S,T.slice(1))[0]||1),SPACEMAX);for(var i=0;i<n;i++)out('');return;
     case '&EMSG':
       A=subst(S,T.slice(1));err('DMS'+A.join(' '));return;
     case '&STACK':
@@ -263,7 +268,7 @@ function control(S,w,T,raw){
       if(S.pc<0){fail(S,'GOTO');return}
       return;
     case '&IF':
-      A=subst(S,T.slice(1));
+      A=subst(S,T.slice(1),false,true);
       if(A.length<4){fail(S,'COND');return}
       var c=cond(S,A);
       if(c===null){fail(S,'COND');return}
@@ -274,14 +279,14 @@ function control(S,w,T,raw){
     case '&LOOP':
       A=subst(S,T.slice(1));
       var first=T[1]||'',end;
-      if(/^-/.test(first)){end=label(S,first);if(end<0){fail(S,'LOOP');return}}
+      if(/^-/.test(first)){end=label(S,first);if(end<0){fail(S,'GOTO');return}}
       else if(num(A[0]||'')){end=S.pc+(+A[0])-1}
-      else{fail(S,'LOOP');return}
+      else{fail(S,'CONV');return}
       if(S.loops.length>=4){fail(S,'DEPTH');return}
       var L={start:S.pc,end:end,done:0,times:null,cond:null};
       if(A.length===2&&num(A[1]))L.times=+A[1];
-      else if(A.length>=4){L.cond=T.slice(2);if(cond(S,subst(S,L.cond))===true){S.pc=end+1;return}}
-      else{fail(S,'LOOP');return}
+      else if(A.length>=4){L.cond=T.slice(2);if(cond(S,subst(S,L.cond,false,true))===true){S.pc=end+1;return}}
+      else{fail(S,'COND');return}
       if(L.times===0){S.pc=end+1;return}
       S.loops.push(L);return;
     case '&READ':
@@ -297,7 +302,7 @@ function control(S,w,T,raw){
         return 'wait';
       }
       var cnt=+what;
-      if(!(cnt>=1)){fail(S,'READ');return}
+      if(!(cnt>=1)){fail(S,'CONV');return}
       (function more(k){
         if(!k)return;
         V.read(function(l){

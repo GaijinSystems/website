@@ -203,6 +203,7 @@ function charge(w){S.cpu+=(w||1)*(0.008+Math.random()*0.03);S.pf+=Math.floor(Mat
 M.charge=charge;
 function readyLine(){return 'r '+hm(P.now())+' '+S.cpu.toFixed(3)+' '+S.pf+(S.level>1?' level '+S.level:'')}
 function ready(){
+  EC.depth=0; /* back at command level: no exec_com is running, even one ^C stopped half way */
   if(!S.on||!S.ran&&!S.quit)return '';
   var s=S.quit?'QUIT\n':'';
   S.quit=false;S.ran=false;
@@ -244,8 +245,8 @@ function splitLine(s){ /* at ; outside quotes and brackets */
   return L;
 }
 function CPErr(m){this.msg=m}
-function words(s){ /* {w:[...], iter:index of the ( ) word or -1}; throws CPErr */
-  var W=[],cur=null,i=0,iter=-1,group=null;
+function words(s){ /* {w:[...], iter:[indexes of the ( ) words]}; throws CPErr */
+  var W=[],cur=null,i=0,iter=[],group=null;
   function push(){if(cur!==null){if(group)group.push(cur);else W.push(cur)}cur=null}
   while(i<s.length){
     var c=s.charAt(i);
@@ -270,7 +271,7 @@ function words(s){ /* {w:[...], iter:index of the ( ) word or -1}; throws CPErr 
     }
     if(c===']')throw new CPErr('Brackets do not balance.');
     if(c==='('&&!group&&cur===null){group=[];i++;continue}
-    if(c===')'&&group){push();iter=W.length;W.push(group);group=null;i++;continue}
+    if(c===')'&&group){push();iter.push(W.length);W.push(group);group=null;i++;continue}
     if(c==='('||c===')')throw new CPErr('Parentheses do not balance.');
     cur=(cur||'')+c;i++;
   }
@@ -310,9 +311,10 @@ function one(c,fromEc){
   try{r=words(c)}catch(e){if(e instanceof CPErr){err(/^Segment |: /.test(e.msg)?e.msg:'command_processor_: '+e.msg);charge();return}throw e}
   var W=r.w;
   if(!W.length)return;
-  if(r.iter>=0){ /* (a b c): the command once for each */
-    var G=W[r.iter];
-    G.forEach(function(g){var X=W.slice();X[r.iter]=g;P.queue(function(){exec(X)})});
+  if(r.iter.length){ /* (a b c): the command once for each; two sets go side by side, a with c, b with d */
+    var len=W[r.iter[0]].length;
+    if(r.iter.some(function(k){return W[k].length!==len})){err('command_processor_: Mismatched iteration sets.');charge();return}
+    for(var x=0;x<len;x++)(function(x){var X=W.slice();r.iter.forEach(function(k){X[k]=W[k][x]});P.queue(function(){exec(X)})})(x);
     return;
   }
   exec(W);
@@ -598,7 +600,8 @@ cmd(['rename','rn'],function(a){
         N[k]=to;delete d.kids[r.name];d.kids[to]=r.n;if(k===0)r.n.name=to;r.n.names=N;M.changed();
       }
       var ex=P.has(d.kids,to)?d.kids[to]:null;
-      if(ex&&ex!==r.n){
+      if(ex===r.n){bad('rename','Name already on entry.',to+' on '+mp(join(r.dir,r.name))+'.');return} /* as MR12.8 says it */
+      if(ex){
         var where=r.shown.slice(0,r.shown.lastIndexOf('>'))+'>'+to;
         if(namesOf(ex).length>1||ex.type==='d'){bad('rename','Name duplication.',where);return}
         query('rename: Name duplication. Do you want to delete the old segment '+where+'?',function(y,l){quitHere(l);if(y){namesOf(ex).forEach(function(x){delete d.kids[x]});go()}});
@@ -614,7 +617,7 @@ cmd(['add_name','an'],function(a){
   if(r.err){bad('add_name',r.err,r.shown);return}
   if(!r.n){bad('add_name','Entry not found.',r.shown);return}
   var d=node(r.dir);
-  if(!can(d,'m')){bad('add_name','Incorrect access to directory containing entry.',r.shown);return}
+  if(!can(d,'m')||r.n.prot){bad('add_name','Incorrect access to directory containing entry.',r.shown);return}
   a.slice(1).forEach(function(x){
     x=equalName(r.name,x);
     if(!nameOk('add_name',x))return;
@@ -630,7 +633,7 @@ cmd(['delete_name','dn'],function(a){
     if(r.err){bad('delete_name',r.err,r.shown);return}
     if(!r.n){bad('delete_name','Entry not found.',r.shown);return}
     var d=node(r.dir),N=namesOf(r.n);
-    if(!can(d,'m')){bad('delete_name','Incorrect access to directory containing entry.',r.shown);return}
+    if(!can(d,'m')||r.n.prot){bad('delete_name','Incorrect access to directory containing entry.',r.shown);return}
     if(N.length<2){bad('delete_name','The operation would leave no names on entry.',r.shown);return}
     delete d.kids[r.name];N.splice(N.indexOf(r.name),1);r.n.names=N;r.n.name=N[0];
   });
@@ -643,6 +646,7 @@ function copyOne(cmdName,src,dstSpec,move){
     if(!r.n){bad(cmdName,'Entry not found.',r.shown);return}
     if(r.n.type==='d'){bad(cmdName,'This operation is not allowed for a directory.',r.shown);return}
     if(r.n.mbx||!can(r.n,'r')){bad(cmdName,'Incorrect access on entry.',r.shown);return}
+    if(move&&(!can(node(r.dir),'m')||r.n.prot)){bad(cmdName,'Incorrect access to directory containing entry.',r.shown);return} /* the old one must be deletable too */
     var spec=dstSpec||'==',t=path(spec);
     if(t.err){bad(cmdName,t.err,t.shown);return}
     var to=equalName(r.name,t.name),abs=join(t.dir,to),shown=t.shown.slice(0,t.shown.lastIndexOf('>'))+'>'+to,ex=node(abs);
@@ -670,10 +674,12 @@ cmd(['move','mv'],function(a){
   if(!a.length){err('move: Usage: move path1 {equal_name1 ... pathN {equal_nameN}}');return}
   for(var i=0;i<a.length;i+=2)copyOne('move',a[i],a[i+1],true);
 });
+function hidden(r){return !r.root&&!can(node(r.dir),'s')&&!modes(r.n)} /* no s on the directory and no access to the entry: nothing about it shows */
 cmd(['status','st'],function(a){
   var r=a[0]?path(a[0]):{n:node(P.st.cwd),dir:dirOf(P.st.cwd)};
   if(r.err){bad('status',r.err,r.shown);return}
   var n=r.n;
+  if(a[0]&&hidden(r)){bad('status','Incorrect access to directory containing entry.',r.shown);return}
   if(!n){bad('status','Entry not found.',r.shown);return}
   var L=[''];
   namesOf(n).forEach(function(x,i){L.push(i?'          '+x:'names:    '+x)});
@@ -733,6 +739,7 @@ cmd(['delete_acl','da'],function(a){
   if(a[0]&&r.err){bad('delete_acl',r.err,r.shown);return}
   var n=a[0]?r.n:node(P.st.cwd);
   if(!n){bad('delete_acl','Entry not found.',r.shown);return}
+  if(!can(node(r.dir),'m')){bad('delete_acl','Incorrect access to directory containing entry.',r.shown);return}
   var who=a.length>1?a.slice(1).map(fullName):[S.person+'.'+S.project+'.*'];
   n.acl=aclOf(n).filter(function(e){return who.indexOf(e[1])<0});
   M.changed();
@@ -808,7 +815,7 @@ afn(['have_mail'],function(){return bool(haveMail())},false);
 cmd(['have_mail'],function(){out(haveMail()?'You have mail.':'No mail.')});
 afn(['exists'],function(a){
   var r=path(a[1]||'');
-  if(r.err||!r.n)return 'false';
+  if(r.err||!r.n||!r.root&&!can(node(r.dir),'s'))return 'false'; /* MR12.8: without s on the directory, nothing is found there */
   var k=a[0];
   return bool(k==='entry'||k==='branch'||(k==='segment'&&r.n.type==='f')||(k==='directory'&&r.n.type==='d'));
 },false);
@@ -845,13 +852,20 @@ cmd(['ready_off','rdf'],function(){S.ready=false});
 cmd(['ready_on','rdn'],function(){S.ready=true});
 cmd(['ready','rdy'],function(){out(readyLine());settle()});
 cmd(['new_proc'],function(){
-  S.level=1;P.st.cwd=S.home;
+  S.level=1;P.st.cwd=S.home;M.drop();
   out('');
   startUp('new_proc');
 });
 
 /* ---------- exec_com ---------- */
+var EC={depth:0,run:0,steps:0}; /* exec_coms inside one another; run changes when the stack overflows and they all stop */
 function ecRun(p,args,first){ /* one exec_com: its lines, &-statements, and the commands in it */
+  if(EC.depth>=64){ /* MR12.8 runs out of stack 64 exec_coms down */
+    EC.depth=0;EC.run++;S.level++;
+    say(['','Error:  storage condition by directory_commands_$get_wdir_|6773','(>system_library_standard>bound_fscom1_)',
+      'Not enough room in stack to complete processing.','system handler for error returns to command level']);
+    return;
+  }
   var r=path(/\.ec$/.test(p)?p:p+'.ec');
   if(r.err){bad('exec_com',r.err,r.shown);return}
   if(!r.n){bad('exec_com','Entry not found.',r.shown);return}
@@ -900,13 +914,16 @@ function ecRun(p,args,first){ /* one exec_com: its lines, &-statements, and the 
     err('exec_com: Invalid & statement: '+t);return -1;
   }
   function command(t){if(echo)out(t);line(t,true)}
+  var run=EC.run;EC.depth++;
   (function next(i){
-    if(i<0||i>=L.length)return;
+    if(run!==EC.run)return;
+    if(i<0||i>=L.length){EC.depth--;return}
     P.queue(function(){
       var t=subst(L[i]).replace(/^\s+/,'');
       var j;
       if(t.charAt(0)==='&')j=stmt(t,i);
       else{if(t)command(t);j=i+1}
+      if(++EC.steps%64===0)P.pause(0); /* now and then let the keyboard in, so ^C can stop an &goto loop */
       P.queue(function(){next(j)});
     });
   })(0);
@@ -1011,7 +1028,10 @@ cmd(['read_mail','rdm'],function(a){
       else if(x==='first'||x==='f')N.push(live()[0]);
       else if(x==='last'||x==='l')N.push(live().pop());
       else if(x==='current'||x==='c')N.push(cur);
-      else if((m=x.match(/^(\d+)(?::(\d+))?$/))){for(var n=+m[1];n<=(m[2]?+m[2]:+m[1]);n++)N.push(n)}
+      else if((m=x.match(/^(\d+)(?::(\d+))?$/))){ /* past the last, one number is enough to say so */
+        var hi=Math.min(m[2]?+m[2]:+m[1],Math.max(+m[1],L.length+1));
+        for(var n=+m[1];n<=hi;n++)N.push(n);
+      }
       else{err('read_mail: Invalid message specifier. '+x);return null}
     }
     N=N.filter(function(n){return n});
@@ -1142,7 +1162,7 @@ cmd(['logout'],function(a){
   var secs=Math.round(S.used+S.cpu),units=(S.used*3+((n-S.login)/36e5)*2+0.4).toFixed(1),cost=(0.05+secs*0.07+(n-S.login)/36e5*1.9).toFixed(2);
   if(!brief)say([S.person+'.'+S.project+' logged out '+dt(n),'CPU usage '+secs+' sec, memory usage '+units+' units, cost $'+cost+'.']);
   M.changed();
-  LAST[S.person]=S.login;S.on=false;S.priv=false;S.level=1;S.cpu=0;S.used=0;S.ready=true;S.accepting=false;
+  LAST[S.person]=S.login;S.on=false;S.priv=false;S.level=1;M.drop();S.cpu=0;S.used=0;S.ready=true;S.accepting=false;
   P.st.user=GUEST.person.toLowerCase();P.st.cwd=P.st.home=GUEST.home;S.home='';
   if(hold){if(!brief){out('');banner()}else out('');return}
   hangup();
@@ -1179,6 +1199,7 @@ function login(a){
     var x=a[i];
     if(x==='-brief'||x==='-bf')o.brief=true;
     else if(x==='-change_password'||x==='-cpw')o.cpw=true;
+    else if(x==='-no_start_up'||x==='-ns')o.ns=true;
     else if((x==='-project'||x==='-pj')&&a[i+1])o.project=a[++i];
     else if(x.charAt(0)==='-'){out('Unrecognized control argument '+x+'.');out(AGAIN);return}
     else rest.push(x);
@@ -1202,7 +1223,7 @@ function login(a){
     if(project&&U.projects.indexOf(project)<0){S.tries=6;fail(['Guest','SysAdmin','SysDaemon','Physics','Library','Accounting','Chem'].indexOf(project)<0?'Specified project does not exist.':'You are not registered on project '+project+'.');return}
     function go(){
       S.tries=0;
-      on(person,project||U.projects[0],U);
+      on(person,project||U.projects[0],U);S.ns=!!o.ns;
       if(!o.brief)say(loginLines());
       if(BADPW[person]){out('Your password was given incorrectly at '+dt(BADPW[person])+' from ASCII terminal "none".');out('');delete BADPW[person]}
       startUp('login',o.brief);
@@ -1228,7 +1249,7 @@ function account(person){
 function on(person,project,U){
   ensureHome();
   S.on=true;S.person=person;S.project=project;S.priv=!!U.priv;S.home=U.home;S.level=1;S.cpu=0.9+Math.random()*0.8;S.pf=20+Math.floor(Math.random()*30);
-  S.login=P.now();S.used=0;S.ready=true;S.ran=true;
+  S.login=P.now();S.used=0;S.ready=true;S.ran=true;S.ns=false;
   if(!node(S.home))P.put(S.home,'d',{owner:person});
   P.st.user=person.toLowerCase();P.st.home=S.home;P.st.cwd=S.home;
 }
@@ -1239,9 +1260,9 @@ function loginLines(){
     S.person+'.'+S.project+' logged in '+dt(n)+' from ASCII terminal "none".',
     'Last login '+dt(last)+' from ASCII terminal "none".'];
 }
-function startUp(why,brief){ /* the start_up.ec in the home directory, or the message of the day if there is none */
+function startUp(why,brief){ /* the start_up.ec in the home directory unless login said -no_start_up, else the message of the day (not after -brief) */
   var su=node(S.home+'/start_up.ec');
-  if(su&&su.type==='f'&&!brief){P.queue(function(){ecRun(mp(S.home)+'>start_up.ec',[why,'interactive'])});return}
+  if(su&&su.type==='f'&&!S.ns){P.queue(function(){ecRun(mp(S.home)+'>start_up.ec',[why,'interactive'])});return}
   if(!brief&&why==='login'){P.queue(function(){S.motdSeen[S.person]=true;say(M.motd())})}
 }
 

@@ -30,7 +30,7 @@ function numbers(){var o={},c=conf();OTHERS.forEach(function(b){o[b[1]]=b[3]});o
 /* ---------- what the browser keeps ---------- */
 function list(k,max){var v=P.saved('bbs/'+k);return Array.isArray(v)?v.filter(function(x){return x&&typeof x==='object'}).slice(-max):[]}
 function keep(k,v,max){P.save('bbs/'+k,v.slice(-max))}
-function users(){var v=P.saved('bbs/users');return v&&typeof v==='object'&&!Array.isArray(v)?v:{}}
+function users(){var v=P.saved('bbs/users');return Object.assign(Object.create(null),v&&typeof v==='object'&&!Array.isArray(v)?v:{})} /* no prototype: a handle of __proto__ is just a name */
 function clean(s,n){return String(s==null?'':s).replace(/[\u0000-\u001f\u007f]/g,'').slice(0,n||160)}
 
 /* ---------- the session ---------- */
@@ -38,7 +38,8 @@ var S=null; /* this call: {M,C,user,handle,sysop,ansi,on,base,gone,done} */
 function year(){return P.profile.year}
 function off(){return !S||S.gone}
 function canAnsi(){return year()>=1986} /* colour boards came with the PC clones; a 1982 board talks plain ASCII */
-function col(t){return String(t).replace(/\|([0-9a-f])/gi,function(m,c){return S&&S.ansi?'\u0005'+c:''})}
+function col(t){return String(t).replace(/\|([0-9a-f|])/gi,function(m,c){return c==='|'?c:S&&S.ansi?'\u0005'+c:''})}
+function esc(t){return String(t).replace(/\|/g,'||')} /* the site's words, inside a line with colour codes: a | in them is a | */
 function put(t,cls,opt){P.typeLine(col(t),cls,null,opt)}
 function blank(){P.typeLine('')}
 function tint(c,t){return (S&&S.ansi?'\u0005'+c:'')+t} /* a caller's own words, in a colour, never read for codes */
@@ -60,7 +61,7 @@ function stamp(ms,time){
 /* a line from the caller. ^C is an empty line; +++ is the modem's, and the call goes on (ATO) or ends (ATH) */
 function ask(p,then,hidden){
   var l;
-  P.queue(function(){if(off())return;return P.readLine(p.replace(/\|[0-9a-f]/gi,''),true,hidden).then(function(x){l=x})},true);
+  P.queue(function(){if(off())return;return P.readLine(p.replace(/\|([0-9a-f|])/gi,function(m,c){return c==='|'?c:''}),true,hidden).then(function(x){l=x})},true);
   P.queue(function(){
     if(off())return;
     if(l===P.INT||l===null)l='';
@@ -120,7 +121,7 @@ function bases(){
   own.forEach(function(f){if(P.fold(f.name)==='now')gen.posts.push({f:sys,t:'All',s:'What I am doing now',d:mailAt+12e4,L:siteLines(f.body)})});
   gen.posts.push({f:'Night Owl',t:sys,s:'Re: '+(gen.posts[0]?gen.posts[0].s:'Welcome').replace(/^Re: /,''),d:mailAt+3*36e5,
     L:[['Thanks for putting the board up. Second line yet?','']]});
-  gen.posts.push({f:'Lone Coder',t:'All',s:'2400 for sale',d:mailAt+20*6e4,
+  if(year()>=1985)gen.posts.push({f:'Lone Coder',t:'All',s:'2400 for sale',d:mailAt+20*6e4, /* a 2400 to sell, or to want (the wall), from 1985 on */
     L:[['Upgraded, so my old 2400 external is going. Works fine, and the lights are half the fun. Leave me a note here.','']]});
   B.push(gen);
   var R=letterRows();
@@ -149,6 +150,7 @@ function cut(name){
 function textSize(L){return L.reduce(function(n,l){return n+plainOf(P.lineOf(l)[0]).length+2},0)}
 function areas(){
   var C=S.C,y1=P.p2((year()-1)%100),seen={},A=[];
+  var arc=year()>=1985?'ARC':'LBR',zip=year()>=1989?'ZIP':arc; /* the archives of the day: LBR on CP/M, ARC from 1985, PKZIP's from 1989 */
   var own=siteFiles().map(function(f){
     var n=cut(f.name),k=2;
     while(seen[n]){var c=n.split('.');n=c[0].slice(0,7)+k+(c[1]?'.'+c[1]:'');k++}
@@ -158,10 +160,10 @@ function areas(){
   var day=function(k){return P.now().getTime()-k*864e5};
   A.push({name:C.sysop+"'s files",files:own});
   A.push({name:'Utilities',files:[
-    {n:'DISKCAT.ZIP',size:41388,d:day(40),what:'Disk cataloguer: every file on every floppy, sorted'},
-    {n:'QUIKCALC.ZIP',size:88102,d:day(95),what:'Spreadsheet in 64K. Prints sideways'},
-    {n:'FASTDIR.ZIP',size:9516,d:day(12),what:'DIR, but faster, and in colour'},
-    {n:'TYPEFAST.ARC',size:30210,d:day(200),what:'Typing tutor with a racing car'},
+    {n:'DISKCAT.'+zip,size:41388,d:day(40),what:'Disk cataloguer: every file on every floppy, sorted'},
+    {n:'QUIKCALC.'+zip,size:88102,d:day(95),what:'Spreadsheet in 64K. Prints sideways'},
+    {n:'FASTDIR.'+zip,size:9516,d:day(12),what:'DIR, but faster, and in colour'},
+    {n:'TYPEFAST.'+arc,size:30210,d:day(200),what:'Typing tutor with a racing car'},
     {n:'BBSLIST.TXT',size:0,d:day(3),what:'Boards in the area, updated monthly',text:bbsList()},
     {n:'NODE1.LOG',size:0,d:day(1),what:'Caller log, node 1',text:[
       [y1+'-10-21 23:01  Night Owl            logged off, 34 min',''],
@@ -170,10 +172,10 @@ function areas(){
       [y1+'-10-22 07:40  Lone Coder           logged off, 12 min','']]}
   ]});
   A.push({name:'Games',files:[
-    {n:'STARHAUL.ZIP',size:61232,d:day(30),what:'The Star Haul door, to run on your own board'},
-    {n:'MAZEGEN.ZIP',size:18550,d:day(64),what:'Mazes to print and solve'},
-    {n:'CHKRS.ZIP',size:24080,d:day(150),what:'Checkers that cheats only a little'},
-    {n:'LUNAR.ZIP',size:7712,d:day(330),what:'Land on the Moon, again'}
+    {n:'STARHAUL.'+zip,size:61232,d:day(30),what:'The Star Haul door, to run on your own board'},
+    {n:'MAZEGEN.'+zip,size:18550,d:day(64),what:'Mazes to print and solve'},
+    {n:'CHKRS.'+zip,size:24080,d:day(150),what:'Checkers that cheats only a little'},
+    {n:'LUNAR.'+zip,size:7712,d:day(330),what:'Land on the Moon, again'}
   ]});
   A.forEach(function(a){a.files.forEach(function(f){if(f.text&&!f.size)f.size=textSize(f.text)})});
   return A;
@@ -209,7 +211,7 @@ function box(L){ /* the board's sign, as wide as the glass allows */
   put(a?'|3\u2554'+'\u2550'.repeat(w-2)+'\u2557':'+'+'-'.repeat(w-2)+'+');
   L.forEach(function(t,i){
     t=t.slice(0,w-4);
-    put((a?'|3\u2551 ':'| ')+(i?'|7':'|e')+t+' '.repeat(w-4-t.length)+(a?'|3 \u2551':' |'));
+    put((a?'|3\u2551 ':'| ')+(i?'|7':'|e')+esc(t)+' '.repeat(w-4-t.length)+(a?'|3 \u2551':' |'));
   });
   put(a?'|3\u255a'+'\u2550'.repeat(w-2)+'\u255d':'+'+'-'.repeat(w-2)+'+');
 }
@@ -277,7 +279,7 @@ function welcome(isNew){
   blank();
   put('|aWelcome'+(isNew?'':' back')+', |f'+S.handle+'|a!');
   if(last&&!isNew)put('|7You were last on '+stamp(+last)+'. This is your call number '+u.calls+'.');
-  put('|7You are caller number '+(3172+callers.length+Object.keys(U).length*7).toLocaleString('en-US')+' to '+S.C.name+'.');
+  put('|7You are caller number '+(3172+callers.length+Object.keys(U).length*7).toLocaleString('en-US')+' to '+esc(S.C.name)+'.');
   put('|7You have |e'+left()+'|7 minutes for this call.');
   if(S.sysop)put('|cSysop logged on. The * menu is yours.');
   var nb=bases().reduce(function(n,b){return n+Math.max(0,b.posts.length-readOf(b))},0);
@@ -326,7 +328,7 @@ function help(){
   if(T.length){
     blank();
     put("|bthe terminal's, not the board's:");
-    T.forEach(function(h){put('|7  '+h[0].padEnd(10)+' '+h[1],'',{hang:13})});
+    T.forEach(function(h){put('|7  '+esc(h[0].padEnd(10)+' '+h[1]),'',{hang:13})});
   }
   put('|7+++ on a line by itself talks to the modem: ATH hangs up, ATO goes back.','dim');
 }
@@ -348,12 +350,12 @@ function bulletinMenu(first){
   var B=bulletins();
   blank();
   put('|b-- |fBulletins |b--');
-  B.forEach(function(b,i){put('|e'+String(i+1).padStart(2)+'|7  '+b[0])});
+  B.forEach(function(b,i){put('|e'+String(i+1).padStart(2)+'|7  '+esc(b[0]))});
   ask('Bulletin number (Enter to quit): ',function(l){
     var n=parseInt(l,10);
     if(!l.trim()||!(n>=1&&n<=B.length)){if(l.trim()&&!/^q/i.test(l.trim()))put('|cNo such bulletin.');if(first)menu();else prompt();return}
     blank();
-    paged([mine('|f'+B[n-1][0]),['','']].concat(B[n-1][1]),function(){bulletinMenu(first)});
+    paged([mine('|f'+esc(B[n-1][0])),['','']].concat(B[n-1][1]),function(){bulletinMenu(first)});
   });
 }
 
@@ -362,7 +364,7 @@ function baseMenu(){
   var B=bases();
   blank();
   put('|b-- |fMessage bases |b--');
-  B.forEach(function(b,i){var nw=b.posts.length-readOf(b);put('|e'+String(i+1).padStart(2)+'|7  '+b.name.padEnd(20)+' '+b.posts.length+' msgs'+(nw>0?'|a, '+nw+' new':'')+(b.ro?'|8 (read only)':''))});
+  B.forEach(function(b,i){var nw=b.posts.length-readOf(b);put('|e'+String(i+1).padStart(2)+'|7  '+esc(b.name.padEnd(20))+' '+b.posts.length+' msgs'+(nw>0?'|a, '+nw+' new':'')+(b.ro?'|8 (read only)':''))});
   ask('Base number (Enter to quit): ',function(l){
     var n=parseInt(l,10);
     if(!(n>=1&&n<=B.length)){prompt();return}
@@ -374,7 +376,7 @@ function baseMenu(){
 function header(b,i){
   var m=b.posts[i];
   blank();
-  put('|bMsg |f'+(i+1)+'|b of |f'+b.posts.length+'|b  ['+b.name+']');
+  put('|bMsg |f'+(i+1)+'|b of |f'+b.posts.length+'|b  ['+esc(b.name)+']');
   P.typeLine(col('|bFrom: ')+tint('f',m.f+(m.f===S.C.sysop?' (Sysop)':'')));
   P.typeLine(col('|b  To: ')+tint('7',m.t));
   P.typeLine(col('|bSubj: ')+tint('e',m.s));
@@ -382,7 +384,7 @@ function header(b,i){
   blank();
 }
 function reader(b,i,then){
-  if(i>=b.posts.length){put('|7End of messages in '+b.name+'.');then();return}
+  if(i>=b.posts.length){put('|7End of messages in '+esc(b.name)+'.');then();return}
   var m=b.posts[i];
   header(b,i);
   setRead(b,i+1);
@@ -426,7 +428,7 @@ function post(b,re,then){
   b=b||B[0];
   if(b.ro){b=B[0]}
   blank();
-  put('|7Posting in |f'+b.name+'|7.');
+  put('|7Posting in |f'+esc(b.name)+'|7.');
   ask('To (Enter for All): ',function(to){
     to=clean(to.trim()||(re&&re.t)||'All',20);
     var go=function(s){
@@ -439,13 +441,13 @@ function post(b,re,then){
         keep('posts',A,60);
         S.user.posts=(+S.user.posts||0)+1;save();
         var n=bases().filter(function(x){return x.id===b.id})[0];
-        put('|aSaved as message '+(n?n.posts.length:A.length)+' in '+b.name+'.');
+        put('|aSaved as message '+(n?n.posts.length:A.length)+' in '+esc(b.name)+'.');
         if(n&&readOf(n)===n.posts.length-1)setRead(n,n.posts.length);
         then();
       });
     };
     if(re&&re.s){
-      ask('Subject ['+re.s+']: ',function(s){go(s.trim()||re.s)});
+      ask('Subject ['+esc(re.s)+']: ',function(s){go(s.trim()||re.s)});
     }else ask('Subject: ',go);
   });
 }
@@ -456,7 +458,7 @@ function fileMenu(){
   var A=areas();
   blank();
   put('|b-- |fFile areas |b--');
-  A.forEach(function(a,i){put('|e'+String(i+1).padStart(2)+'|7  '+a.name.padEnd(20)+' '+a.files.length+' files')});
+  A.forEach(function(a,i){put('|e'+String(i+1).padStart(2)+'|7  '+esc(a.name.padEnd(20))+' '+a.files.length+' files')});
   ask('Area number, D to download, U to upload (Enter quits): ',function(l){
     var c=l.trim().toLowerCase(),n=parseInt(c,10);
     if(c==='d'||/^d\s/.test(c)){download(A,l.trim().slice(1).trim(),fileMenu);return}
@@ -464,10 +466,10 @@ function fileMenu(){
     if(!(n>=1&&n<=A.length)){prompt();return}
     var a=A[n-1],wide=cols()>=60;
     blank();
-    var L=[mine('|f'+a.name),mine(wide?'|bName           Size   Date     Description':'|bName           Size   Date')];
+    var L=[mine('|f'+esc(a.name)),mine(wide?'|bName           Size   Date     Description':'|bName           Size   Date')];
     a.files.forEach(function(f){
-      L.push(mine('|e'+f.n.padEnd(13)+'|a'+size(f.size).padStart(7)+' |7'+stamp(f.d,false)+(wide?' |f'+f.what:'')));
-      if(!wide)L.push(mine('|f  '+f.what));
+      L.push(mine('|e'+f.n.padEnd(13)+'|a'+size(f.size).padStart(7)+' |7'+stamp(f.d,false)+(wide?' |f'+esc(f.what):'')));
+      if(!wide)L.push(mine('|f  '+esc(f.what)));
     });
     paged(L,fileMenu);
   });
@@ -537,7 +539,7 @@ function doorMenu(){
     P.queue(function(){
       if(off())return;
       if(!ok||!P.bbsDoors||!P.bbsDoors[d[0]]){put('|cThe door is stuck. Try again later.');doorMenu();return}
-      P.bbsDoors[d[0]](door(),function(){blank();put('|7Back at '+S.C.name+'.');doorMenu()});
+      P.bbsDoors[d[0]](door(),function(){blank();put('|7Back at '+esc(S.C.name)+'.');doorMenu()});
     },true);
   });
 }
@@ -550,7 +552,7 @@ function door(){ /* what a door gets from the board: the caller, the clock, and 
 var WALL=[['Night Owl','first! well, first tonight.'],['Static','anybody got a 2400 for under 200 bucks?'],
   ['Copper Pair','mom picked up the extension mid-download. again.'],['Lone Coder','the sysop owes me a door that works']];
 function wall(){
-  var W=WALL.map(function(x,i){return {h:x[0],t:x[1],d:Date.now()-(9-i)*864e5}}).concat(list('wall',20));
+  var W=WALL.filter(function(x){return year()>=1985||!/2400/.test(x[1])}).map(function(x,i){return {h:x[0],t:x[1],d:Date.now()-(9-i)*864e5}}).concat(list('wall',20));
   blank();
   put('|b-- |fThe graffiti wall |b--');
   W.slice(-10).forEach(function(x){var h=clean(x.h,20);P.typeLine(tint('e',h.padEnd(12))+' '+tint('7',clean(x.t,60)),'',null,{hang:Math.max(12,h.length)+1})});
@@ -563,7 +565,7 @@ function wall(){
     });
   });
 }
-var REGULARS=[['Night Owl',212],['Lone Coder',97],['Static',64],['Copper Pair',41],['Ohm Sweet Ohm',18],['Mx. Parity',6]];
+var REGULARS=[['Night Owl',212],['Lone Coder',97],['Static',64],['Copper Pair',41],['Ohm Sweet Ohm',18],['Parity Bit',6]];
 function userList(){
   var U=users(),L=[mine('|bHandle               Calls  Last on')];
   L.push(mine('|e'+S.C.sysop.padEnd(20)+'|7'+'1'.padStart(6)+'  '+stamp(P.now().getTime(),false)+' |8(sysop)'));
@@ -629,11 +631,12 @@ function goodbye(){
 }
 function bye(){
   blank();
-  put('|aThanks for calling '+S.C.name+', '+S.handle+'. Call again!');
+  put('|aThanks for calling '+esc(S.C.name)+', '+S.handle+'. Call again!');
   hang();
 }
+function os(){return year()<1983?'CP/M':'DOS'} /* what the board runs on: a CP/M board for a CP/M caller */
 function sysopMenu(){
-  showMenu('Sysop menu',[['1','Read comments'],['2','Wipe this board\'s data'],['3','Drop to DOS'],['Q','Back']]);
+  showMenu('Sysop menu',[['1','Read comments'],['2','Wipe this board\'s data'],['3','Drop to '+os()],['Q','Back']]);
   ask('Sysop command: ',function(l){
     var c=l.trim().toLowerCase();
     if(c==='1'){
@@ -648,7 +651,7 @@ function sysopMenu(){
       if(y){['users','posts','wall','comments','callers','haul','mine'].forEach(function(k){P.save('bbs/'+k,null)});put('|aWiped.')}
       sysopMenu();
     });return}
-    if(c==='3'){put('|7Remote DOS is switched off on this node. You set it that way.');sysopMenu();return}
+    if(c==='3'){put('|7Remote '+os()+' is switched off on this node. You set it that way.');sysopMenu();return}
     prompt();
   });
 }

@@ -1,8 +1,9 @@
 /* PHOSPHOR-9 terminal: machine "vm370-1980", the minidisks. A CMS disk is a flat list of files named
-   filename filetype, each a list of records, fixed (F) or variable (V) in length, on 1024-byte blocks
-   (the extended disk format Release 6 brought). The guest's 191 is kept in this browser: what the visitor
-   writes, renames or erases is still there next time, and the files made from the site come back afresh at
-   each logon unless the visitor has replaced or erased them. Every other disk starts again with the page.
+   filename filetype, each a list of records, fixed (F) or variable (V) in length, on 800-byte blocks
+   (Release 6's CMS format; the extended format came with VM/SP). The guest's 191 is kept in this browser:
+   what the visitor writes, renames or erases is still there next time, and the files made from the site come
+   back afresh at each logon unless the visitor has replaced or erased them. Every other disk starts again with
+   the page.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
 Phosphor.setup(function(P){
 'use strict';
@@ -37,7 +38,7 @@ D.put=function(f){ /* a file, new or replacing one of the same name: false if it
   if(need>this.left())return false;
   f.fn=up(f.fn);f.ft=up(f.ft);f.fm=f.fm||'1';
   if(!f.date)f.date=P.now();
-  if(old)f.order=old.order;
+  if(old){f.order=old.order;if(this.keep)forget(old)} /* a file the disk came with, replaced: the visitor's copy is the one now */
   else{var used={};this.list().forEach(function(x){used[x.order]=1});for(var n=1;used[n];n++);f.order=n} /* an erased file's slot is the next one used */
   this.files[this.key(f.fn,f.ft)]=f;
   if(this.keep)V.keepGuest();

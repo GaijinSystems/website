@@ -186,8 +186,9 @@ function loadDisk(){
   })};
 }
 function okFile(f){return f&&typeof f.n==='string'&&/^[A-Z][A-Z0-9]{0,7}(\/[A-Z0-9]{1,3})?$/.test(f.n)&&
-  (f.t==='B'&&Array.isArray(f.src)&&f.src.every(function(l){return typeof l==='string'})||f.t==='T'&&typeof f.text==='string'||f.t==='C'&&typeof f.size==='number')}
-function saveDisk(){P.save(DISKKEY,disk)}
+  (f.t==='B'&&Array.isArray(f.src)&&f.src.every(srcLine)||f.t==='T'&&typeof f.text==='string'||f.t==='C'&&Number.isInteger(f.size)&&f.size>=0&&f.size<=130000)}
+function srcLine(l){return typeof l==='string'&&/^\d+ /.test(l)}
+function saveDisk(){return P.save(DISKKEY,disk)}
 function bytesOf(f){
   if(f.t==='C')return f.size;
   if(f.t==='T')return f.text.length;
@@ -221,8 +222,8 @@ function spec(s){ /* a file specification: NAME/EXT.PASSWORD:D; null if it is no
 function writeFile(f){
   var old=findFile(f.n),i=old?disk.files.indexOf(old):-1;
   if(i>=0)disk.files[i]=f;else disk.files.push(f);
-  if(freeGrans()<0){if(i>=0)disk.files[i]=old;else disk.files.pop();return 27}
-  saveDisk();return 0;
+  if(freeGrans()<0||!saveDisk()){if(i>=0)disk.files[i]=old;else disk.files.pop();return 27} /* the browser's storage full: Disk full too */
+  return 0;
 }
 
 /* ---------- TRSDOS 1.3 ---------- */
@@ -415,7 +416,7 @@ function startBasic(withDisk,first){
     },function(){startBasic(true,first)});
   },function(){dosReady()});
 }
-function ready(){if(col()>0)put(13);line('READY');prompt()}
+function ready(){if(col()>0)put(13);if(!basic.auto())line('READY');prompt()} /* AUTO goes straight to its first number */
 function prompt(){
   mode='busy';
   var e=basic.editAfter();
@@ -426,7 +427,7 @@ function prompt(){
     say(lead);
     getln({max:240-lead.length},function(t){
       if(t.trim())basic.enter(a.n+' '+t); /* an empty line leaves that number alone; BREAK ends AUTO */
-      basic.autoNext();prompt();
+      basic.autoNext();if(basic.auto())prompt();else ready();
     },function(){basic.autoOff();ready()});
     return;
   }
@@ -470,7 +471,7 @@ function editLine(n){ /* EDIT mode, as Level II drops into after a syntax error 
 }
 function immediate(text){
   var t=text.replace(/^ +/,''),u=t.toUpperCase(),w=(u.match(/^[A-Z]+/)||[''])[0],rest=t.slice(w.length);
-  if(hooked&&w&&TERMINAL[w]&&!/^\s*[=(]/.test(rest)&&!/^\d/.test(t)){terminal(w,rest.trim(),function(){prompt()});return}
+  if(hooked&&w&&TERMINAL[w]&&!/^\s*[$%!#]?\s*[=(]/.test(rest)&&!/^\d/.test(t)){terminal(w,rest.trim(),function(){prompt()});return}
   if(joke(u)){prompt();return}
   var r=basic.enter(text);
   if(r==='stored'){prompt();return}
@@ -505,7 +506,7 @@ function goOn(){if(basic.running())mode='run';else ready()} /* after the tape or
 /* ---------- the cassette: one tape, kept in this browser, and the relay's click ---------- */
 function loadTape(){
   var t=P.saved(TAPEKEY);
-  if(t&&t.v===1&&Array.isArray(t.files)&&t.files.every(function(f){return f&&typeof f.n==='string'&&Array.isArray(f.src)}))tape=t;
+  if(t&&t.v===1&&Array.isArray(t.files)&&t.files.every(function(f){return f&&typeof f.n==='string'&&Array.isArray(f.src)&&f.src.every(srcLine)}))tape=t;
   else tape={v:1,files:[]};
 }
 function relay(){P.click(.5,180)}
@@ -514,8 +515,10 @@ function cassette(w,done){
   relay();
   if(w.op==='save'){
     var src=basic.listing();
+    var was=tape.files;
     tape.files=tape.files.filter(function(f){return f.n!==w.name});
-    tape.files.push({n:w.name,src:src});P.save(TAPEKEY,tape);
+    tape.files.push({n:w.name,src:src});
+    if(!P.save(TAPEKEY,tape)){tape.files=was;done('OM');return} /* the browser's storage full */
     var ms=Math.min(6000,800+src.join('\r').length*8/1.5);
     sleep(ms,function(){relay();done()});
     return;
@@ -610,7 +613,7 @@ var JOKES=[
   [/^(VIC-? ?20|VIC)$/,["A VIC-20? 22 columns. That's not a screen, it's a ransom note."]],
   [/^(PET|CBM|PET ?2001)$/,['A PET? Nice keyboard. For a calculator.']],
   [/^COMMODORE$/,['Commodore? Calculators and wristwatches, last we looked.']],
-  [/^SYS ?64738$/,["SYS? This isn't a Commodore. The reset button is the","orange one, and it doesn't need a POKE."]],
+  [/^SYS ?64738$/,["SYS? This isn't a Commodore. The reset button is the","orange one, and it doesn't need a number."]],
   [/^LOAD ?"\$" ?, ?8$/,['LOAD"$",8? Commodore disk talk. Here it is DIR at TRSDOS',"Ready, and the drive is inside the case, where it belongs."]],
   [/^(GO ?64|GO ?128)$/,['GO where? This one went to 7,000 Radio Shack stores.']]
 ];
@@ -621,7 +624,7 @@ function joke(u){
   return true;
 }
 function welcome(){
-  var L=WELCOME.concat(MAILNOTE?['',MAILNOTE]:[],P.columns&&coarse()?['','(tap the screen for a keyboard.)']:[]);
+  var L=WELCOME.concat(MAILNOTE?['',MAILNOTE]:[],coarse()?['','(tap the screen for a keyboard.)']:[]);
   L.forEach(function(l){
     var t=String(Array.isArray(l)?l[0]:l).replace(/[\u0001-\u0004]/g,'').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,'-');
     wrap(t,63).forEach(function(x){line(x.replace(/[^\x20-\x7e]/g,'?'))});

@@ -587,6 +587,7 @@ function printUsing(){ /* PRINT USING: # . , + - $$ ** ^^^^ for numbers; ! and %
 function usingNum(x,m,dbl){
   var plus=!!m[1],lead=m[2]||'',ints=(m[3]||''),dec=m[4]?m[4].length-1:0,expo=!!m[5],minus=!!m[6];
   var comma=ints.indexOf(',')>=0,width=ints.length+(lead==='**$'?3:lead?2:0)+(m[4]?m[4].length:0)+(plus?1:0);
+  if(width-(plus?1:0)>24)E('FC'); /* the ROM's limit: 24 places, counting the point, commas and the ** or $$ */
   var neg=x<0,a=Math.abs(x),s;
   if(!dbl&&a)a=+a.toPrecision(6); /* a single shows its six digits, as PRINT does */
   if(expo){var e=a===0?0:Math.floor(Math.log10(a))-(ints.length-1);var mm=a/Math.pow(10,e);s=mm.toFixed(dec);if(dec===0&&m[4])s+='.';var ex=Math.abs(e);s+='E'+(e<0?'-':'+')+(ex<10?'0':'')+ex}
@@ -833,7 +834,7 @@ function step(budget,most){ /* 'more', 'wait', 'done'; most: statements before t
         if(trace)out('<'+prog[line].n+'>');
         continue;
       }
-      if(running&&M.broken()){stmtStart=pos;brk();return 'done'}
+      if(M.broken()){stmtStart=pos;brk();return 'done'}
       stmtStart=pos;
       jumped=false;stmts++;
       var r=stmt();
@@ -907,7 +908,8 @@ return {
   fail:function(k){want=null;try{var r=caught({basic:k});if(r&&r.edit!==undefined)editAfter=r.edit}catch(e){running=false;cur=null}},
   brk:brk,
   auto:function(){return auto},
-  autoNext:function(){if(auto)auto.n+=auto.step},autoOff:function(){auto=null},
+  autoNext:function(){if(auto&&(auto.n+=auto.step)>65529)auto=null}, /* past the last line number AUTO ends, as the ROM's does */
+  autoOff:function(){auto=null},
   has:function(n){return byNum[n]!==undefined},
   editAfter:function(){var e=editAfter;editAfter=null;return e},
   lineText:function(n){var i=byNum[n];return i===undefined?null:n+' '+listText(prog[i].t)},
