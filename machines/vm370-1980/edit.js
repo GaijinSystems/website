@@ -11,6 +11,7 @@ function out(s){P.typeLine(s)}
 function err(s){V.em(s,'err')}
 var V_TYPES=/^(EXEC|LISTING|FREEFORT|VSBDATA|SCRIPT|MEMO)$/;
 var MIXED=/^(MEMO|SCRIPT)$/;
+var XYMAX=9999; /* X n and Y n: as many repeats as anyone would sit through */
 var SUB=[ /* subcommands and their shortest forms */
   ['ALTER',2],['AUTOSAVE',4],['BACKWARD',2],['BOTTOM',1],['CASE',4],['CHANGE',1],['CMS',3],['DELETE',3],['DOWN',2],['DSTRING',2],
   ['FILE',4],['FIND',1],['FMODE',2],['FNAME',2],['FORWARD',2],['GETFILE',1],['IMAGE',2],['INPUT',1],['LINEMODE',2],['LOCATE',1],
@@ -31,7 +32,7 @@ V.edit=function(a,o){
   }
   if(!V.okName(fn)||!V.okName(ft)){err('DMSEDI062E INVALID CHAR IN FILEID');return 20}
   var r=V.find(fn,ft,fm||null),E;
-  if(r&&r.f.prot&&!V.privileged()){err('DMSEDI104S ERROR \'3\' READING FILE \''+V.fid(r.f,r.mode)+'\' FROM DISK');return 100}
+  if(r&&r.f.prot&&!V.mayRead()){err('DMSEDI104S ERROR \'3\' READING FILE \''+V.fid(r.f,r.mode)+'\' FROM DISK');return 100}
   var mode=fm?fm.charAt(0):'A';
   if(r){var parent=r.acc.ext||r.mode;mode=fm?fm.charAt(0):parent}
   if(!V.acc[mode]){err('DMSEDI069E DISK \''+mode+'\' NOT ACCESSED');return 36}
@@ -61,9 +62,11 @@ function fix(E,t){ /* a line as the file will hold it: the case, the truncation 
   if(t.length>E.trunc){out('TRUNCATED');t=t.slice(0,E.trunc);out(t)}
   return t;
 }
+/* attention (^C) at the editor's read: the edit carries on, as on Release 6, where only QUIT or FILE ends it */
+function attn(l,again){if(l===P.INT){again();return true}return false}
 function loop(E){
   V.read(function(l){
-    if(l===null||l===P.INT)return; /* attention: the edit ends, the file as it was */
+    if(l===null||attn(l,function(){loop(E)}))return;
     var r=sub(E,l);
     if(r==='input'){input(E);return}
     if(r==='end')return;
@@ -74,7 +77,7 @@ function input(E){
   if(E.verify)out('INPUT:');
   (function more(){
     V.read(function(l){
-      if(l===null||l===P.INT)return;
+      if(l===null||attn(l,more))return;
       if(l===''){if(E.verify)out('EDIT:');loop(E);return}
       ins(E,fix(E,l));
       more();
@@ -101,7 +104,7 @@ function sub(E,raw){
     var n=+w;E.cur=Math.min(n,E.lines.length)-1;show(E);E.last=raw;return;
   }
   if(l==='?'){out(E.last||'');return}
-  if(l.charAt(0)==='='){var k=l.length-l.replace(/^=+/,'').length,again=l.replace(/^=+\s*/,'');
+  if(l.charAt(0)==='='){if(E.xy){bad(E,raw);return}var k=l.length-l.replace(/^=+/,'').length,again=l.replace(/^=+\s*/,'');
     if(again)sub(E,again);for(var j=0;j<k;j++){var x=sub(E,E.last||'');if(x)return x}return}
   if(l.charAt(0)==='/'){w='LOCATE';rest=l}
   var name=w?V.lookup(SUB,up(w)):null;
@@ -236,16 +239,26 @@ function sub(E,raw){
     case 'RESTORE':if(E.saved)Object.assign(E,E.saved,{zone:E.saved.zone.slice()});return;
     case 'X':case 'Y':
       if(rest.trim()&&!/^\d+$/.test(rest.trim())){E[name]=rest.trim();return}
-      if(!E[name]){bad(E,raw);return}
-      for(var k2=0;k2<(+rest.trim()||1);k2++){var rr=sub(E,E[name]);if(rr)return rr}
+      if(!E[name]||E.xy){bad(E,raw);return} /* X or Y, or =, inside an X or Y's own repeats: DMSEDI's XYCNT says no */
+      var times=Math.min(+rest.trim()||1,XYMAX),rr;
+      E.xy=true;
+      try{for(var k2=0;k2<times&&!rr;k2++){rr=sub(E,E[name]);if(E.cur<0||E.cur>=E.lines.length)break}} /* the top or the end of the file stops the repeats */
+      finally{E.xy=false}
+      return rr;
+    case 'STACK': /* n lines from the current one, the last of them current after; 0 a null line; or a subcommand */
+      if(rest.trim()&&!/^\d+$/.test(rest.trim())){V.stack.push(rest);return}
+      var sn=rest.trim()?+rest.trim():1;
+      if(!sn){V.stack.push('');return}
+      if(sn>25){out('TOO MANY LINES TO STACK');return}
+      if(E.cur<0){if(!--sn)return;E.cur=0} /* the top of the file counts as one */
+      var sw=Math.min(E.trunc,130); /* as wide as TRUNC, and 130 at most */
+      for(var s2=0;s2<sn&&E.cur<E.lines.length;s2++){V.stack.push(lineText(E.lines[E.cur]).slice(0,sw).padEnd(sw));if(s2<sn-1)E.cur++}
+      if(E.cur>=E.lines.length)show(E);
       return;
-    case 'STACK':
-      if(!rest.trim()){V.stack.push('');return}
-      if(/^\d+$/.test(rest.trim())){for(var s2=0;s2<+rest.trim();s2++)V.stack.push(E.last||'');return}
-      V.stack.push(rest);return;
     case 'GETFILE':{
       var g=V.find(A[0]||'',A[1]||E.ft,A[2]||'*');
       if(!g){out('FILE NOT FOUND');return}
+      if(g.f.prot&&!V.mayRead()){err('DMSEDI104S ERROR \'3\' READING FILE \''+V.fid(g.f,g.mode)+'\' FROM DISK');return}
       var first=+A[3]||1,num=A[4]==='*'||!A[4]?Infinity:+A[4],G=g.f.lines.map(lineText).slice(first-1,num===Infinity?undefined:first-1+num);
       G.forEach(function(t){E.lines.splice(++E.cur,0,t)});changed(E);
       if(E.cur>=E.lines.length-1&&G.length)out('EOF REACHED');
@@ -265,6 +278,7 @@ function sub(E,raw){
       subset(E);
       return 'end';
     case 'REUSE':
+      if(E.xy){bad(E,raw);return}
       return sub(E,E.last||'');
   }
   bad(E,raw);
@@ -293,7 +307,7 @@ function save(E,auto){
 /* CMS SUBSET: a few CMS commands from inside the editor, then RETURN goes back to it */
 function subset(E){
   V.read(function(l){
-    if(l===null||l===P.INT)return;
+    if(l===null||attn(l,function(){subset(E)}))return;
     var w=up(l.trim()).split(/\s+/)[0]||'';
     if(w==='RETURN'){out('EDIT:');loop(E);return}
     if(w){

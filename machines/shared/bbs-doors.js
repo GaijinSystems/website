@@ -5,7 +5,7 @@
 (function(P){
 'use strict';
 function today(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()} /* turns come back each real day */
-function store(D,k){var v=D.saved(k);return v&&typeof v==='object'&&!Array.isArray(v)?v:{}}
+function store(D,k){var v=D.saved(k);return Object.assign(Object.create(null),v&&typeof v==='object'&&!Array.isArray(v)?v:{})}
 function num(x,d){x=+x;return isFinite(x)&&x>=0?Math.floor(x):d}
 function hash(s){var h=7;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))%100003;return h}
 

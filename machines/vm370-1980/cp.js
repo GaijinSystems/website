@@ -36,7 +36,7 @@ V.stamp=function(d){return V.hms(d)+' '+V.zone()+' '+DAYS[d.getDay()]+' '+V.mdy(
 
 /* ---------- the CP directory: who may log on, with what, and their minidisks ---------- */
 V.setupDirectory=function(){
-  var root=up(P.profile.rootPassword||'SYSPROG').replace(/\s+/g,'').slice(0,8),owner=V.owner;
+  var root=pwOf(P.profile.rootPassword||'SYSPROG'),owner=V.owner;
   V.dir={
     OPERATOR:{pw:'OPERATOR',cls:'ABCDEFG',stor:'1M',on:'009'},
     MAINT:{pw:root,cls:'ABCDEFG',stor:'1M'},
@@ -47,6 +47,8 @@ V.setupDirectory=function(){
   if(!V.dir[owner])V.dir[owner]={pw:'NOLOG',cls:'G',stor:'1M',on:'0C2'};
 };
 V.privileged=function(){return /[AB]/.test(V.cls||'')};
+V.mayRead=function(){return V.user==='MAINT'}; /* the site's locked files: only for the root login, not OPERATOR's or AUTOLOG1's well-known passwords */
+function pwOf(s){return up(s).replace(/\s+/g,'').slice(0,8)} /* a password as the directory holds it */
 V.others=function(){ /* who else is on, as Q NAMES shows them */
   var L=[['OPERATOR','009'],['CMSBATCH','DSC']];
   if(V.dir[V.owner]&&V.dir[V.owner].on==='0C2')L.push([V.owner,'0C2']);
@@ -116,7 +118,7 @@ V.lookup=function(T,w){
 var CPC=[ /* name, shortest form, privilege classes (Z: any) */
   ['ATTACH',3,'B'],['BEGIN',1,'G'],['CHANGE',2,'DG'],['CLOSE',1,'G'],['COUPLE',3,'G'],['DEFINE',3,'G'],['DETACH',3,'G'],
   ['DIAL',4,'Z'],['DISCONN',4,'G'],['DISPLAY',1,'G'],['DUMP',4,'G'],['ECHO',4,'G'],['EXTERNAL',3,'G'],['FORCE',5,'A'],
-  ['INDICATE',2,'G'],['IPL',3,'G'],['LINK',4,'G'],['LOADVFCB',5,'G'],['LOGOFF',3,'G'],['LOGOUT',4,'G'],['MESSAGE',1,'Z'],
+  ['INDICATE',2,'G'],['IPL',1,'G'],['LINK',4,'G'],['LOADVFCB',5,'G'],['LOGOFF',3,'G'],['LOGOUT',4,'G'],['MESSAGE',1,'Z'],
   ['MSG',3,'Z'],['NOTREADY',4,'G'],['ORDER',3,'DG'],['PURGE',3,'DG'],['QUERY',1,'Z'],['READY',3,'G'],['REQUEST',3,'G'],['RESET',3,'G'],
   ['REWIND',3,'G'],['SET',2,'Z'],['SHUTDOWN',8,'A'],['SLEEP',3,'G'],['SPOOL',2,'G'],['STORE',3,'G'],['SYSTEM',3,'G'],['TAG',3,'G'],
   ['TERMINAL',4,'G'],['TRACE',2,'G'],['TRANSFER',3,'DG'],['WARNING',1,'A'],['WNG',3,'A']
@@ -171,7 +173,7 @@ CP.QUERY=function(a){
     case 'DASD':P.say(V.virtual('DASD'));return 0;
     case 'TERMINAL':
       var T=V.term;
-      P.say(['LINEND  '+(T.linend||' ')+' , LINEDEL    , CHARDEL  '+(T.chardel||' ')+' , ESCAPE  '+(T.escape||' ')+' , TABCHAR ON','LINESIZE 130, ATTN ON , APL OFF, TEXT OFF, MODE VM']);return 0;
+      P.say(['LINEND  '+(T.linend||' ')+' , LINEDEL  '+(T.linedel||' ')+' , CHARDEL  '+(T.chardel||' ')+' , ESCAPE  '+(T.escape||' ')+' , TABCHAR ON','LINESIZE 130, ATTN ON , APL OFF, TEXT OFF, MODE VM']);return 0;
     case 'SET':
       var S=V.set;
       P.say(['MSG '+(S.msg?'ON ':'OFF')+', WNG '+(S.wng?'ON ':'OFF')+', EMSG '+S.emsg+', ACNT OFF, RUN '+(S.run?'ON':'OFF'),
@@ -247,7 +249,7 @@ V.msgFrom=function(from,text,kind){
   P.typeLine(' '+(kind||'MSG')+' FROM '+from.padEnd(8)+':  '+text);
 };
 /* the operator at the console answers, after a while, as operators did */
-var REPLIES=['WHO IS THIS?','THIS IS THE CONSOLE. CALL THE HELP DESK IN THE MORNING.','MOUNTING A TAPE. LATER.','THE SYSTEM IS UP. WHAT MORE DO YOU WANT?'],said=0;
+var REPLIES=['WHO IS THIS?','THIS IS THE CONSOLE. CALL USER SERVICES IN THE MORNING.','MOUNTING A TAPE. LATER.','THE SYSTEM IS UP. WHAT MORE DO YOU WANT?'],said=0;
 V.operatorReply=function(text){
   var r=/PASSWORD|MAINT/.test(text)?'NICE TRY.':REPLIES[Math.min(said++,REPLIES.length-1)],who=V.user;
   P.pause(1400);
@@ -323,18 +325,19 @@ V.closeSpool=function(k,lines,name,ft){
 };
 
 function spoolList(w){var n=V.lookup(DEVS,w||'');return n==='READER'||n==='RDR'?V.rdr:n==='PUNCH'||n==='PCH'?V.punFiles:n==='PRINTER'||n==='PRT'?V.prtFiles:null}
+function gotLetter(F){if(F.some(function(f){return f.letter}))V.letterGone=true} /* the letter has left the reader: it does not come back at the next logon */
 function counted(n,what){return (n?z(n,4)+' ':' NO  ')+'FILE'+(n===1?'':'S')+' '+what}
 CP.PURGE=function(a){
   var L=spoolList(a[0]);
   if(!L)return bad('CSV',35,'DEVICE TYPE MISSING OR INVALID');
   var ids=a.slice(1),gone=0;
-  if(!ids.length||ids[0]==='ALL'){gone=L.length;L.length=0;out(counted(gone,'PURGED'));return 0}
+  if(!ids.length||ids[0]==='ALL'){gone=L.length;gotLetter(L);L.length=0;out(counted(gone,'PURGED'));return 0}
   for(var i=0;i<ids.length;i++){
-    if(ids[i]==='CLASS'){var c=ids[++i];for(var j=L.length-1;j>=0;j--)if(L[j].cls===c){L.splice(j,1);gone++}continue}
+    if(ids[i]==='CLASS'){var c=ids[++i];for(var j=L.length-1;j>=0;j--)if(L[j].cls===c){gotLetter(L.splice(j,1));gone++}continue}
     if(!/^\d{1,4}$/.test(ids[i])){out(counted(gone,'PURGED'));return bad('CSV',8,'INVALID SPOOLID - '+ids[i])}
     var at=L.map(function(f){return f.id}).indexOf(+ids[i]);
     if(at<0){out(counted(gone,'PURGED'));err('DMKCSV042E SPOOLID '+ids[i]+' DOES NOT EXIST');return 42}
-    L.splice(at,1);gone++;
+    gotLetter(L.splice(at,1));gone++;
   }
   out(counted(gone,'PURGED'));
   return 0;
@@ -388,6 +391,7 @@ CP.TRANSFER=function(a){
   if(!F.length){out(counted(0,'TRANSFERRED'));if(id!=='ALL'){err('DMKCSV042E SPOOLID '+id+' DOES NOT EXIST');return 42}return 0}
   if(to===V.user){out(counted(F.length,'TRANSFERRED'));return 0}
   F.forEach(function(f){L.splice(L.indexOf(f),1);out('RDR FILE '+z(f.id,4)+' TRANSFERRED  TO  '+to)});
+  gotLetter(F);
   out(counted(F.length,'TRANSFERRED'));
   return 0;
 };
@@ -574,7 +578,7 @@ V.online=function(raw){
   if(!user||!/^[A-Z0-9$#@]{1,8}$/.test(user)){P.typeLine('DMKLOG020E USERID MISSING OR INVALID','err');return}
   function go(pw){
     if(pw===null||pw===P.INT)return;
-    pw=up(String(pw).trim());
+    pw=pwOf(String(pw));
     var d=V.dir[user];
     if(!d){P.typeLine('DMKLOG053E '+user+' NOT IN CP DIRECTORY','err');return}
     if(pw!==d.pw||d.pw==='NOLOG'){P.pause(900);P.typeLine('DMKLOG050E PASSWORD INCORRECT','err');return}
