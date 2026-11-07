@@ -35,6 +35,11 @@ function delim(s,i){ /* the text up to the next unescaped copy of the delimiter 
 function start(macro){
   var B={lines:[],cur:0,path:null,changed:false},last=null,input=null;
   function need(){if(!B.lines.length)throw new E('Buffer empty.')}
+  function remember(t){ /* an empty expression is the last one used */
+    if(t==='')t=last;
+    if(t===null)throw new E('// undefined in regular expression.');
+    return last=t;
+  }
   function addr(s,i){ /* one address at s[i]: {n,i} or null */
     var n=null,m;
     function rel(base){
@@ -51,8 +56,7 @@ function start(macro){
     else if(c==='.'){n=B.cur;i++}
     else if(c==='/'){
       var r=delim(s,i);if(!r)throw new E('Syntax error in regular expression.');
-      if(r.t==='')r.t=last;if(r.t===null)throw new E('// undefined in regular expression.');
-      last=r.t;var re=regex(r.t);need();
+      var re=regex(remember(r.t));need();
       n=null;
       for(var k=1;k<=B.lines.length;k++){var x=(B.cur+k-1)%B.lines.length+1;if(re.test(B.lines[x-1])){n=x;break}}
       if(n===null)throw new E('Search failed.');
@@ -72,12 +76,9 @@ function start(macro){
   }
   function print(a,b){for(var k=a;k<=b;k++)M.out(M.tabs(B.lines[k-1]));B.cur=b}
   function sub(a,b,s,i,quiet){ /* s/old/new/: every match on each line */
-    var d=s.charAt(i);if(!d)throw new E('Syntax error in substitute request.');
-    var r1=delim(s,i);if(!r1)throw new E('Syntax error in substitute request.');
+    var r1=delim(s,i);if(!r1)throw new E('Syntax error in substitute request.'); /* null too when there is no delimiter */
     var r2=delim(s,r1.end-1);if(!r2)throw new E('Syntax error in substitute request.');
-    var pat=r1.t===''?last:r1.t;if(pat===null)throw new E('// undefined in regular expression.');
-    last=pat;
-    var re=new RegExp(regex(pat).source,'g'),rep=r2.t,hit=false;
+    var re=new RegExp(regex(remember(r1.t)).source,'g'),rep=r2.t,hit=false;
     for(var k=a;k<=b;k++){
       var L=B.lines[k-1],n=L.replace(re,function(m){
         hit=true;
@@ -106,30 +107,31 @@ function start(macro){
     input=add;
   }
   function one(s){ /* a line of requests in edit mode */
-    var i=0;
+    var i=0,a,b,def;
+    function range(){if(def){need();a=b=B.cur}check(a);check(b)} /* the lines addressed, the current one by default */
     while(i<s.length){
       while(s.charAt(i)===' ')i++;
       if(i>=s.length)return;
-      var a1=addr(s,i),a,b,two=false;
-      if(a1){i=a1.i;a=b=a1.n;if(s.charAt(i)===','){var a2=addr(s,i+1);if(!a2)throw new E('Address syntax error:');i=a2.i;b=a2.n;two=true}}
-      var r=s.charAt(i),def=a1===null;
+      var a1=addr(s,i);
+      if(a1){i=a1.i;a=b=a1.n;if(s.charAt(i)===','){var a2=addr(s,i+1);if(!a2)throw new E('Address syntax error:');i=a2.i;b=a2.n}}
+      var r=s.charAt(i);def=a1===null;
       if(!def&&b<a)throw new E('Address wrap-around.');
       i++;
       switch(r){
         case '':case '\n':
           check(a);check(b);print(b,b);return;
-        case 'p':if(def){need();a=b=B.cur}check(a);check(b);print(a,b);break;
+        case 'p':range();print(a,b);break;
         case '=':M.out(String(def?B.cur:b));break;
-        case 'd':if(def){need();a=b=B.cur}check(a);check(b);B.lines.splice(a-1,b-a+1);B.cur=Math.min(a,B.lines.length)||(a>1?a-1:0);if(a>B.lines.length)B.cur=B.lines.length;B.changed=true;break;
+        case 'd':range();B.lines.splice(a-1,b-a+1);B.cur=Math.min(a,B.lines.length);B.changed=true;break;
         case 'a':if(!def&&b!==0)check(b);inputMode(def?B.cur:b,s.slice(i));return;
         case 'i':var at=def?B.cur:b;if(!def&&at!==0)check(at);inputMode(Math.max(0,at-1),s.slice(i));return;
-        case 'c':if(def){need();a=b=B.cur}check(a);check(b);B.lines.splice(a-1,b-a+1);B.cur=a-1;B.changed=true;inputMode(a-1,s.slice(i));return;
-        case 's':if(def){need();a=b=B.cur}check(a);check(b);i=sub(a,b,s,i);if(s.charAt(i)==='p')i++;break;
+        case 'c':range();B.lines.splice(a-1,b-a+1);B.cur=a-1;B.changed=true;inputMode(a-1,s.slice(i));return;
+        case 's':range();i=sub(a,b,s,i);if(s.charAt(i)==='p')i++;break;
         case 'g':case 'v':{
           if(def){need();a=1;b=B.lines.length}else{check(a);check(b)}
           var req=s.charAt(i);if(!/[pd=]/.test(req))throw new E('Syntax error in global request.'); /* gp/re/: the request, then the expression */
           var r3=delim(s,i+1);if(!r3||!s.charAt(i+1))throw new E('Syntax error in global request.');
-          var pat=r3.t===''?last:r3.t;if(pat===null)throw new E('// undefined in regular expression.');last=pat;var re=regex(pat),keep=[];
+          var re=regex(remember(r3.t)),keep=[];
           for(var k=a;k<=b;k++)if(re.test(B.lines[k-1])===(r==='g'))keep.push(k);
           if(req==='p')keep.forEach(function(k){print(k,k)});
           else if(req==='=')keep.forEach(function(k){M.out(String(k))});

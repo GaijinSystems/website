@@ -43,14 +43,15 @@ D.put=function(f){ /* a file, new or replacing one of the same name: false if it
   if(this.keep)V.keepGuest();
   return true;
 };
+function forget(f){if(f.factory&&V.gone.indexOf(f.factory)<0)V.gone.push(f.factory)} /* a file the disk came with, gone: it does not come back */
 D.remove=function(fn,ft){
   var f=this.get(fn,ft);if(!f)return;
   delete this.files[this.key(fn,ft)];
-  if(this.keep){if(f.factory&&V.gone.indexOf(f.factory)<0)V.gone.push(f.factory);V.keepGuest()}
+  if(this.keep){forget(f);V.keepGuest()}
 };
 D.rename=function(f,fn,ft,fm){
   delete this.files[this.key(f.fn,f.ft)];
-  if(this.keep&&f.factory&&V.gone.indexOf(f.factory)<0)V.gone.push(f.factory);
+  if(this.keep)forget(f);
   f.factory=null;f.fn=up(fn);f.ft=up(ft);if(fm)f.fm=fm;
   this.files[this.key(fn,ft)]=f;
   if(this.keep)V.keepGuest();
@@ -78,18 +79,17 @@ V.keepGuest=function(){
   var mine=d.list().filter(function(f){return !f.factory}).map(function(f){
     return [f.fn,f.ft,f.fm,f.recfm,f.lrecl,f.lines.map(V.text),f.date?f.date.getTime():0];
   });
-  if(!P.save(KEY,{gone:V.gone,files:mine}))V.saveFailed=true;
+  P.save(KEY,{gone:V.gone,files:mine});
 };
-function restore(d){
+function restore(d){ /* onto the guest's new, empty disk, with keep off */
   var s=P.saved(KEY);
   if(!s||typeof s!=='object'||!Array.isArray(s.files))return;
   V.gone=Array.isArray(s.gone)?s.gone.filter(function(x){return typeof x==='string'}):[];
-  V.gone.forEach(function(k){var p=k.split(' ');d.keep=false;d.remove(p[0],p[1]);d.keep=true});
   s.files.forEach(function(r){
     if(!Array.isArray(r)||!V.okName(r[0]||'')||!V.okName(r[1]||'')||!Array.isArray(r[5]))return;
     var lines=r[5].filter(function(x){return typeof x==='string'}).map(function(x){return x.slice(0,255)});
     var f=V.file(r[0],r[1],lines,{fm:/^[0-6]$/.test(r[2])?r[2]:'1',recfm:r[3]==='F'?'F':'V',lrecl:Math.min(255,Math.max(1,+r[4]||80)),date:new Date(+r[6]||P.now().getTime())});
-    d.keep=false;if(!d.put(f)){d.keep=true;return}d.keep=true;
+    d.put(f);
   });
 };
 
@@ -126,21 +126,20 @@ V.setupDisks=function(){
   g.keep=false;
   restore(g);
   g.keep=true;
-  var seen={};
+  var seen={'PROFILE EXEC':1};
   V.factory(g,'PROFILE','EXEC',['&CONTROL OFF','ACCESS 19E Y/S'],{recfm:'F',lrecl:80});
-  seen['PROFILE EXEC']=1;
+  function site(path,lines){ /* a site file as one on the disk, once for each name it comes to */
+    if(/(^|\/)\./.test(path)||path.charAt(0)==='/')return null; /* dot files are the Unix machines'; absolute paths are theirs too */
+    var n=V.siteName(path);if(!n)return null;
+    var k=n[0]+' '+n[1];if(seen[k])return null;seen[k]=1;
+    return V.factory(g,n[0],n[1],lines);
+  }
   (pr.files||[]).forEach(function(f){
-    if(/(^|\/)\./.test(f.name)||f.name.charAt(0)==='/')return; /* dot files are the Unix machines'; absolute paths are theirs too */
-    var n=V.siteName(f.name);if(!n)return;
-    var k=n[0]+' '+n[1];if(seen[k])return;seen[k]=1;
-    var h=V.factory(g,n[0],n[1],(f.body||[]).slice());
+    var h=site(f.name,(f.body||[]).slice());
     if(h&&V.isProt(f.name))h.prot=true;
   });
   (pr.protected||[]).forEach(function(p){
-    if(/(^|\/)\./.test(p)||p.charAt(0)==='/')return;
-    var n=V.siteName(p.replace(/\/+$/,''));if(!n)return;
-    var k=n[0]+' '+n[1];if(seen[k])return;seen[k]=1;
-    var h=V.factory(g,n[0],n[1],[]);
+    var h=site(p.replace(/\/+$/,''),[]);
     if(h){h.prot=true;h.bin=3}
   });
 };

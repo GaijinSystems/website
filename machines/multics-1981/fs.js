@@ -1,5 +1,5 @@
 /* PHOSPHOR-9 terminal: machine "multics-1981", the storage system hierarchy. The engine's /a/b is Multics's >a>b.
-   A node's names are its primary name and any added names (P.multics.addName puts it under each); acl is a list of
+   A node's names are its primary name and any added names (P.multics.names puts it under each); acl is a list of
    [modes, access name]; with none, the modes follow from where it is (see access in commands.js).
    The directories, the bound segments each command lives in and the names in >sc1 were taken from MR12.8 under the
    DPS8M simulator (where, ls) and kept where the MR8.0 manuals agree; bound_mail_ is a stand-in for the 1980 mail

@@ -6,8 +6,8 @@ Phosphor.setup(function(P){
   'use strict';
   var M=P.multics,DIR='/documentation/info_segments',WHEN=new Date(P.systemDate.getTime()-86400000*30);
   function info(names,date,L){
-    var n=P.put(DIR+'/'+names[0]+'.info','f',{owner:'Initializer',date:WHEN,body:typeof L==='function'?L:[date+'  '+names.join(', ')].concat(L),acl:[['r','*.*.*']]});
-    if(typeof L==='function')n.body=function(){return [date+'  '+names.join(', ')].concat(L())};
+    var head=date+'  '+names.join(', ');
+    var n=P.put(DIR+'/'+names[0]+'.info','f',{owner:'Initializer',date:WHEN,body:typeof L==='function'?function(){return [head].concat(L())}:[head].concat(L),acl:[['r','*.*.*']]});
     M.names(n,names.slice(1).map(function(x){return x+'.info'}));
   }
   var TERMS={about:'what this terminal\'s owner has to say',source:'where the terminal\'s own program can be had',sound:'the keys\' clicks: sound on, or sound off',

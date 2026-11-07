@@ -112,7 +112,7 @@ function listText(t){ /* a crunched line spelled out, as LIST shows it */
 P.trsBasic=function(M,disk){ /* M: the machine around it; disk: Disk BASIC (true) or Level II alone */
 var prog=[],byNum={},vars={},arrays={},fns={},stack=[],data=null,deftype={};
 var cur=null,line=-1,pos=0,running=false,cont=null,trace=false,onerr=null,errLine=0,errCode=0,errAt=null,inErr=false;
-var want=null,listing=null,spent=0,strSpace=50,files=disk?3:0,memTop=disk?38202:48312;
+var want=null,listing=null,spent=0,strSpace=50,memTop=disk?38202:48312;
 function reindex(){byNum={};prog.forEach(function(L,i){byNum[L.n]=i})}
 function find(n){if(byNum[n]===undefined)E('UL');return byNum[n]}
 function progSize(){return prog.reduce(function(a,L){return a+5+L.t.length},2)}
@@ -121,7 +121,7 @@ function varSize(){
   Object.keys(arrays).forEach(function(k){var A=arrays[k];n+=6+2*A.dims.length+A.v.length*sizeOf(k)});
   return n;
 }
-function sizeOf(n){var t=n.charAt(n.length-1);return t==='%'?2:t==='$'?3:t==='#'?8:4}
+function sizeOf(n){var t=typeOf(n);return t==='%'?2:t==='$'?3:t==='#'?8:4}
 function fre(){return memTop-strSpace-progSize()-varSize()}
 function strUsed(){
   var s=0;
@@ -171,8 +171,8 @@ function name(){ /* two letters count, the rest are skipped; the mark, or what D
   return n;
 }
 function sp(){while(cur[pos]===32)pos++;return cur[pos]||0} /* blanks inside a name don't count */
-function isStr(n){return n.charAt(n.length-1)==='$'}
 function typeOf(n){return n.charAt(n.length-1)}
+function isStr(n){return typeOf(n)==='$'}
 function zero(n){var t=typeOf(n);return t==='$'?'':t==='#'?new Dbl(0):0}
 function cint(x){x=Math.floor(v(x));if(x<-32768||x>32767)E('OV');return x}
 function conv(n,val){ /* a value made fit for a variable of this type */
@@ -312,7 +312,6 @@ function prim(){
   if(c===T.VARPTR){next();eat(40);ref();eat(41);return 0x6000}
   if(c===T.USR){next();arg1();return 0}
   if(c>=T.SGN&&c<=T['MID$']){if(!disk&&DISKONLY[c])E('L3');next();return func(c)}
-  if(c===T['-']||c===T['+'])return unary();
   E('SN');
 }
 function callFn(f,args){
@@ -673,7 +672,7 @@ S[T.AUTO]=function(){
 var auto=null;
 S[T.EDIT]=function(){ /* the line editor is not here: the line comes back to be typed again */
   var n=at()===46?lastLine:lineNum();find(n);lastLine=n;
-  return {wait:'edit',n:n,text:listText(prog[byNum[n]].t)};
+  return {wait:'edit',n:n};
 };
 S[T.GET]=function(){E('FD')};
 S[T.INPUT]=function(){
@@ -899,27 +898,22 @@ function chain(){want=null;running=true;stack=[];line=0;if(!prog.length){running
 return {
   step:step,enter:function(t){try{return enter(t)}catch(x){if(x&&x.basic){error(x);return 'error'}throw x}},
   answer:answer,want:function(){return want},
-  running:function(){return running},spent:function(){return spent},
+  running:function(){return running},
   load:function(lines){prog=lines.map(function(L){return {n:L[0],t:L[1].slice()}});reindex();want=null;listing=null;clear()},
-  merge:function(lines){lines.forEach(function(L){var i=byNum[L[0]];if(i!==undefined)prog.splice(i,1);reindex();var k=0;while(k<prog.length&&prog[k].n<L[0])k++;prog.splice(k,0,{n:L[0],t:L[1].slice()});reindex()});clear()},
-  program:function(){return prog.map(function(L){return [L.n,L.t.slice()]})},
+  merge:function(lines){lines.forEach(function(L){var i=byNum[L[0]];if(i!==undefined)prog.splice(i,1);var k=0;while(k<prog.length&&prog[k].n<L[0])k++;prog.splice(k,0,{n:L[0],t:L[1].slice()});reindex()});clear()},
   listing:function(){return prog.map(function(L){return L.n+' '+listText(L.t)})},
   run:function(){clear();chain()},
   stop:function(){running=false;cur=null;want=null;listing=null},
   fail:function(k){want=null;try{var r=caught({basic:k});if(r&&r.edit!==undefined)editAfter=r.edit}catch(e){running=false;cur=null}},
-  newProg:function(){prog=[];reindex();clear()},
   brk:brk,
-  auto:function(){var a=auto;return a},
+  auto:function(){return auto},
   autoNext:function(){if(auto)auto.n+=auto.step},autoOff:function(){auto=null},
   has:function(n){return byNum[n]!==undefined},
   editAfter:function(){var e=editAfter;editAfter=null;return e},
   lineText:function(n){var i=byNum[n];return i===undefined?null:n+' '+listText(prog[i].t)},
-  memory:function(){return fre()},
-  setMemory:function(top,f){memTop=top;files=f}
+  setMemory:function(top){memTop=top}
 };
 };
 P.trsBasic.parse=parse;
-P.trsBasic.list=listText;
-P.trsBasic.fmt=numStr;
 P.setup(function(){}); /* marks this file as loaded */
 })(window.Phosphor);

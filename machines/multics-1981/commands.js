@@ -26,6 +26,7 @@ var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],DAYN=['Sunday','Monday','Tu
 function zone(){var z=String(P.tz()||'');return /^[A-Za-z]{3,4}$/.test(z)?z.toLowerCase():'mst'}
 function mdy(d){return P.p2(d.getMonth()+1)+'/'+P.p2(d.getDate())+'/'+P.p2(d.getFullYear()%100)}
 function hhmm(d){return P.p2(d.getHours())+P.p2(d.getMinutes())+'.'+Math.floor(d.getSeconds()/6)}
+function hm(d){return P.p2(d.getHours())+':'+P.p2(d.getMinutes())}
 function dt(d){return mdy(d)+'  '+hhmm(d)+' '+zone()+' '+DAYS[d.getDay()]}
 M.dt=dt;M.mdy=mdy;M.zone=zone;
 
@@ -42,8 +43,8 @@ M.names=function(n,also){ /* give a node its added names, each a key in its dire
 };
 function namesOf(n){return n.names||[n.name]}
 function kidsOf(d){ /* each entry once, primary name first, newest first as a directory shows them */
-  var seen=[],L=[];
-  Object.keys(d.kids).forEach(function(k){var n=d.kids[k];if(seen.indexOf(n)<0){seen.push(n);L.push(n)}});
+  var L=[];
+  Object.keys(d.kids).forEach(function(k){var n=d.kids[k];if(L.indexOf(n)<0)L.push(n)});
   return L.sort(function(a,b){return (b.date||0)-(a.date||0)||(a.seq||0)-(b.seq||0)});
 }
 M.kidsOf=kidsOf;
@@ -86,10 +87,9 @@ function aclMatch(pat){
 function stars(pat){return (pat.match(/\*/g)||[]).length}
 function inHome(abs){return S.home&&(abs===S.home||abs.indexOf(S.home+'/')===0)}
 function modes(n){
-  if(!n)return '';
-  if(n.mbx)return '';
+  if(!n||n.mbx)return '';
   if(S.priv)return n.type==='d'?'sma':n.bin?'re':'rw';
-  if(n.prot)return n.type==='d'?'':'';
+  if(n.prot)return '';
   if(n.acl){
     var hit=n.acl.slice().sort(function(a,b){return stars(a[1])-stars(b[1])}).filter(function(e){return aclMatch(e[1])})[0];
     return hit?(hit[0]==='null'?'':hit[0]):'';
@@ -105,11 +105,11 @@ function mfmt(n){ /* r w, re, rew, sma: the letters in their places */
   if(n.type==='d')return x;
   return ['r','e','w'].map(function(c){return x.indexOf(c)>=0?c:' '}).join('').replace(/\s+$/,'');
 }
+function chars(L){return L.reduce(function(a,l){return a+l.length+1},0)} /* a segment's characters, a newline after each line */
 function recs(n){
   if(n.type==='d')return 0;
   if(n.recs!=null)return n.recs;
-  var c=P.text(n).reduce(function(a,l){return a+l.length+1},0);
-  return Math.ceil(c/4096);
+  return Math.ceil(chars(P.text(n))/4096);
 }
 M.recs=recs;
 var QUOTA=1024; /* records a home directory may hold: 4 MB of characters */
@@ -120,8 +120,7 @@ M.write=function(abs,lines){ /* a segment's new text, or false when it cannot be
   if(n&&n.type==='d')return 'This operation is not allowed for a directory.';
   if(n&&!can(n,'w'))return 'Incorrect access on entry.';
   if(!n&&!can(d,'a'))return 'Incorrect access to directory containing entry.';
-  var size=lines.reduce(function(a,l){return a+l.length+1},0);
-  if(inHome(abs)&&used()-(n?recs(n):0)+Math.ceil(size/4096)>QUOTA)return 'Record quota overflow.';
+  if(inHome(abs)&&used()-(n?recs(n):0)+Math.ceil(chars(lines)/4096)>QUOTA)return 'Record quota overflow.';
   if(n){n.body=lines.slice();n.recs=null;n.bin=false;stamp(n)}
   else{n=P.put(abs,'f',{owner:S.person,body:lines.slice()});stamp(n);n.acl=[['rw',S.person+'.'+S.project+'.*'],['rw','*.SysDaemon.*']]}
   M.changed();
@@ -188,10 +187,10 @@ M.ownerDir=function(){
 var MAIL={gone:false,read:false,extra:[]};
 function letter(){return P.profile.mail.map(function(l){return P.lineOf(l)})}
 function messages(){
-  var L=[];
-  if(S.person===GUEST.person&&!MAIL.gone&&letter().length){
+  var L=[],b=letter();
+  if(S.person===GUEST.person&&!MAIL.gone&&b.length){
     var when=new Date(S.login.getTime()-(3*60+12)*6e4);
-    L.push({from:owner()+'.SysAdmin',date:when,subject:'Welcome',body:letter(),site:true});
+    L.push({from:owner()+'.SysAdmin',date:when,subject:'Welcome',body:b,site:true});
   }
   return L.concat(S.person===GUEST.person?MAIL.extra:[]);
 }
@@ -202,15 +201,16 @@ function delMessage(m){if(m.site)MAIL.gone=true;else MAIL.extra.splice(MAIL.extr
 /* ---------- the ready message: r 09:07 1.486 34, after every command line ---------- */
 function charge(w){S.cpu+=(w||1)*(0.008+Math.random()*0.03);S.pf+=Math.floor(Math.random()*4*(w||1))}
 M.charge=charge;
-function readyLine(){var d=P.now();return 'r '+P.p2(d.getHours())+':'+P.p2(d.getMinutes())+' '+S.cpu.toFixed(3)+' '+S.pf+(S.level>1?' level '+S.level:'')}
+function readyLine(){return 'r '+hm(P.now())+' '+S.cpu.toFixed(3)+' '+S.pf+(S.level>1?' level '+S.level:'')}
 function ready(){
   if(!S.on||!S.ran&&!S.quit)return '';
   var s=S.quit?'QUIT\n':'';
   S.quit=false;S.ran=false;
   if(S.ready)s+=readyLine()+'\n';
-  S.used+=S.cpu;S.cpu=0;S.pf=0;
+  settle();
   return s;
 }
+function settle(){S.used+=S.cpu;S.cpu=0;S.pf=0} /* this command line's charges go on the session's */
 P.onInterrupt=function(taken){ /* QUIT: the BREAK key. A new command level, which release or start leaves; a program that takes it does that itself */
   if(!S.on)return null;
   if(!taken){S.level++;S.quit=true;S.cpu+=0.02}
@@ -682,7 +682,7 @@ cmd(['status','st'],function(a){
   f('date used',dt(P.now()));
   f('date modified',dt(n.date||P.systemDate));
   f('branch modified',dt(n.date||P.systemDate));
-  if(n.type==='f'){f('bit count',n.bin?recs(n)*36864:P.text(n).reduce(function(x,l){return x+l.length+1},0)*9);f('records used',n.mbx?0:recs(n))}
+  if(n.type==='f'){f('bit count',n.bin?recs(n)*36864:chars(P.text(n))*9);f('records used',n.mbx?0:recs(n))}
   f('mode',modes(n)||'null');
   L.push('');
   say(L);
@@ -699,7 +699,7 @@ function aclSort(A){ /* the order Multics keeps: a named person first, then a na
   return A.map(function(e,i){return [e,i]}).sort(function(x,y){return k(x[0])-k(y[0])||x[1]-y[1]}).map(function(x){return x[0]});
 }
 function fullName(s){var p=String(s).split('.');while(p.length<3)p.push('*');return p.slice(0,3).join('.')}
-function okMode(m,dir){return dir?/^(s?m?a?|null|n)$/.test(m)&&m!==''&&/^[sma]*$|^null$|^n$/.test(m):/^(r?e?w?|null|n)$/.test(m)&&m!==''}
+function okMode(m,dir){return m!==''&&(dir?/^(s?m?a?|null|n)$/:/^(r?e?w?|null|n)$/).test(m)}
 cmd(['list_acl','la'],function(a){
   var r=a[0]?path(a[0]):{n:node(P.st.cwd),shown:mp(P.st.cwd),abs:P.st.cwd};
   if(r.err){bad('list_acl',r.err,r.shown);return}
@@ -750,17 +750,17 @@ function whoAll(){return others().concat(S.on?[[S.person,S.project,1,true]]:[])}
 cmd(['who'],function(a){
   var o=ctl('who',a,{lg:'-long,-lg',bf:'-brief,-bf',nm:'-name,-nm',pj:'-project,-pj'});
   if(o.bad)return;
-  var U=whoAll(),inter=U.filter(function(u){return u[2]}).length,load=(U.length*1.0+4).toFixed(1);
+  var U=whoAll(),inter=U.filter(function(u){return u[2]}).length;
   var sel=o.rest.length?U.filter(function(u){return o.rest.some(function(x){var p=x.split('.');return (!p[0]||p[0]==='*'||p[0]===u[0])&&(!p[1]||p[1]==='*'||p[1]===u[1])})}):U;
   if(o.rest.length&&!sel.length){out('who: User not logged in.'+' '+o.rest.join(' '));return}
   var R=[];
   if(o.lg){
-    R.push('','Multics '+VERSION+'; '+site(),'Load = '+load+' out of 125.0 units; users = '+U.length+', '+inter+' interactive, '+(U.length-inter)+' daemons.',
+    R.push('','Multics '+VERSION+'; '+site(),'Load = '+load()+' out of 125.0 units; users = '+U.length+', '+inter+' interactive, '+(U.length-inter)+' daemons.',
       'Absentee users = 0 background; Max background absentee users = 3','System up since '+dt(BOOTED),'Last shutdown was at '+dt(new Date(BOOTED.getTime()-(41*60+7)*6e4)),'','    Login at      TTY  Load   User ID','');
-    sel.forEach(function(u,i){var t=new Date(S.login.getTime()-(i*37+13)*6e4);if(u[3])t=S.login;R.push(mdy(t)+'  '+P.p2(t.getHours())+':'+P.p2(t.getMinutes())+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
+    sel.forEach(function(u,i){var t=new Date(S.login.getTime()-(i*37+13)*6e4);if(u[3])t=S.login;R.push(mdy(t)+'  '+hm(t)+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
     R.push('');
   }else{
-    if(!o.rest.length&&!o.bf)R.push('','Multics '+VERSION+', load '+load+'/125.0; '+U.length+' users, '+inter+' interactive, '+(U.length-inter)+' daemons.','Absentee users 0/3');
+    if(!o.rest.length&&!o.bf)R.push('','Multics '+VERSION+', load '+load()+'/125.0; '+U.length+' users, '+inter+' interactive, '+(U.length-inter)+' daemons.','Absentee users 0/3');
     sel.forEach(function(u){R.push(u[0]+'.'+u[1])});
     R.push('');
   }
@@ -783,18 +783,18 @@ function afn(names,f,asCmd){
   });
 }
 function bool(b){return b?'true':'false'}
-afn(['working_dir','wd'],function(){return mp(P.st.cwd)},false);
+afn(['working_dir','wd'],function(){return mp(P.st.cwd)});
 afn(['home_dir','hd'],function(){return mp(S.home)});
 afn(['process_dir','pd'],function(){return '>process_dir_dir>!BbHkWqLzXgM'});
 afn(['date'],function(){return mdy(P.now())});
-afn(['time'],function(){var d=P.now();return P.p2(d.getHours())+':'+P.p2(d.getMinutes())});
+afn(['time'],function(){return hm(P.now())});
 afn(['date_time'],function(){return dt(P.now())});
 afn(['day_name'],function(){return DAYN[P.now().getDay()]});
 afn(['month_name'],function(){return MONTHS[P.now().getMonth()]});
 afn(['year'],function(){return String(P.now().getFullYear())});
 afn(['user'],function(a){
   var k=a[0]||'name',d=S.login;
-  var V={name:S.person,project:S.project,login_date:mdy(d),login_time:P.p2(d.getHours())+':'+P.p2(d.getMinutes()),term_type:'ASCII',term_id:'none',
+  var V={name:S.person,project:S.project,login_date:mdy(d),login_time:hm(d),term_type:'ASCII',term_id:'none',
     process_type:'interactive',anonymous:'false',absentee:'false',brief_bit:'false',preemption_time:hhmm(new Date(d.getTime()+36e5))};
   if(!P.has(V,k))throw new CPErr('user: Invalid keyword. '+k);
   return V[k];
@@ -819,7 +819,6 @@ afn(['plus'],function(a){return String(a.reduce(function(s,x){return s+(+x||0)},
 afn(['upper_case'],function(a){return a.join(' ').toUpperCase()},false);
 afn(['lower_case'],function(a){return a.join(' ').toLowerCase()},false);
 afn(['length'],function(a){return String(a.join(' ').length)},false);
-CMD.working_dir=CMD.wd={name:'working_dir',run:function(){out(mp(P.st.cwd))}};
 
 cmd(['where','wh'],function(a){ /* which library segment a command is in, by the search rules */
   if(!a.length){err('where: Usage: where names');return}
@@ -844,7 +843,7 @@ cmd(['start','sr'],function(){
 cmd(['program_interrupt','pi'],function(){if(S.level<2){err('program_interrupt: There is no suspended invocation of a subsystem that supports the use of this command.');return}S.level--});
 cmd(['ready_off','rdf'],function(){S.ready=false});
 cmd(['ready_on','rdn'],function(){S.ready=true});
-cmd(['ready','rdy'],function(){out(readyLine());S.used+=S.cpu;S.cpu=0;S.pf=0});
+cmd(['ready','rdy'],function(){out(readyLine());settle()});
 cmd(['new_proc'],function(){
   S.level=1;P.st.cwd=S.home;
   out('');
@@ -943,8 +942,9 @@ cmd(['send_message','sm'],function(a){
     },true);
   })();
 });
+function msgDT(d){return dt(d).replace(/\.\d /,' ').replace('  ',' ')} /* a message's time: 11/04/81 1200 mst Wed */
 function showMsgs(){
-  while(S.msgs.length){var m=S.msgs.shift();P.queue(function(){out('From '+uid().slice(0,-2)+' '+dt(P.now()).replace(/\.\d /,' ').replace('  ',' ')+': '+m)})}
+  while(S.msgs.length){var m=S.msgs.shift();P.queue(function(){out('From '+uid().slice(0,-2)+' '+msgDT(P.now())+': '+m)})}
 }
 cmd(['accept_messages','am'],function(a){
   S.accepting=true;
@@ -954,11 +954,11 @@ cmd(['defer_messages','dm'],function(){S.accepting=false});
 cmd(['print_messages','pm'],function(){
   var L=MAIL.extra.filter(function(m){return m.msg});
   if(!L.length){out('You have no messages.');return}
-  L.forEach(function(m){out('From '+m.from+' '+dt(m.date).replace(/\.\d /,' ').replace('  ',' ')+': '+m.body.join(' '));MAIL.extra.splice(MAIL.extra.indexOf(m),1)});
+  L.forEach(function(m){out('From '+m.from+' '+msgDT(m.date)+': '+m.body.join(' '));MAIL.extra.splice(MAIL.extra.indexOf(m),1)});
 });
 
 /* ---------- mail: print_mail, read_mail, send_mail, and the old mail command ---------- */
-function shortDT(d){return mdy(d)+' '+P.p2(d.getHours())+':'+P.p2(d.getMinutes())}
+function shortDT(d){return mdy(d)+' '+hm(d)}
 function longDate(d){return d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear()+' '+P.p2(d.getHours())+P.p2(d.getMinutes())+' '+zone()}
 function msgHead(m,i){
   var n=m.body.length;
@@ -1001,15 +1001,15 @@ cmd(['read_mail','rdm'],function(a){
   var L=messages().slice(),del=[],cur=L.length?1:0,mbx=mp(S.home)+'>'+S.person+'.mbx';
   if(!L.length){out('You have no mail.');return}
   if(!o.bf)out(mailCount(L));
-  function alive(){return L.filter(function(m,i){return del.indexOf(i)<0}).length}
+  function live(){return L.map(function(z,i){return i+1}).filter(function(n){return del.indexOf(n-1)<0})} /* the numbers of the messages not deleted */
   function specs(w){ /* message numbers, or null after saying why */
     if(!w.length)return cur&&del.indexOf(cur-1)<0?[cur]:null;
     var N=[];
     for(var k=0;k<w.length;k++){
       var x=w[k],m;
-      if(x==='all'||x==='a')N=N.concat(L.map(function(z,i){return i+1}).filter(function(n){return del.indexOf(n-1)<0}));
-      else if(x==='first'||x==='f')N.push(L.map(function(z,i){return i+1}).filter(function(n){return del.indexOf(n-1)<0})[0]);
-      else if(x==='last'||x==='l')N.push(L.map(function(z,i){return i+1}).filter(function(n){return del.indexOf(n-1)<0}).pop());
+      if(x==='all'||x==='a')N=N.concat(live());
+      else if(x==='first'||x==='f')N.push(live()[0]);
+      else if(x==='last'||x==='l')N.push(live().pop());
       else if(x==='current'||x==='c')N.push(cur);
       else if((m=x.match(/^(\d+)(?::(\d+))?$/))){for(var n=+m[1];n<=(m[2]?+m[2]:+m[1]);n++)N.push(n)}
       else{err('read_mail: Invalid message specifier. '+x);return null}
@@ -1038,9 +1038,9 @@ cmd(['read_mail','rdm'],function(a){
       var N;
       if(r0==='list'||r0==='ls'){N=specs(w.slice(1).length?w.slice(1):['all']);if(N)list(N);return}
       if(r0==='print'||r0==='pr'||r0==='p'){N=specs(w.slice(1));if(N)print(N);return}
-      if(r0==='next'||r0==='n'){var nx=L.map(function(z,i){return i+1}).filter(function(n){return n>cur&&del.indexOf(n-1)<0})[0];if(!nx){err('read_mail: No next message.');return}print([nx]);return}
-      if(r0==='previous'){var pv=L.map(function(z,i){return i+1}).filter(function(n){return n<cur&&del.indexOf(n-1)<0}).pop();if(!pv){err('read_mail: No previous message.');return}print([pv]);return}
-      if(r0==='delete'||r0==='dl'||r0==='d'){N=specs(w.slice(1));if(N){N.forEach(function(n){if(del.indexOf(n-1)<0)del.push(n-1)});if(!alive())out('All messages have been deleted.')}return}
+      if(r0==='next'||r0==='n'){var nx=live().filter(function(n){return n>cur})[0];if(!nx){err('read_mail: No next message.');return}print([nx]);return}
+      if(r0==='previous'){var pv=live().filter(function(n){return n<cur}).pop();if(!pv){err('read_mail: No previous message.');return}print([pv]);return}
+      if(r0==='delete'||r0==='dl'||r0==='d'){N=specs(w.slice(1));if(N){N.forEach(function(n){if(del.indexOf(n-1)<0)del.push(n-1)});if(!live().length)out('All messages have been deleted.')}return}
       if(r0==='retrieve'||r0==='rt'){N=w.slice(1).length?w.slice(1).map(Number):del.map(function(i){return i+1});N.forEach(function(n){var k=del.indexOf(n-1);if(k>=0)del.splice(k,1)});return}
       if(r0==='execute'||r0==='e'){line(w.slice(1).join(' '));return}
       err('read_mail: Unrecognized request.  Type "?" for a list of requests. '+r0);
@@ -1090,7 +1090,6 @@ function sendMail(a,cmdName){
 cmd(['send_mail','sdm'],function(a){sendMail(a,'send_mail')});
 
 /* ---------- help and list_help: the info segments in >doc>info ---------- */
-var INFO=M.INFO={};
 function infoSeg(name){return node('/documentation/info_segments/'+name+'.info')}
 function blocks(L){ /* paragraphs, each with its title (the text before the first colon of its first line) */
   var B=[],cur=[];
@@ -1103,11 +1102,7 @@ cmd(['help'],function(a){
   if(o.bad)return;
   var topic=o.rest[0]||'help_system';
   if(!o.rest[0])o.all=true; /* help alone: all of it, the terminal's words included */
-  var n=infoSeg(topic);
-  if(!n){
-    var alias=Object.keys(M.INFO).filter(function(k){return (M.INFO[k].names||[]).indexOf(topic)>=0})[0];
-    if(alias)n=infoSeg(alias);
-  }
+  var n=infoSeg(topic); /* an added name (pwd.info) leads to the same segment */
   if(!n){bad('help','No info segment found for',topic+'.');return}
   var L=P.text(n),B=blocks(L),shown='>doc>info>'+namesOf(n)[0];
   if(o.bf){say([B[0][0]].concat(B.filter(function(b){return /^(Syntax|Usage)/.test(b[0])}).reduce(function(x,b){return x.concat(b)},[])));return}
@@ -1150,10 +1145,9 @@ cmd(['logout'],function(a){
   LAST[S.person]=S.login;S.on=false;S.priv=false;S.level=1;S.cpu=0;S.used=0;S.ready=true;S.accepting=false;
   P.st.user=GUEST.person.toLowerCase();P.st.cwd=P.st.home=GUEST.home;S.home='';
   if(hold){if(!brief){out('');banner()}else out('');return}
-  out('hangup');
-  P.pause(1600);
-  P.queue(function(){out('');banner()});
+  hangup();
 });
+function hangup(){out('hangup');P.pause(1600);P.queue(function(){out('');banner()})} /* the line drops, and answers again */
 function load(){return (whoAll().length*1.0+4).toFixed(1)}
 function banner(){
   var n=P.now();
@@ -1173,8 +1167,8 @@ function preLogin(c){
   if(w==='enter'||w==='e'||w==='enterp'||w==='ep'){out('Anonymous users are not accepted at this installation.');out(AGAIN);return}
   if(w==='help'){say(LOGIN_HELP);out(AGAIN);return}
   if(w==='hello'){banner();return}
-  if(w==='logout'||w==='hangup'){out('hangup');P.pause(1600);P.queue(function(){out('');banner()});return}
-  if(P.has(TERM,w)&&w!=='help'&&w!=='mail'){TERM[w](W.slice(1),c,W);return}
+  if(w==='logout'||w==='hangup'){hangup();return}
+  if(P.has(TERM,w)&&w!=='mail'){TERM[w](W.slice(1),c,W);return}
   out('Incorrect login word "'+w+'".');
   out(AGAIN);
 }
@@ -1200,7 +1194,7 @@ function login(a){
     var U=account(person);
     function fail(m){
       S.tries++;P.pause(900);out(m);
-      if(S.tries>=6){S.tries=0;out('hangup');P.pause(1600);P.queue(function(){out('');banner()});return}
+      if(S.tries>=6){S.tries=0;hangup();return}
       out(AGAIN);
     }
     if(!U){fail('The user name you supplied is not registered.');return}
@@ -1253,8 +1247,9 @@ function startUp(why,brief){ /* the start_up.ec in the home directory, or the me
 
 /* ---------- the terminal's own words ---------- */
 Phosphor.setup(function(Q){
-  Object.keys(Q.cmds).forEach(function(k){TERM[k]=Q.cmds[k]}); /* the terminal's words and the site's text commands; Multics's own help and mail win */
-  Object.keys(Q.cmds).forEach(function(k){Q.cmds[k]=function(a,raw){line(raw)}}); /* everything comes to the command processor */
+  Object.keys(Q.cmds).forEach(function(k){ /* the terminal's words and the site's text commands; Multics's own help and mail win */
+    TERM[k]=Q.cmds[k];Q.cmds[k]=function(a,raw){line(raw)}; /* everything comes to the command processor */
+  });
   Q.fallback=function(word,raw){Q.status(0);line(raw);return true};
   Q.setPrompt(ready);
   GUEST.home=Q.st.home;

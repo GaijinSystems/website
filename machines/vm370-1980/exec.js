@@ -9,7 +9,6 @@ var V=P.vm=P.vm||{};
 var up=V.up;
 function out(s){P.typeLine(s)}
 function err(s){V.em(s,'err')}
-function z(n,w){return String(n).padStart(w,'0')}
 V.stack=[];V.level=0;
 V.globals=[1,1,1,1,1,1,1,1,1,1];
 
@@ -19,10 +18,7 @@ V.read=function(then,trap){
   V.ask(then,trap);
 };
 
-V.execCmd=function(a){ /* the EXEC command: EXEC fn args */
-  if(!a.length){err('DMSEXC001E NO FILENAME SPECIFIED');return 24}
-  return V.exec(a,{});
-};
+V.execCmd=function(a){return V.exec(a,{})}; /* the EXEC command: EXEC fn args */
 V.exec=function(W,ctx){ /* W: [fn, args...] in CMS's tokens; runs the EXEC; its return code comes back through V.rc */
   var name=W[0]==='EXEC'?W[1]:W[0],args=W[0]==='EXEC'?W.slice(2):W.slice(1);
   if(!name){err('DMSEXC001E NO FILENAME SPECIFIED');return 24}
@@ -63,7 +59,7 @@ function special(S,k){
     case '&TYPEFLAG':return 'RT';
     case '&DOS':return 'OFF';
     case '&DISK*':var m=V.modes().filter(function(x){return V.acc[x].rw})[0];return m||'NONE';
-    case '&DISK?':var b=null;V.modes().forEach(function(x){var A=V.acc[x];if(A.rw&&(!b||A.disk.left()>V.acc[b].disk.left()))b=x});return b||'NONE';
+    case '&DISK?':return V.roomiest()||'NONE';
   }
   var g=k.match(/^&GLOBAL(\d)$/);if(g)return String(V.globals[+g[1]]);
   var d=k.match(/^&DISK([A-Z])$/);if(d)return V.acc[d[1]]?'CMS':'NA';
@@ -105,7 +101,7 @@ function compare(a,op,b){
   }
   return null;
 }
-function cond(S,raw,T){ /* tok op tok, with &$ and &* over the arguments; null when it cannot be read */
+function cond(S,T){ /* tok op tok, with &$ and &* over the arguments; null when it cannot be read */
   var a=T[0],op=T[1],b=T[2];
   if(op===undefined)return null;
   function ex(x){return x==='&*'||x==='&$'}
@@ -140,7 +136,7 @@ function loopEnd(S){ /* the end of a loop's body: back to its top, or out */
   if(!L||S.stop)return;
   if(S.pc<=L.end)return;
   L.done++;
-  if(L.times!=null?L.done>=L.times:cond(S,'',subst(S,L.cond))===true){S.loops.pop();if(S.loops.length)loopEnd(S);return}
+  if(L.times!=null?L.done>=L.times:cond(S,subst(S,L.cond))===true){S.loops.pop();if(S.loops.length)loopEnd(S);return}
   S.pc=L.start;
 }
 function stmt(S,raw){
@@ -192,14 +188,12 @@ function stmt(S,raw){
 function command(S,C){
   var line=C.join(' ');
   if(S.control==='CMS'||S.control==='ALL')out((S.time?V.hms(P.now())+' ':'')+line);
-  V.inExec=S;
   var rc;
   P.queue(function(){V.rc=V.execCommand(C,S)||0});
   P.queue(function(){
-    V.inExec=null;
     rc=V.rc||0;
     V.rc0=rc;
-    if(rc&&S.control!=='OFF')out('+++ R('+(rc<0?'-'+z(-rc,4):z(rc,5))+') +++');
+    if(rc&&S.control!=='OFF')out('+++ R('+V.rcs(rc)+') +++');
     if(rc&&S.error&&!S.inError){S.inError=true;var e=S.error.slice();stmt(S,e.join(' '));S.inError=false}
   });
   return 'wait';
@@ -208,8 +202,7 @@ V.execCommand=function(C,S){ /* a command from an EXEC: no implied CP; an unknow
   var w=C[0];
   if(w==='CP')return V.command(C.join(' '),{exec:S});
   if(V.termWord(w,C.join(' ')))return 0;
-  if(V.find(w,'EXEC','*')&&w!=='EXEC')return V.exec(C,{});
-  if(w==='EXEC')return V.exec(C,{});
+  if(w==='EXEC'||V.find(w,'EXEC','*'))return V.exec(C,{});
   var n=V.cmsName(w);
   if(!n&&!V.find(w,'MODULE','*'))return -3;
   V.nomsg=!S.msg&&/^(ERASE|LISTFILE|RENAME|STATE)$/.test(n||'');
@@ -271,13 +264,12 @@ function control(S,w,T,raw){
       return;
     case '&IF':
       A=subst(S,T.slice(1));
-      if(A.length<4){if(T.length>=5&&A.length<4){fail(S,'COND');return}fail(S,'COND');return}
-      var c=cond(S,raw,A);
+      if(A.length<4){fail(S,'COND');return}
+      var c=cond(S,A);
       if(c===null){fail(S,'COND');return}
       if(c==='null'||!c)return;
-      var rest=T.slice(4),k2=0,seen=0;
       /* the statement that follows the test, taken from the line as written so its own symbols are its own */
-      rest=tokens(raw.trim()).slice(raw.trim().charAt(0)==='-'?5:4);
+      var rest=tokens(raw.trim()).slice(raw.trim().charAt(0)==='-'?5:4);
       return stmt(S,rest.join(' '));
     case '&LOOP':
       A=subst(S,T.slice(1));
@@ -288,7 +280,7 @@ function control(S,w,T,raw){
       if(S.loops.length>=4){fail(S,'DEPTH');return}
       var L={start:S.pc,end:end,done:0,times:null,cond:null};
       if(A.length===2&&num(A[1]))L.times=+A[1];
-      else if(A.length>=4){L.cond=T.slice(2);if(cond(S,'',subst(S,L.cond))===true){S.pc=end+1;return}}
+      else if(A.length>=4){L.cond=T.slice(2);if(cond(S,subst(S,L.cond))===true){S.pc=end+1;return}}
       else{fail(S,'LOOP');return}
       if(L.times===0){S.pc=end+1;return}
       S.loops.push(L);return;
@@ -310,7 +302,7 @@ function control(S,w,T,raw){
         if(!k)return;
         V.read(function(l){
           if(l===null||l===P.INT){S.stop=true;return}
-          var r=stmt(S,up(l));
+          stmt(S,up(l));
           more(k-1);
         },true);
       })(cnt);

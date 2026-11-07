@@ -15,7 +15,6 @@ shell:     dos
 unix:      no
 login:     no
 offline:   NO CARRIER
-root password: ringback
 
 == banner ==
 PHOSPHOR-9 VIDEO TERMINAL  ROM V1.07

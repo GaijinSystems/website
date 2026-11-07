@@ -9,7 +9,7 @@
 'use strict';
 
 /* ---------- the board's settings ---------- */
-var PASSWORD='ringback'; /* the sysop's, unless the board's settings or the bbs machine's root password say otherwise */
+var PASSWORD='ringback'; /* the sysop's, from any machine, unless the board's settings say otherwise, or, on the bbs machine, a root password: in site/ */
 function conf(){
   var C={name:'Afterglow BBS',sysop:P.profile.owner,number:'555-0142',password:'',node:'1',
     host:P.machine==='bbs'?P.profile.host:(P.st.site||'').replace(/^www\./,'').split('.')[0]||P.profile.owner}; /* the site's name, not the calling machine's */
@@ -98,8 +98,8 @@ function mine(t){return [col(t),'',undefined]}
 
 /* ---------- the site's words, as the board's messages, bulletins and files ---------- */
 function letterRows(){
-  return P.profile.mail.filter(function(l){return P.lineOf(l)[2]&&P.lineOf(l)[2].row}).map(function(l){
-    var x=P.lineOf(l),m=x[0].match(/^([^\u0003]*)\u0003[^\u0004]*\u0004?(.*)$/)||[x[0],x[0],''];
+  return P.profile.mail.map(function(l){return P.lineOf(l)}).filter(function(x){return x[2]&&x[2].row}).map(function(x){
+    var m=x[0].match(/^([^\u0003]*)\u0003[^\u0004]*\u0004?(.*)$/)||[x[0],x[0],''];
     return {name:m[1].trim(),status:m[2].trim(),href:x[2].href};
   });
 }
@@ -113,11 +113,11 @@ function siteFiles(){ /* the home folder's files a caller could read: nothing hi
 }
 function firstText(L){for(var i=0;i<L.length;i++){var t=plainOf(P.lineOf(L[i])[0]).trim();if(t)return t}return ''}
 function bases(){
-  var C=S.C,sys=C.sysop,mailAt=P.st.login.getTime()-36e5*3,B=[];
+  var C=S.C,sys=C.sysop,mailAt=P.st.login.getTime()-36e5*3,B=[],own=siteFiles();
   var gen={id:'general',name:'General',posts:[]};
   if(P.profile.mail.length)gen.posts.push({f:sys,t:'All',s:clean(firstText(P.profile.mail),30)||'Welcome',d:mailAt,L:siteLines(P.profile.mail)});
   if(P.profile.about.length)gen.posts.push({f:sys,t:'All',s:'About this board',d:mailAt+6e4,L:siteLines(P.profile.about)});
-  siteFiles().forEach(function(f){if(P.fold(f.name)==='now')gen.posts.push({f:sys,t:'All',s:'What I am doing now',d:mailAt+12e4,L:siteLines(f.body)})});
+  own.forEach(function(f){if(P.fold(f.name)==='now')gen.posts.push({f:sys,t:'All',s:'What I am doing now',d:mailAt+12e4,L:siteLines(f.body)})});
   gen.posts.push({f:'Night Owl',t:sys,s:'Re: '+(gen.posts[0]?gen.posts[0].s:'Welcome').replace(/^Re: /,''),d:mailAt+3*36e5,
     L:[['Thanks for putting the board up. Second line yet?','']]});
   gen.posts.push({f:'Lone Coder',t:'All',s:'2400 for sale',d:mailAt+20*6e4,
@@ -128,7 +128,7 @@ function bases(){
     return {f:sys,t:'All',s:clean(plainOf(r.name),30),d:mailAt+i*1000,
       L:[['Status: '+r.status,'']].concat(r.href?[[r.href,'',{href:r.href}]]:[])};
   })});
-  var F=siteFiles().filter(function(f){return P.fold(f.name)!=='now'});
+  var F=own.filter(function(f){return P.fold(f.name)!=='now'});
   if(F.length)B.push({id:'notes',name:sys+"'s notes",ro:true,posts:F.map(function(f,i){
     return {f:sys,t:'All',s:clean(f.name,30),d:P.fileDate.getTime()+i*6e4,L:siteLines(f.body)};
   })});
@@ -216,7 +216,8 @@ function box(L){ /* the board's sign, as wide as the glass allows */
 function sign(){
   var C=S.C;
   blank();
-  box([C.name.toUpperCase().split('').join(' ').length<=cols()-6?C.name.toUpperCase().split('').join(' '):C.name,
+  var wide=C.name.toUpperCase().split('').join(' ');
+  box([wide.length<=cols()-6?wide:C.name,
     'node '+C.node+' . '+C.host+' . '+S.M.speed+' bps','sysop: '+C.sysop]);
   if(S.ansi)put('|4\u2591\u2592\u2593|c\u2588\u2588|e\u2593\u2592\u2591 |7the glow stays on after you hang up');
   blank();
@@ -237,7 +238,7 @@ function tries(n){
     if(k==='new'){newUser(0);return}
     if(k===C.sysop.toLowerCase()||k==='sysop'){
       ask('Password: ',function(w){
-        if(w!=null&&w!==P.INT&&w.toUpperCase()===C.password.toUpperCase()){S.sysop=true;S.handle=C.sysop;S.user={h:C.sysop,calls:0,first:Date.now(),ansi:canAnsi()};S.ansi=canAnsi();welcome(false);return}
+        if(w.toUpperCase()===C.password.toUpperCase()){S.sysop=true;S.handle=C.sysop;S.user={h:C.sysop,calls:0,first:Date.now(),ansi:canAnsi()};S.ansi=canAnsi();welcome(false);return}
         put('Wrong password.');tries(n+1);
       },true);
       return;
@@ -385,7 +386,7 @@ function reader(b,i,then){
   var m=b.posts[i];
   header(b,i);
   setRead(b,i+1);
-  paged(m.L.map(function(x){return [x[0],x[1]||'',x[2]]}),function(){
+  paged(m.L,function(){
     ask('Msg '+(i+1)+': N)ext P)rev R)eply A)gain Q)uit: ',function(l){
       var c=l.trim().toLowerCase().charAt(0);
       if(!c||c==='n'){reader(b,i+1,then);return}
@@ -513,7 +514,7 @@ function upload(then){
     if(!/[xyz]/.test(c)){then();return}
     put('|7Ready to receive. Start your send now.');
     if(c==='z')P.typeLine('**B0100000023be50');
-    else [1,2,3,4].forEach(function(){P.pause(1000);P.typeLine(c==='x'?'C':'C')});
+    else [1,2,3,4].forEach(function(){P.pause(1000);P.typeLine('C')});
     P.pause(800);
     put('|cNothing arrived. Upload aborted.');
     P.typeLine('(a terminal has nothing on it to send.)','dim');
@@ -664,7 +665,7 @@ function end(carrier){
   P.baud(S.baud);
   var M=S.M,done=S.done;
   S=null;
-  if(carrier)M.hangup();else M.hangup(true);
+  M.hangup(!carrier);
   done();
 }
 P.bbs={
