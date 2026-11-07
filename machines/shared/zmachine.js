@@ -7,7 +7,7 @@
    and set_window do nothing, as these stories never call them. A store above dynamic memory is dropped: Zork II release 63
    makes one, from a PICK-ONE on a table with no counter (the FANTASIES of its wizard), then prints whatever that finds.
    Zork III release 25 makes some on a confused order such as HANDS REMOVE, and answers with a few stray letters.
-   Frotz stops there with a fatal error; with -i it carries on, and prints what this does. RANDOM is the generator Frotz uses, so a transcript
+   Frotz stops at either with a fatal error; with -i it carries on, and prints what this does. RANDOM is the generator Frotz uses, so a transcript
    can be compared with one from dfrotz given the same seed. */
 (function(P){
 'use strict';
