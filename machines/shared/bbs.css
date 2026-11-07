@@ -1,0 +1,36 @@
+/* PHOSPHOR-9 terminal: the colours of the dial-up board's ANSI mode, the sixteen of a PC's colour card, each with
+   its own glow (one smaller glow in lite effects). The engine marks the runs (.k0 to .kf); bbs.js loads this file
+   when a board session starts, on whichever machine dialled.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
+.line .k0{color:#3a3a3a;text-shadow:0 0 6px rgba(58,58,58,.8),0 0 20px rgba(58,58,58,.3)}
+.line .k1{color:#2b3fd6;text-shadow:0 0 6px rgba(43,63,214,.8),0 0 20px rgba(43,63,214,.3)}
+.line .k2{color:#00aa00;text-shadow:0 0 6px rgba(0,170,0,.8),0 0 20px rgba(0,170,0,.3)}
+.line .k3{color:#00aaaa;text-shadow:0 0 6px rgba(0,170,170,.8),0 0 20px rgba(0,170,170,.3)}
+.line .k4{color:#c42020;text-shadow:0 0 6px rgba(196,32,32,.8),0 0 20px rgba(196,32,32,.3)}
+.line .k5{color:#aa00aa;text-shadow:0 0 6px rgba(170,0,170,.8),0 0 20px rgba(170,0,170,.3)}
+.line .k6{color:#aa5500;text-shadow:0 0 6px rgba(170,85,0,.8),0 0 20px rgba(170,85,0,.3)}
+.line .k7{color:#aaaaaa;text-shadow:0 0 6px rgba(170,170,170,.8),0 0 20px rgba(170,170,170,.3)}
+.line .k8{color:#6b6b6b;text-shadow:0 0 6px rgba(107,107,107,.8),0 0 20px rgba(107,107,107,.3)}
+.line .k9{color:#5555ff;text-shadow:0 0 6px rgba(85,85,255,.8),0 0 20px rgba(85,85,255,.3)}
+.line .ka{color:#55ff55;text-shadow:0 0 6px rgba(85,255,85,.8),0 0 20px rgba(85,255,85,.3)}
+.line .kb{color:#55ffff;text-shadow:0 0 6px rgba(85,255,255,.8),0 0 20px rgba(85,255,255,.3)}
+.line .kc{color:#ff5555;text-shadow:0 0 6px rgba(255,85,85,.8),0 0 20px rgba(255,85,85,.3)}
+.line .kd{color:#ff55ff;text-shadow:0 0 6px rgba(255,85,255,.8),0 0 20px rgba(255,85,255,.3)}
+.line .ke{color:#ffff55;text-shadow:0 0 6px rgba(255,255,85,.8),0 0 20px rgba(255,255,85,.3)}
+.line .kf{color:#ffffff;text-shadow:0 0 6px rgba(255,255,255,.8),0 0 20px rgba(255,255,255,.3)}
+html.lite .line .k0{text-shadow:0 0 4px rgba(58,58,58,.7)}
+html.lite .line .k1{text-shadow:0 0 4px rgba(43,63,214,.7)}
+html.lite .line .k2{text-shadow:0 0 4px rgba(0,170,0,.7)}
+html.lite .line .k3{text-shadow:0 0 4px rgba(0,170,170,.7)}
+html.lite .line .k4{text-shadow:0 0 4px rgba(196,32,32,.7)}
+html.lite .line .k5{text-shadow:0 0 4px rgba(170,0,170,.7)}
+html.lite .line .k6{text-shadow:0 0 4px rgba(170,85,0,.7)}
+html.lite .line .k7{text-shadow:0 0 4px rgba(170,170,170,.7)}
+html.lite .line .k8{text-shadow:0 0 4px rgba(107,107,107,.7)}
+html.lite .line .k9{text-shadow:0 0 4px rgba(85,85,255,.7)}
+html.lite .line .ka{text-shadow:0 0 4px rgba(85,255,85,.7)}
+html.lite .line .kb{text-shadow:0 0 4px rgba(85,255,255,.7)}
+html.lite .line .kc{text-shadow:0 0 4px rgba(255,85,85,.7)}
+html.lite .line .kd{text-shadow:0 0 4px rgba(255,85,255,.7)}
+html.lite .line .ke{text-shadow:0 0 4px rgba(255,255,85,.7)}
+html.lite .line .kf{text-shadow:0 0 4px rgba(255,255,255,.7)}

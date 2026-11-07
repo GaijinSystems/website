@@ -1,0 +1,11 @@
+/* PHOSPHOR-9 terminal: machine "trs80-1981", how the glass looks while the Model III is plugged in: its 64 by 16
+   screen on a green monitor, the rows as tall as the glass allows, with the graphics blocks and the cursor drawn
+   on a canvas over the text (trs80.js sets its size). Only while html.trs80 is set, which trs80.js does while the
+   Model III's screen is up.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. */
+html.trs80 #full{position:relative;overflow:hidden}
+html.trs80 #full .trs-row{height:var(--trs-lh,1.28em);line-height:calc(var(--trs-lh,1.28em) / var(--trs-sy,1));
+  transform:scaleY(var(--trs-sy,1));transform-origin:0 0;overflow:visible}
+html.trs80 #full .trs-blocks{position:absolute;pointer-events:none}
+@media (max-width:520px){html.trs80 #full{padding-left:calc(var(--fs)*.6);padding-right:calc(var(--fs)*.6)}}
+@media (orientation:landscape) and (max-height:520px){html.trs80 #full{padding-top:calc(var(--fs)*.5);padding-bottom:calc(var(--fs)*.5)}}

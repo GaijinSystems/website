@@ -1,0 +1,121 @@
+/* PHOSPHOR-9 terminal: machine "trs80-1981", what is on the disk in drive 0 when it is new: the files DIR shows on
+   a TRSDOS 1.3 system disk, the terminal's own PHOSPHOR/CMD (which TRSDOS runs at boot, by AUTO), Infocom's Zork,
+   and BASIC programs. A visitor's SAVEs and KILLs are kept in this browser; clearing the site's data brings this
+   disk back. TRSDOS's own system files are not listed by DIR and are not here.
+   Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
+
+   BULLSEYE/BAS and BUZZWORD/BAS are David H. Ahl's programs from "BASIC Computer Games" (Creative Computing, 1978),
+   which the book credits to him alone. On 15 June 2022 he placed "everything that I have written or edited into the
+   Public Domain", asking that it be used "for educational and historical purposes and not for profit or personal
+   gain of others". The listings are the ones the coding-horror/basic-computer-games project carries, changed as a
+   Model III owner would type them in: RND(1), which Level II reads as a whole number from 1 to 1, is RND(0), and a
+   CLEAR at the start gives the strings room, as Level II starts with only 50 bytes for them; the
+   titles are centred in 64 columns, and BULLSEYE's table of throws fits them (TAB(16) and TAB(38) for 20 and 45).
+   WORM/BAS is a new program, written for this terminal as a type-in game of the time would have been, under the
+   AGPL with the rest of this file. */
+(function(P){
+'use strict';
+P.trsDisk=function(){return [
+{n:'LPC/CMD',size:256,date:'05/81'},
+{n:'MEMTEST/CMD',size:2048,date:'05/81'},
+{n:'HERZ50/BLD',size:40,data:true,date:'05/81'},
+{n:'PHOSPHOR/CMD',size:512,run:'phosphor',date:'11/81'},
+{n:'ZORK1/CMD',size:4864,run:'zork1',date:'11/81'},
+{n:'ZORK2/CMD',size:4864,run:'zork2',date:'11/81'},
+{n:'BULLSEYE/BAS',date:'11/81',src:[
+'1 CLEAR 500',
+'5 PRINT TAB(28);"BULLSEYE"',
+'10 PRINT TAB(11);"CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY"',
+'20 PRINT:PRINT:PRINT',
+'30 PRINT "IN THIS GAME, UP TO 20 PLAYERS THROW DARTS AT A TARGET"',
+'40 PRINT "WITH 10, 20, 30, AND 40 POINT ZONES.  THE OBJECTIVE IS"',
+'50 PRINT "TO GET 200 POINTS.": PRINT',
+'60 PRINT "THROW",TAB(16);"DESCRIPTION";TAB(38);"PROBABLE SCORE"',
+'70 PRINT" 1";TAB(16);"FAST OVERARM";TAB(38);"BULLSEYE OR COMPLETE MISS"',
+'80 PRINT" 2";TAB(16);"CONTROLLED OVERARM";TAB(38);"10, 20 OR 30 POINTS"',
+'90 PRINT" 3";TAB(16);"UNDERARM";TAB(38);"ANYTHING":PRINT',
+'100 DIM A$(20),S(20),W(10): M=0: R=0: FOR I=1 TO 20: S(I)=0: NEXT I',
+'110 INPUT "HOW MANY PLAYERS";N: PRINT',
+'120 FOR I=1 TO N',
+'130 PRINT "NAME OF PLAYER #";I;:INPUT A$(I)',
+'140 NEXT I',
+'150 R=R+1: PRINT: PRINT "ROUND";R:PRINT "---------"',
+'160 FOR I=1 TO N',
+'170 PRINT: PRINT A$(I)"\'S THROW";: INPUT T',
+'180 IF T<1 OR T>3 THEN PRINT "INPUT 1, 2, OR 3!": GOTO 170',
+'190 ON T GOTO 200, 210, 200',
+'200 P1=.65: P2=.55: P3=.5: P4=.5: GOTO 230',
+'210 P1=.99: P2=.77: P3=.43: P4=.01: GOTO 230',
+'220 P1=.95: P2=.75: P3=.45: P4=.05',
+'230 U=RND(0)',
+'240 IF U>=P1 THEN PRINT "BULLSEYE!!  40 POINTS!":B=40: GOTO 290',
+'250 IF U>=P2 THEN PRINT "30-POINT ZONE!":B=30: GOTO 290',
+'260 IF U>=P3 THEN PRINT "20-POINT ZONE":B=20: GOTO 290',
+'270 IF U>=P4 THEN PRINT "WHEW!  10 POINTS.":B=10: GOTO 290',
+'280 PRINT "MISSED THE TARGET!  TOO BAD.": B=0',
+'290 S(I)=S(I)+B: PRINT "TOTAL SCORE =";S(I): NEXT I',
+'300 FOR I=1 TO N',
+'310 IF S(I)>=200 THEN M=M+1: W(M)=I',
+'320 NEXT I',
+'330 IF M=0 THEN 150',
+'340 PRINT: PRINT "WE HAVE A WINNER!!": PRINT',
+'350 FOR I=1 TO M: PRINT A$(W(I));" SCORED";S(W(I));"POINTS.": NEXT I',
+'360 PRINT: PRINT "THANKS FOR THE GAME.": END']},
+{n:'BUZZWORD/BAS',date:'11/81',src:[
+'10 PRINT TAB(23);"BUZZWORD GENERATOR"',
+'20 PRINT TAB(11);"CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY"',
+'30 PRINT:PRINT:PRINT',
+'40 PRINT "THIS PROGRAM PRINTS HIGHLY ACCEPTABLE PHRASES IN"',
+'50 PRINT "\'EDUCATOR-SPEAK\' THAT YOU CAN WORK INTO REPORTS"',
+'60 PRINT "AND SPEECHES.  WHENEVER A QUESTION MARK IS PRINTED,"',
+'70 PRINT "TYPE A \'Y\' FOR ANOTHER PHRASE OR \'N\' TO QUIT."',
+'80 PRINT:PRINT:PRINT "HERE\'S THE FIRST PHRASE:"',
+'90 DIM A$(40)',
+'100 FOR I=1 TO 39 : READ A$(I) : NEXT I',
+'110 PRINT A$(INT(13*RND(0)+1));" ";',
+'120 PRINT A$(INT(13*RND(0)+14));" ";',
+'130 PRINT A$(INT(13*RND(0)+27)) : PRINT',
+'150 INPUT Y$ : IF Y$="Y" THEN 110',
+'160 GOTO 999',
+'200 DATA "ABILITY","BASAL","BEHAVIORAL","CHILD-CENTERED"',
+'210 DATA "DIFFERENTIATED","DISCOVERY","FLEXIBLE","HETEROGENEOUS"',
+'220 DATA "HOMOGENEOUS","MANIPULATIVE","MODULAR","TAVISTOCK"',
+'230 DATA "INDIVIDUALIZED","LEARNING","EVALUATIVE","OBJECTIVE"',
+'240 DATA "COGNITIVE","ENRICHMENT","SCHEDULING","HUMANISTIC"',
+'250 DATA "INTEGRATED","NON-GRADED","TRAINING","VERTICAL AGE"',
+'260 DATA "MOTIVATIONAL","CREATIVE","GROUPING","MODIFICATION"',
+'270 DATA "ACCOUNTABILITY","PROCESS","CORE CURRICULUM","ALGORITHM"',
+'280 DATA "PERFORMANCE","REINFORCEMENT","OPEN CLASSROOM","RESOURCE"',
+'290 DATA "STRUCTURE","FACILITY","ENVIRONMENT"',
+'999 PRINT "COME BACK WHEN YOU NEED HELP WITH ANOTHER REPORT!":END']},
+{n:'WORM/BAS',date:'11/81',src:[
+'10 REM WORM - STEER WITH THE ARROWS, EAT THE DOTS, MISS THE WALLS',
+'20 CLS:RANDOM:DIM WX(255),WY(255)',
+'30 PRINT@0,"WORM   ARROW KEYS STEER   BREAK STOPS";',
+'40 FOR X=0 TO 127:SET(X,3):SET(X,47):NEXT',
+'50 FOR Y=3 TO 47:SET(0,Y):SET(127,Y):NEXT',
+'60 H=0:T=0:N=1:L=5:X=64:Y=24:DX=1:DY=0:S=0',
+'70 WX(0)=X:WY(0)=Y:SET(X,Y):GOSUB 500',
+'80 K$=INKEY$',
+'90 IF K$="[" AND DY=0 THEN DX=0:DY=-1',
+'100 IF K$=CHR$(10) AND DY=0 THEN DX=0:DY=1',
+'110 IF K$=CHR$(8) AND DX=0 THEN DX=-1:DY=0',
+'120 IF K$=CHR$(9) AND DX=0 THEN DX=1:DY=0',
+'130 X=X+DX:Y=Y+DY',
+'140 IF X=FX AND Y=FY THEN S=S+1:L=L+3:GOSUB 500:GOTO 160',
+'150 IF POINT(X,Y) THEN 300',
+'160 SET(X,Y):H=H+1:IF H>255 THEN H=0',
+'170 WX(H)=X:WY(H)=Y:N=N+1',
+'180 IF N>L THEN RESET(WX(T),WY(T)):T=T+1:N=N-1:IF T>255 THEN T=0',
+'190 FOR D=1 TO 15:NEXT',
+'200 GOTO 80',
+'300 PRINT@50,"SCORE";S;',
+'310 PRINT@464,"  OUCH!  ANOTHER GAME (Y/N)  ";',
+'320 K$=INKEY$:IF K$="" THEN 320',
+'330 IF K$="Y" THEN CLEAR 50:GOTO 20',
+'340 CLS:END',
+'500 FX=RND(125)+1:FY=RND(42)+4:IF POINT(FX,FY) THEN 500',
+'510 SET(FX,FY):PRINT@50,"SCORE";S;:RETURN']}
+]};
+P.setup(function(){}); /* marks this file as loaded */
+})(window.Phosphor);

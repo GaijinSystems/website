@@ -395,7 +395,7 @@ function trim(box,max){while(box.childElementCount>max)box.firstElementChild.rem
 var UP=PROFILE.up;
 var SINK=null,STDIN=null,STATUS=0,HOLD=false,held=null,BAUD=0; /* where output goes; what a command reads; $?; ^S; stty */
 var ERRSINK=null,GLASS={},PREV=0; /* where error lines go (null or GLASS: the glass); PREV: $? as it was when this command started */
-function plain(s){return String(s).replace(/\u0003([^\u0004]*)(\u0004|$)/g,'$1').replace(/[\u0001-\u0004]/g,'')}
+function plain(s){return String(s).replace(/\u0003([^\u0004]*)(\u0004|$)/g,'$1').replace(/\u0005[\s\S]?/g,'').replace(/[\u0001-\u0004]/g,'')}
 function typeLine(text,cls,cb,opt){
   opt=opt||{};
   return queue(function(){return new Promise(function(res){
@@ -423,7 +423,7 @@ function typeLine(text,cls,cb,opt){
       if(HOLD){held=step;return}
       if(i>=text.length){
         scrollBottom();
-        announce(pre+text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ').replace(/[\u0001-\u0004]/g,''));
+        announce(pre+text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ').replace(/\u0005[\s\S]?/g,'').replace(/[\u0001-\u0004]/g,''));
         if(cb)cb();res();return;
       }
       var ch=text.charAt(i++);
@@ -434,6 +434,12 @@ function typeLine(text,cls,cb,opt){
         host.insertBefore(g,at);squeeze(g);
         t=document.createTextNode('');host.insertBefore(t,at);
         i=j+1;step();return;
+      }
+      if(ch==='\u0005'){ /* \u0005 and a hex digit: what follows is in that colour (.k0 to .kf, which a machine's CSS gives); with anything else, plain again */
+        var k=text.charAt(i++).toLowerCase();t=document.createTextNode('');
+        if(/^[0-9a-f]$/.test(k)){var sp=document.createElement('span');sp.className='k'+k;sp.appendChild(t);host.insertBefore(sp,at)}
+        else host.insertBefore(t,at);
+        step();return;
       }
       if(ch==='\u0001'||ch==='\u0002'){ /* ~~struck~~ text: start or end an <s> run */
         t=document.createTextNode('');
@@ -1652,6 +1658,7 @@ function run(raw){
   LOOP=null; /* a break typed at the prompt has no loop to end */
   if(PROFILE.bash)raw=dollarParen(raw);
   SUB=0;
+  if(!raw.trim()&&PH.blank){queue(function(){PH.blank()});nextPrompt();return} /* a machine that answers an empty line (VM/370's CMS and CP) */
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
     nextPrompt();
@@ -1813,7 +1820,8 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 }
 function atCursor(s){var at=cursor.parentNode;if(at)at.insertBefore(document.createTextNode(s),cursor)} /* text just before the cursor, where it is */
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
-  atCursor('^C');
+  var q=PH.onInterrupt&&!(bufNode&&!READ&&MODE!=='shell')?PH.onInterrupt(!!(READ&&TRAP)):null; /* a machine's own QUIT (Multics): what it shows instead of ^C; true when a program takes the ^C itself */
+  atCursor(q==null?'^C':q);
   HOLD=false; /* and, as the tty did, undo a ^S: nothing waits for a ^Q that will not come */
   if(READ&&TRAP){finishRead(INT);return}
   if(bufNode&&!READ){ /* at a prompt: give up on this line */
@@ -2031,7 +2039,7 @@ function banner(){ /* terminal self-test from the machine's == banner == section
 }
 function welcome(){
   say(PROFILE.welcome);
-  if(PROFILE.mail.length&&!RP)typeLine(PROFILE.mailNotice); /* the letter is the guest's, not root's */
+  if(PROFILE.mail.length&&!RP&&PROFILE.mailNotice)typeLine(PROFILE.mailNotice); /* the letter is the guest's, not root's; a machine that says it itself (Multics) empties the notice */
   if(coarse)typeLine('(tap the screen for a keyboard.)','dim');
 }
 boot();
