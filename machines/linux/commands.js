@@ -745,12 +745,12 @@ cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journa
   lines(E.map(function(e){return pfx+e}));
 });
 
-/* packages: apt as anyone but root */
+/* packages: apt as anyone but root. Each is [name, version, description, installed size in kB if known, 'auto' if installed as a dependency] */
 var PKGS=[['apt','3.0.4','commandline package manager'],['base-files','13.8+deb13u7','Debian base system miscellaneous files'],['bash','5.2.37-2+b10','GNU Bourne Again SHell'],
   ['coreutils','9.7-3','GNU core utilities'],['cowsay','3.03+dfsg2-8','configurable talking cow'],['cmatrix','2.0-6','simulates the display from "The Matrix"'],['cron','3.0pl1-197','process scheduling daemon'],
-  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files'],
-  ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],
-  ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['nethack-console','3.6.7-1+b2','dungeon crawling game - text-based interface'],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information'],
+  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files'],
+  ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],['librecode3','3.7.15-1','Shared library on which recode is based',1359,'auto'],
+  ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['nethack-common','3.6.7-1+b2','dungeon crawl game - common files',2323,'auto'],['nethack-console','3.6.7-1+b2','dungeon crawl game - text-based interface',2821],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information'],
   ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake'],
   ['sudo','1.9.16p2-3+deb13u2','Provide limited super user privileges to specific users'],['systemd','257.13-1~deb13u1','system and service manager'],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility'],
   ['unattended-upgrades','2.12','automatic installation of security upgrades'],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities'],['vim-tiny','2:9.1.1230-2+deb13u1','Vi IMproved - enhanced vi editor - compact version']];
@@ -759,6 +759,7 @@ var AVAIL=[['bsdgames','2.17-35','collection of classic textual unix games'],['c
   ['fortunes','1:1.99.1-9','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
   ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nginx','1.26.3-3+deb13u7','small, powerful, scalable web/proxy server'],
   ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)'],['tmux','3.5a-3','terminal multiplexer']];
+function mark(p){return PKGS.indexOf(p)<0?'':p[4]?' [installed,automatic]':' [installed]'}
 function pkg(n){return PKGS.concat(AVAIL).filter(function(p){return p[0]===n})[0]}
 var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremove|autoclean|clean|reinstall|satisfy|build-dep|source|edit-sources|modernize-sources)$/;
 function apt(a,get){
@@ -780,7 +781,7 @@ function apt(a,get){
   if(!get&&verb==='list'){
     var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
-    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':'')}));
+    lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(function(p){return p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+mark(p)}));
     return;
   }
   if(verb==='search'&&get!==true){
@@ -789,7 +790,7 @@ function apt(a,get){
     if(get!==2)lines(['Sorting... Done','Full Text Search... Done']);
     PKGS.concat(AVAIL).sort().filter(function(p){return (p[0]+' '+p[2]).toLowerCase().indexOf(q)>=0}).forEach(function(p){
       if(get===2)P.typeLine(p[0]+' - '+p[2]);
-      else{P.typeLine(p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now':'')+' '+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(PKGS.indexOf(p)>=0?' [installed]':''));P.typeLine('  '+p[2]);P.typeLine('')}
+      else{P.typeLine(p[0]+'/stable'+(PKGS.indexOf(p)>=0?',now':'')+' '+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+mark(p));P.typeLine('  '+p[2]);P.typeLine('')}
     });
     return;
   }
@@ -798,8 +799,8 @@ function apt(a,get){
       var p=pkg(n),i=p&&PKGS.indexOf(p)>=0;
       if(!p){err(E+'No packages found');P.status(100);return}
       if(verb==='policy'){lines([n+':','  Installed: '+(i?p[1]:'(none)'),'  Candidate: '+p[1],'  Version table:',' '+(i?'***':'   ')+' '+p[1]+' 500','        500 http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['        100 /var/lib/dpkg/status']:[]));return}
-      lines(['Package: '+p[0],'Version: '+p[1],'Priority: optional','Section: '+(/game|cow|fortune|frotz|^sl$|nethack|matrix/.test(p[0])?'games':'admin'),'Installed-Size: '+(120+p[0].length*37)+' kB',
-        'APT-Sources: http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['APT-Manual-Installed: yes']:[]).concat(['Description: '+p[2],'']));
+      lines(['Package: '+p[0],'Version: '+p[1],'Priority: optional','Section: '+(/game|cow|fortune|frotz|^sl$|nethack|matrix/.test(p[0])?'games':/^lib/.test(p[0])?'libs':'admin'),'Installed-Size: '+(p[3]||120+p[0].length*37).toLocaleString('en-US')+' kB',
+        'APT-Sources: http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['APT-Manual-Installed: '+(p[4]?'no':'yes')]:[]).concat(['Description: '+p[2],'']));
     });
     return;
   }

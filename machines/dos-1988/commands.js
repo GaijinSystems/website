@@ -207,8 +207,9 @@ cmd(['set'],null,function(a,raw){
 });
 cmd(['path'],null,function(a,raw){
   var t=rest(raw).trim();
+  if(t===';'){delete P.env.PATH;return} /* PATH ; clears the search path */
   if(t){P.env.PATH=t.toUpperCase();return}
-  P.typeLine('PATH='+(P.env.PATH||''));
+  P.typeLine(P.env.PATH?'PATH='+P.env.PATH:'No Path');
 });
 cmd(['prompt'],null,function(a,raw){promptStr=rest(raw).trim()||'$N$G'});
 cmd(['pause'],null,function(){

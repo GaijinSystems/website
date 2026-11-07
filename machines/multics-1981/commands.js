@@ -299,8 +299,9 @@ M.cmd=cmd;
 function line(raw,fromEc){ /* one typed line, everything in it, each command in its turn */
   var s=fromEc?raw:edit(raw);
   if(/\S/.test(s))S.ran=true;
+  var run=EC.run; /* new_proc, logout or a stack overflow ends the process's command line: nothing after it runs */
   splitLine(s).forEach(function(c){
-    P.queue(function(){one(c,fromEc)});
+    P.queue(function(){if(run===EC.run)one(c,fromEc)});
   });
 }
 M.line=line;
@@ -314,7 +315,8 @@ function one(c,fromEc){
   if(r.iter.length){ /* (a b c): the command once for each; two sets go side by side, a with c, b with d */
     var len=W[r.iter[0]].length;
     if(r.iter.some(function(k){return W[k].length!==len})){err('command_processor_: Mismatched iteration sets.');charge();return}
-    for(var x=0;x<len;x++)(function(x){var X=W.slice();r.iter.forEach(function(k){X[k]=W[k][x]});P.queue(function(){exec(X)})})(x);
+    var run=EC.run;
+    for(var x=0;x<len;x++)(function(x){var X=W.slice();r.iter.forEach(function(k){X[k]=W[k][x]});P.queue(function(){if(run===EC.run)exec(X)})})(x);
     return;
   }
   exec(W);
@@ -649,10 +651,12 @@ function copyOne(cmdName,src,dstSpec,move){
   P.queue(function(){
     var r=path(src);
     if(r.err){bad(cmdName,r.err,r.shown);return}
+    var sd=node(r.dir);
+    if(!can(sd,'s')){bad(cmdName,'Incorrect access to directory containing entry.',r.shown);return} /* s on the source directory, for both (AG92-03, copy and move) */
     if(!r.n){bad(cmdName,'Entry not found.',r.shown);return}
     if(r.n.type==='d'){bad(cmdName,'This operation is not allowed for a directory.',r.shown);return}
     if(r.n.mbx||!can(r.n,'r')){bad(cmdName,'Incorrect access on entry.',r.shown);return}
-    if(move&&(!can(node(r.dir),'m')||r.n.prot)){bad(cmdName,'Incorrect access to directory containing entry.',r.shown);return} /* the old one must be deletable too */
+    if(move&&(!can(sd,'m')||r.n.prot)){bad(cmdName,'Incorrect access to directory containing entry.',r.shown);return} /* the old one must be deletable too */
     var spec=dstSpec||'==',t=path(spec);
     if(t.err){bad(cmdName,t.err,t.shown);return}
     var to=equalName(r.name,t.name),abs=join(t.dir,to),shown=t.shown.slice(0,t.shown.lastIndexOf('>'))+'>'+to,ex=node(abs);
@@ -661,7 +665,7 @@ function copyOne(cmdName,src,dstSpec,move){
       var res=M.write(abs,r.n.bin?[]:P.text(r.n));
       if(res!==true){bad(cmdName,res,shown);return}
       var n=node(abs);if(r.n.bin){n.bin=true;n.recs=r.n.recs}
-      if(move){var rd=node(r.dir);namesOf(r.n).forEach(function(x){delete rd.kids[x]});M.changed()}
+      if(move){namesOf(r.n).forEach(function(x){delete sd.kids[x]});M.changed()}
       charge(2);
     }
     if(ex){
@@ -1027,7 +1031,7 @@ cmd(['read_mail','rdm'],function(a){
   function live(){return L.map(function(z,i){return i+1}).filter(function(n){return del.indexOf(n-1)<0})} /* the numbers of the messages not deleted */
   function specs(w){ /* message numbers, or null after saying why */
     if(!w.length)return cur&&del.indexOf(cur-1)<0?[cur]:null;
-    var N=[];
+    var N=[],typed={}; /* a number past the last, or 0, named as it was typed */
     for(var k=0;k<w.length;k++){
       var x=w[k],m;
       if(x==='all'||x==='a')N=N.concat(live());
@@ -1036,13 +1040,13 @@ cmd(['read_mail','rdm'],function(a){
       else if(x==='current'||x==='c')N.push(cur);
       else if((m=x.match(/^(\d+)(?::(\d+))?$/))){ /* past the last, one number is enough to say so */
         var lo=+m[1],hi=Math.min(m[2]?+m[2]:lo,L.length+1);
-        if(lo>L.length)N.push(lo);else for(var n=lo;n<=hi;n++)N.push(n);
+        if(lo>L.length||lo<1){typed[lo]=m[1];N.push(lo)}else for(var n=lo;n<=hi;n++)N.push(n);
       }
       else{err('read_mail: Invalid message specifier. '+x);return null}
     }
-    N=N.filter(function(n){return n});
+    N=N.filter(function(n){return n!==undefined});
     var badN=N.filter(function(n){return n<1||n>L.length||del.indexOf(n-1)>=0})[0];
-    if(badN!==undefined||!N.length){err('read_mail: Message '+(badN||'')+' '+(badN>L.length||!badN?'does not exist.':'has been deleted.'));return null}
+    if(badN!==undefined||!N.length){err('read_mail: Message '+(badN===undefined?'':P.has(typed,badN)?typed[badN]:badN)+' '+(badN===undefined||badN<1||badN>L.length?'does not exist.':'has been deleted.'));return null}
     return N;
   }
   function list(N){

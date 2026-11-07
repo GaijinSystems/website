@@ -10,6 +10,7 @@ var up=V.up;
 function out(s){P.typeLine(s)}
 function err(s){V.em(s,'err')}
 V.stack=[];V.level=0;
+V.execs=[]; /* the EXECs running, the outermost first */
 V.globals=[1,1,1,1,1,1,1,1,1,1];
 
 /* a line from the console stack if there is one, else from the terminal. A stack that keeps filling itself (EDIT's
@@ -27,16 +28,37 @@ V.exec=function(W,ctx){ /* W: [fn, args...] in CMS's tokens; runs the EXEC; its 
   if(!name){err('DMSEXC001E NO FILENAME SPECIFIED');return 24}
   var r=V.find(name,'EXEC','*');
   if(!r){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - FILE NOT FOUND');return 801}
-  if(V.level>=19){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - TOO MANY NESTED EXECS');return 813}
+  if(V.level>=19){V.abend('DMSITS135S MAXIMUM SVC DEPTH 20 HAS BEEN EXCEEDED WITH CALL AT F08BA6');return 0} /* a 20th EXEC: past CMS's SVC depth of 20, which allows 19 EXECs (so on Release 6, and System Messages 135S) */
   if(r.f.prot&&!V.mayRead()){err('DMSEXT072E ERROR IN EXEC FILE '+name+', LINE 0 - ERROR READING FILE');return 806}
   var f=r.f,S={fn:f.fn,lines:f.lines.map(function(l){var t=V.text(l);return f.recfm==='F'?t.slice(0,72):t}),pc:0,vars:{},
     control:'CMS',time:false,msg:true,error:null,loops:[],rc:0,args:[],reading:0,profile:!!ctx.profile,n:0};
   setArgs(S,args);
-  V.level++;
+  V.level++;V.execs.push(S);
   V.rc=0;
   P.queue(function(){run(S)});
-  P.queue(function(){V.level=Math.max(0,V.level-1);V.rc=S.rc});
+  P.queue(function(){done(S)});
   return 0;
+};
+/* CMS ends abnormally (abend 0F2, past the SVC depth): every EXEC stops, and CMS says only CMS, with no ready message;
+   so on Release 6, where the recovery comes with the next command. HX stops them all the same way */
+V.abend=function(msg){
+  if(msg)err(msg);
+  V.execs.forEach(function(S){S.stop=true});
+  V.stack=[];V.abended=true;
+};
+function done(S){V.level=Math.max(0,V.level-1);V.rc=S.rc;var i=V.execs.indexOf(S);if(i>=0)V.execs.splice(i)}
+/* attention (^C) while the editor typed for an EXEC stopped the typing and, with it, what the EXECs had still to do; on
+   Release 6 the attention only interrupts the typing, and once the edit ends (FILE or QUIT) the EXECs carry on, the
+   innermost first, each from the command it was waiting on. True when there were EXECs to carry on */
+V.resume=function(){
+  var L=V.execs.slice().reverse();
+  if(!L.length||!L.every(function(S){return S.waiting}))return false;
+  V.rc=0;
+  L.forEach(function(S){
+    P.queue(function(){after(S);run(S)});
+    P.queue(function(){done(S)});
+  });
+  return true;
 };
 function setArgs(S,args){
   S.args=args.slice(0,30).map(function(a){return a==='%'?'':a});
@@ -195,15 +217,18 @@ function stmt(S,raw){
 function command(S,C){
   var line=C.join(' ');
   if(S.control==='CMS'||S.control==='ALL')out((S.time?V.hms(P.now())+' ':'')+line);
-  var rc;
+  S.waiting=true;
   P.queue(function(){V.rc=V.execCommand(C,S)||0});
-  P.queue(function(){
-    rc=V.rc||0;
-    V.rc0=rc;
-    if(rc&&S.control!=='OFF')out('+++ R('+V.rcs(rc)+') +++');
-    if(rc&&S.error&&!S.inError){S.inError=true;var e=S.error.slice();stmt(S,e.join(' '));S.inError=false}
-  });
+  P.queue(function(){after(S)});
   return 'wait';
+}
+function after(S){ /* the command's return code, as the EXEC sees it */
+  var rc=V.rc||0;
+  S.waiting=false;
+  if(V.abended){S.stop=true;return}
+  V.rc0=rc;
+  if(rc&&S.control!=='OFF')out('+++ R('+V.rcs(rc)+') +++');
+  if(rc&&S.error&&!S.inError){S.inError=true;var e=S.error.slice();stmt(S,e.join(' '));S.inError=false}
 }
 V.execCommand=function(C,S){ /* a command from an EXEC: no implied CP; an unknown name is -3, quietly */
   var w=C[0];
