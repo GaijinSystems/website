@@ -147,7 +147,8 @@ cmd(['ed'],null,function(a,raw,w){ /* a small ED: I to type (ctrl-z ends), #T to
   })();
 });
 /* TERM.COM: a terminal program for the modem on the second serial port, which can call the board (../shared/modem.js, bbs.js) */
-cmd(['term'],null,function(){
+cmd(['term'],null,term);
+function term(){
   if(!get('term.com')){P.typeLine('TERM?');return}
   var ok=false;
   P.queue(function(){return P.load(['../shared/modem.js','../shared/bbs.js']).then(function(x){ok=x})});
@@ -156,7 +157,7 @@ cmd(['term'],null,function(){
     P.modem.terminal({speed:1200,banner:['TERM V1.1  MODEM ON PORT 2, 1200 BAUD','TYPE AT COMMANDS FOR THE MODEM. ^C RETURNS TO CP/M.','',
       'NUMBERS:'].concat(P.bbs.directory().map(function(d){return ('  '+d[0].padEnd(18)+' '+d[1]).toUpperCase()})).concat(['']),bye:['']});
   });
-});
+}
 P.stubs(['asm','ddt','load','movcpm','submit','sysgen','xsub'],function(n){
   P.typeLine(n.toUpperCase()+' VERS 2.2');P.typeLine('(this one wants a real processor to run on.)','dim');
 },{noHelpFlag:true});
@@ -170,6 +171,7 @@ P.fallback=function(word){
     else P.typeLine('NO FILE');
     return true;
   }
+  if(w==='a:term'&&P.has(P.cmds,'term')&&get('term.com')){term();return true} /* the drive named: the CCP still looks only in this user area */
   P.typeLine(word.toUpperCase()+'?');
   return true;
 };
