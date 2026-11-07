@@ -647,7 +647,8 @@ function amper(t){
   s=s.replace(/ +/g,' ').trim();
   var w=(s.match(/^[A-Z]+/)||[''])[0],rest=s.slice(w.length).trim();
   if(s==='WELCOME'){welcome();return null}
-  if(/^ZORK ?(I|II|1|2)$/.test(s)){return {wait:'view',name:/II|2$/.test(s)?'ZORK2':'ZORK1',args:''}}
+  var z=/^ZORK ?(I{1,3}|[123])$/.exec(s);
+  if(z){return {wait:'view',name:'ZORK'+(z[1].charAt(0)==='I'?z[1].length:z[1]),args:''}}
   if(TERMINAL[w])return {wait:'view',name:w,args:rest};
   return false;
 }
@@ -690,7 +691,7 @@ function terminal(w,args,then){ /* the terminal's own commands: some answer here
     sleep(600,function(){var q=new URLSearchParams(location.search);q.set('machine',a[0]);location.search=q.toString()});
     return;
   }
-  if(w==='ZORK1'||w==='ZORK2'){leave(function(){zork(w.toLowerCase())},then);return}
+  if(/^ZORK[123]$/.test(w)){leave(function(){zork(w.toLowerCase())},then);return}
   var name=w.toLowerCase();
   if(!P.has(P.cmds,name)){bell();then();return}
   leave(function(){

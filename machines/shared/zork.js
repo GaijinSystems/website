@@ -52,7 +52,7 @@ var FCD3=['"\tFlood Control Dam #3','',
 '        1) You start your tour here in the Dam Lobby. You will notice',
 'on your right that...."'];
 var HELLOS=['Hello.','Good day.',"Nice weather we've been having lately.",'Goodbye.'],opened=false;
-function play(game){ /* game: zork1 or zork2. Callers have checked it is on the disk where they are */
+function play(game){ /* game: zork1, zork2 or zork3. Callers have checked it is on the disk where they are */
   var ok=false;
   P.queue(function(){return P.load(['../shared/zmachine.js','../shared/'+game+'-story.js']).then(function(x){ok=x})});
   P.queue(function(){
@@ -65,7 +65,7 @@ function say(names,run){P.command({names:names,hidden:true,noHelpFlag:true,run:r
 function unknown(w,raw,a){if(!P.fallback(w[0],raw,a))P.typeLine(P.profile.notFound.replace('%s',w[0]),'err')}
 say(['xyzzy','plugh'],function(){P.typeLine('A hollow voice says "Fool."')});
 say(['zork'],function(a,raw,w){ /* the DOS shell reads ZORK\ZORK1 as this command with an argument */
-  if(/^\\zork[12](\.com)?$/i.test(w[1]||'')&&!w[2]&&P.fallback('zork'+w[1],raw,a))return;
+  if(/^\\zork[123](\.com)?$/i.test(w[1]||'')&&!w[2]&&P.fallback('zork'+w[1],raw,a))return;
   P.typeLine('At your service!');
 });
 say(['look'],function(){P.typeLine('It is pitch black. You are likely to be eaten by a grue.')});

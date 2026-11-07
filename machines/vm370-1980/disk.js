@@ -123,7 +123,7 @@ V.setupDisks=function(){
   V.yDisk(y);
   var m=disk({owner:'MAINT',vaddr:'191',label:'MNT191',cyl:5,rpass:'ALL',wpass:'WRITE',mpass:'MULT'});
   V.maintDisk(m);
-  disk({owner:'OPERATOR',vaddr:'191',label:'OPR191',cyl:2,rpass:'READ',wpass:'WRITE',mpass:'MULT'});
+  V.operDisk(disk({owner:'OPERATOR',vaddr:'191',label:'OPR191',cyl:2,rpass:'READ',wpass:'WRITE',mpass:'MULT'}));
   if(owner!=='OPERATOR'&&owner!=='MAINT'&&owner!=='GUEST')disk({owner:owner,vaddr:'191',label:owner.slice(0,3)+'191',cyl:10,vol:'VMPK01',rpass:'READ',wpass:'WRITE',mpass:'MULT'});
   var g=V.guest191=disk({owner:'GUEST',vaddr:'191',label:'GST191',cyl:5,rpass:'READ',wpass:'WRITE',mpass:'MULT',keep:true});
   g.keep=false;

@@ -69,6 +69,9 @@ Phosphor.setup(function(P){
     '','Short names:  >udd is >user_dir_dir, >sss is >system_library_standard, and >doc>info holds these info segments.']);
   info(['star_convention.gi'],'01/27/76',['','Star names:  In a star name, * matches any characters within one component of a name (the parts between periods), ** matches any number of components, and ? matches one character.  ls *.ec lists every exec_com.']);
   info(['equal_convention.gi'],'01/27/76',['','Equal names:  In the second name given to rename, copy or move, = stands for the matching component of the first name, and == for the whole name.']);
+  info(['multics'],'09/15/78',['','Multics:  the Multiplexed Information and Computing Service.  Project MAC at MIT, Bell Telephone Laboratories and General Electric began it in 1965.  Bell Labs left in 1969; Honeywell, which bought General Electric\'s computer business in 1970, sells it now.',
+    '','Features:  a single-level store, where a segment is both memory and file; dynamic linking; rings of protection; an access control list on every entry; and a supervisor written almost entirely in PL/I.',
+    '','Notes:  The people Bell Labs took home wrote a smaller system on a PDP-7, and named it after this one, more or less.']);
   Object.keys(TERMS).forEach(function(k){
     if(!P.has(P.cmds,k))return;
     info([k],'06/02/80',['','Syntax:  '+k+(k==='sound'?' on|off':k==='effects'?' {auto|full|lite}':k==='connect'?' {machine}':''),'','Function:  '+TERMS[k]+'.','','Notes:  The terminal answers this, not Multics.']);

@@ -1,12 +1,13 @@
 /* PHOSPHOR-9 terminal: a Z-machine, version 3, to the Z-Machine Standard 1.1, and the screen it plays on.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE. The stories it runs have their own notice,
-   in zork1-story.js and zork2-story.js.
+   in zork1-story.js, zork2-story.js and zork3-story.js.
 
    Differences from a real one, on purpose: output stream 2 (SCRIPT) has no printer, so the game's words about it
    are all that happens. A saved game is kept in this browser under a name, not in a Quetzal file. split_window
    and set_window do nothing, as these stories never call them. A store above dynamic memory is dropped: Zork II release 63
    makes one, from a PICK-ONE on a table with no counter (the FANTASIES of its wizard), then prints whatever that finds.
-   Frotz stops there with a fatal error. RANDOM is the generator Frotz uses, so a transcript
+   Zork III release 25 makes some on a confused order such as HANDS REMOVE, and answers with a few stray letters.
+   Frotz stops there with a fatal error; with -i it carries on, and prints what this does. RANDOM is the generator Frotz uses, so a transcript
    can be compared with one from dfrotz given the same seed. */
 (function(P){
 'use strict';
@@ -604,5 +605,5 @@ function play(game){
 }
 P.zmachine={create:create,play:play};
 /* zork.js starts it from the machine's disk; declaring the names here is how a loaded file says it arrived */
-P.command({names:['zork1','zork2'],run:function(a,raw,w){play(P.fold?P.fold(w[0]):w[0])}});
+P.command({names:['zork1','zork2','zork3'],run:function(a,raw,w){play(P.fold?P.fold(w[0]):w[0])}});
 })(window.Phosphor);

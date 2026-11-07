@@ -8,7 +8,7 @@ function game(files,names,man,o){
 }
 game(['../shared/zmachine.js','games/frotz.js'],'frotz',{what:'interpreter for Infocom and other Z-Machine games',syn:'frotz [options] file [blorb_file]',desc:[
   'plays the story files of Infocom\'s text adventures, and of the games written since for the Z-machine. type your commands in plain words; the game answers, and the line at the top says where you are and how you are doing.',
-  'a story file that is not in the working directory is looked for in the directories named in INFOCOM_PATH. on this machine the administrator has put zork1.z3 and zork2.z3 there, so frotz zork1.z3 starts Zork I.','',
+  'a story file that is not in the working directory is looked for in the directories named in INFOCOM_PATH. on this machine the administrator has put zork1.z3, zork2.z3 and zork3.z3 there, so frotz zork1.z3 starts Zork I.','',
   'save and restore keep your game in this browser, under a name you choose. ctrl-c leaves at once.']});
 game('games/sl.js','sl',{what:'display animations aimed to correct users who accidentally enter sl instead of ls.',syn:'sl [ -alFe ]',desc:[
   'sends a steam locomotive across the screen. it cannot be stopped; that is the point.','',

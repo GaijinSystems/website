@@ -62,6 +62,13 @@ Phosphor.setup(function(P){
     '& (Repair is the only account that works before the SAT is reloaded)','&print Log in as Repair.SysAdmin, password '+P.profile.rootPassword+', and type:',
     '&print     ec >udd>SysAdmin>lib>crash_recovery salvage','&if [equal &1 salvage] &then &goto salvage','&quit','&label salvage','&print Salvaging >udd ...','&quit'],
     {acl:[['rew',ADMIN],['r',ALL]],date:new Date(SD.getTime()+86400000*140)});
+  seg('/user_dir_dir/SysAdmin/lib/machine_room.rules',['Machine room rules.  Posted by the operators; read them.','',
+    '1. No coffee on the console.  The boot tape is not a coaster.',
+    '2. Ring 0 is the supervisor.  When the phone rings, answer it.',
+    '3. Do not lean on the disk drives.  They are not a desk.',
+    '4. After a crash: the systems programmer first, then the field engineer.  Never the other way round.',
+    '5. The system has been up for 41 days.  Keep it that way.'],
+    {acl:[['rw',ADMIN],['r',ALL]],date:new Date(SD.getTime()+86400000*60)});
   d('/user_dir_dir/SysDaemon',null,{acl:[['sma',DAEMON],['s',ALL]]});
   d('/user_dir_dir/Guest',null,{acl:[['sma',ADMIN],['s',ALL]]});
   ['Physics','Library','Accounting','Chem'].forEach(function(p){d('/user_dir_dir/'+p,null,{acl:[['sma',ADMIN],['s',ALL]]})});

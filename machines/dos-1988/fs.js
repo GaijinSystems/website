@@ -15,7 +15,7 @@ Phosphor.setup(function(P){
   P.sys('/comm','d');
   sys('/comm/term.exe',{bin:true,size:46872});
   P.sys('/zork','d');
-  [['zork1.com',8704],['zork1.dat',86838],['zork2.com',8704],['zork2.dat',92524]].forEach(function(f){sys('/zork/'+f[0],{bin:true,size:f[1]})});
+  [['zork1.com',8704],['zork1.dat',86838],['zork2.com',8704],['zork2.dat',92524],['zork3.com',8704],['zork3.dat',87984]].forEach(function(f){sys('/zork/'+f[0],{bin:true,size:f[1]})});
   sys('/zork/leaflet.txt',{body:P.zork.leaflet});
   sys('/zork/fcd3.txt',{body:P.zork.fcd3});
   ['nul','con','prn','aux'].forEach(function(d){sys('/'+d,{dev:[0,0],hidden:true})});
