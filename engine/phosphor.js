@@ -423,7 +423,7 @@ function typeLine(text,cls,cb,opt){
       if(HOLD){held=step;return}
       if(i>=text.length){
         scrollBottom();
-        announce(pre+text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ').replace(/\u0005[\s\S]?/g,'').replace(/[\u0001-\u0004]/g,''));
+        announce(pre+plain(text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ')));
         if(cb)cb();res();return;
       }
       var ch=text.charAt(i++);
@@ -437,7 +437,7 @@ function typeLine(text,cls,cb,opt){
       }
       if(ch==='\u0005'){ /* \u0005 and a hex digit: what follows is in that colour (.k0 to .kf, which a machine's CSS gives); with anything else, plain again */
         var k=text.charAt(i++).toLowerCase();t=document.createTextNode('');
-        if(/^[0-9a-f]$/.test(k)){var sp=document.createElement('span');sp.className='k'+k;sp.appendChild(t);host.insertBefore(sp,at)}
+        if(/^[0-9a-f]$/.test(k)){var ks=document.createElement('span');ks.className='k'+k;ks.appendChild(t);host.insertBefore(ks,at)}
         else host.insertBefore(t,at);
         step();return;
       }

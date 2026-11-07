@@ -26,7 +26,8 @@ V.ipl=function(){ /* CMS comes up: A and S accessed, the settings as they start,
 V.reset=function(){V.halted()};
 V.ending=function(){V.acc=null};
 function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.4;V.tcpu+=t*.5;return [v,t]} /* most commands take a hundredth of a second, or less */
-function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)}
+function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
+V.rcs=rcs;
 V.ready=function(rc){
   var c=cost(),n=P.now();
   if(V.opt.rdymsg==='SMSG'){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
@@ -35,7 +36,7 @@ V.ready=function(rc){
 
 /* ---------- a typed line ---------- */
 V.input=function(raw){
-  V.level=0;V.inExec=null; /* a new line from the terminal: whatever an attention cut short is over */
+  V.level=0; /* a new line from the terminal: whatever an attention cut short is over */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -288,11 +289,9 @@ V.hex=function(t){
 
 /* ---------- ERASE, RENAME, COPYFILE, STATE ---------- */
 C.ERASE=function(a,o){
-  if(!a.length){err('DMSERS054E INCOMPLETE FILEID SPECIFIED');return 24}
   if(a.length<2){err('DMSERS054E INCOMPLETE FILEID SPECIFIED');return 24}
-  var fm=a[2]||'A1',list=false;
+  var fm=a[2]||'A1',list=o.indexOf('TYPE')>=0;
   if(fm!=='*'&&badMode(fm)){err('DMSERS048E INVALID MODE \''+fm+'\'');return 24}
-  o.forEach(function(x){if(x==='TYPE')list=true});
   if(fm!=='*'&&!V.acc[fm.charAt(0)]){err('DMSERS069E DISK \''+fm.charAt(0)+'\' NOT ACCESSED');return 36}
   if(part(a[0])||part(a[1])){err('DMSSTT062E INVALID \'*\' IN FILEID \''+a[0]+' '+a[1]+'\'');return 20}
   var R=V.matches(a[0],a[1],fm==='*'?'*':fm.length>1&&fm.charAt(1)==='1'&&!a[2]?fm.charAt(0):fm);
@@ -332,9 +331,7 @@ C.COPYFILE=function(a,o){
     opt[k]=true;
   }
   if(opt.REPLACE&&opt.APPEND){err('DMSCPY066E \'REPLACE\' AND \'APPEND\' ARE CONFLICTING OPTIONS');return 24}
-  if(a.length<3&&a.length!==0){
-    if(a.length<2){err('DMSCPY054E INCOMPLETE FILEID SPECIFIED');return 24}
-  }
+  if(a.length<2){err('DMSCPY054E INCOMPLETE FILEID SPECIFIED');return 24}
   var s=[a[0],a[1],a[2]||'A'],t=a.length>3?[a[3]||'=',a[4]||'=',a[5]||'='].map(function(x,j){return x==='='?s[j]:x}):null;
   if(!t){ /* the same file, changed in place by its options */
     if(!(opt.RECFM||opt.LRECL||opt.UPCASE||opt.LOWCASE))return 0;
@@ -352,8 +349,7 @@ C.COPYFILE=function(a,o){
     var nf=t[0]==='='||t[0]==='*'?f.fn:t[0],nt=t[1]==='='||t[1]==='*'?f.ft:t[1],tm=t[2].charAt(0),tn=t[2].charAt(1)||f.fm;
     if(!V.okName(nf)||!V.okName(nt)){err('DMSCPY062E INVALID CHAR \'*\' IN FILEID');return 20}
     var D=V.acc[tm].disk,ex=D.get(nf,nt),same=ex===f;
-    if(ex&&!opt.REPLACE&&!opt.APPEND&&!same){err('DMSCPY024E FILE \''+nf+' '+nt+' '+tm+tn+'\' ALREADY EXISTS -- SPECIFY \'REPLACE\'');return 28}
-    if(opt.NEWFILE&&ex){err('DMSCPY024E FILE \''+nf+' '+nt+' '+tm+tn+'\' ALREADY EXISTS -- SPECIFY \'REPLACE\'');return 28}
+    if(ex&&(opt.NEWFILE||!opt.REPLACE&&!opt.APPEND&&!same)){err('DMSCPY024E FILE \''+nf+' '+nt+' '+tm+tn+'\' ALREADY EXISTS -- SPECIFY \'REPLACE\'');return 28}
     var lines=f.lines.map(function(l){var x=V.text(l);return opt.UPCASE?x.toUpperCase():opt.LOWCASE?x.toLowerCase():x});
     if(Array.isArray(f.lines[0])&&!opt.UPCASE&&!opt.LOWCASE)lines=f.lines.slice();
     var recfm=opt.RECFM||(opt.APPEND&&ex?ex.recfm:f.recfm),lrecl=opt.LRECL||(opt.APPEND&&ex?ex.lrecl:f.lrecl);
@@ -436,8 +432,9 @@ C.DISK=function(a,o){
     var f=V.rdr[0],L=f.lines.map(V.text),h=L.length&&/^:READ /.test(L[0])?L.shift().slice(5).trim().split(/\s+/):null;
     if(!h){err('DMSDSK078E INVALID CARD IN INPUT DECK');return 32}
     if(!rw('DSK','A'))return 36;
-    if(!V.write('DSK','A',V.file(h[0],h[1],L,{fm:(h[2]||'A1').charAt(1)||'1'})))return 100;
-    out(h[0].padEnd(8)+' '+h[1].padEnd(8)+' A'+((h[2]||'A1').charAt(1)||'1'));
+    var fmn=(h[2]||'A1').charAt(1)||'1';
+    if(!V.write('DSK','A',V.file(h[0],h[1],L,{fm:fmn})))return 100;
+    out(h[0].padEnd(8)+' '+h[1].padEnd(8)+' A'+fmn);
     V.rdr.shift();if(f.letter)V.letterGone=true;
     return 0;
   }
@@ -498,13 +495,14 @@ function synUser(always){
   U.forEach(function(k){out(V.syn[k].padEnd(9)+k)});
   out('');
 }
+V.roomiest=function(){ /* the read/write disk with the most room left: its mode, or null */
+  var best=null;V.modes().forEach(function(m){if(V.acc[m].rw&&(!best||V.acc[m].disk.left()>V.acc[best].disk.left()))best=m});
+  return best;
+};
 function qdisk(which){
   var M=V.modes();
   if(which==='R/W')M=M.filter(function(m){return V.acc[m].rw});
-  else if(which==='MAX'){
-    var best=null;M.forEach(function(m){if(V.acc[m].rw&&(!best||V.acc[m].disk.left()>V.acc[best].disk.left()))best=m});
-    M=best?[best]:[];
-  }
+  else if(which==='MAX'){var best=V.roomiest();M=best?[best]:[]}
   else if(which&&which!=='*'){
     if(!/^[A-Z]$/.test(which)){err('DMSQRY048E INVALID MODE \''+which+'\'');return 24}
     if(!V.acc[which]){err('DMSQRY069E DISK \''+which+'\' NOT ACCESSED');return 0}
@@ -657,11 +655,11 @@ V.mail=function(){ /* the letter, wherever it is: in the reader still, or read i
 };
 
 /* ---------- start: the directory, the disks, the first logon ---------- */
-Phosphor.setup(function(Q){
-  V.owner=up(Q.profile.owner).replace(/[^A-Z0-9$#@]/g,'').slice(0,8)||'OPERATOR';
-  V.letter=Q.profile.mail.slice();Q.profile.mail=[]; /* the letter comes through the reader, not the terminal's notice */
-  V.welcome=Q.profile.welcome.slice();
-  V.lmTime=new Date(Q.now().getTime()-((Q.now().getHours()+6)*36e5));V.lmTime.setHours(7,58,12);
+P.setup(function(){
+  V.owner=up(P.profile.owner).replace(/[^A-Z0-9$#@]/g,'').slice(0,8)||'OPERATOR';
+  V.letter=P.profile.mail.slice();P.profile.mail=[]; /* the letter comes through the reader, not the terminal's notice */
+  V.welcome=P.profile.welcome.slice();
+  V.lmTime=new Date(P.now().getTime()-((P.now().getHours()+6)*36e5));V.lmTime.setHours(7,58,12);
   V.setupDirectory();
   V.setupDisks();
   ['help','mail','about','source','sound','fill','effects','connect'].forEach(function(k){
@@ -673,16 +671,14 @@ Phosphor.setup(function(Q){
   P.blank=function(){V.input('')}; /* an empty line: CMS answers it, and the first one after IPL runs the profile */
   /* the visitor's first connection: LOGON GUEST, typed for them, then CMS and the profile */
   V.state='online';
-  var n=Q.now();
-  Q.profile.welcome=[
+  var n=P.now();
+  P.profile.welcome=[
     ['','',{}],
     ['logon guest','',{hold:600,speed:2.2}],
     'ENTER PASSWORD:',
     'XXXXXXXX',
     [function(){
-      V.newMachine('GUEST');V.logon=n;
-      var f=V.letterFile();if(f&&!V.letterGone)V.arrive(f,true);
-      P.say(V.logonLines(n));
+      V.logonAs('GUEST',n);
       P.queue(function(){V.ipl()});
       P.typeLine('','',null,{hold:700}); /* the Return that starts CMS on its way */
       P.queue(function(){V.input('')});

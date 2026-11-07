@@ -21,8 +21,8 @@ function hush(){ /* everything still sounding or still to come stops: a hang-up,
   live.forEach(function(g){try{g.gain.cancelScheduledValues(0);g.gain.value=0;g.disconnect()}catch(e){}});
   live=[];
 }
-function Speaker(vol){ /* a group of sounds laid out on one time line, from now; at(ms) and the rest add to it */
-  var a=audio(),g=null,t0=0;
+function Speaker(vol){ /* a group of sounds laid out on one time line, from now; at(ms) and the rest add to it. vol 0: silent (ATM0) */
+  var a=vol===0?null:audio(),g=null,t0=0;
   if(a){g=a.createGain();g.gain.value=vol||.6;g.connect(a.destination);live.push(g);t0=a.currentTime+.03}
   function env(gn,at,dur,lv){ /* a short ramp in and out: no clicks at the edges */
     var s=t0+at/1000,e=s+dur/1000;
@@ -58,48 +58,49 @@ function digits(s){return String(s||'').replace(/[^0-9*#]/g,'')}
 /* where a number goes: the board, the other boards on its list (busy, or nobody home), or nowhere */
 function lineFor(num){
   var d=digits(num),B=P.bbs&&P.bbs.numbers?P.bbs.numbers():{};
-  for(var k in B)if(P.has(B,k)){var n=digits(k);if(n&&d.length>=7&&(d===n||d.slice(-n.length)===n))return B[k]}
+  for(var k in B)if(P.has(B,k)){var n=digits(k);if(n&&d.length>=7&&d.slice(-n.length)===n)return B[k]}
   return 'none';
 }
 /* the whole call, laid out in time: [ms, what] steps for the speaker, and when the result comes */
-function plan(sp,num,pulse,speed,speaker){
-  var t=0,d=digits(num),fate=lineFor(num),loud=speaker!==0;
-  if(loud)sp.tone(DIAL,t,900,.035);
+function plan(sp,num,pulse,speed){
+  var t=0,d=digits(num),fate=lineFor(num);
+  sp.tone(DIAL,t,900,.035);
   t+=1000;
   d.split('').forEach(function(c){
     if(pulse){ /* ten pulses a second, a pause between digits */
       var n=c==='0'?10:/\d/.test(c)?+c:0;
-      for(var i=0;i<n;i++){if(loud)sp.click(t);t+=100}
+      for(var i=0;i<n;i++){sp.click(t);t+=100}
       t+=600;
-    }else{if(loud)sp.tone(DTMF[c],t,85,.04);t+=150}
+    }else{sp.tone(DTMF[c],t,85,.04);t+=150}
   });
   t+=500;
   var res;
   if(fate==='busy'){
-    for(var b=0;b<4;b++){if(loud)sp.tone(BUSY,t,500,.03);t+=1000}
+    for(var b=0;b<4;b++){sp.tone(BUSY,t,500,.03);t+=1000}
     res='BUSY';
   }else if(fate==='board'){
-    if(loud)sp.tone(RING,t,1700,.03);
+    sp.tone(RING,t,1700,.03);
     t+=2300;
     var ans=speed>=2400?2100:2225; /* the answer tone: CCITT's 2100 Hz before V.22bis, Bell 212A's 2225 Hz */
-    if(loud)sp.tone(ans,t,1100,.04);
+    sp.tone(ans,t,1100,.04);
     t+=1150;
     if(speed>=2400){ /* V.22bis: the two carriers, then the scrambled ones, slowing to a hiss */
-      if(loud){sp.tone([1200,2400],t,500,.025);sp.hiss(t+450,1500,.07,1800,.7);sp.tone(2400,t+450,1500,.012)}
+      sp.tone([1200,2400],t,500,.025);sp.hiss(t+450,1500,.07,1800,.7);sp.tone(2400,t+450,1500,.012);
       t+=2000;
     }else{
-      if(loud){sp.tone([1200,2225],t,350,.025);sp.hiss(t+300,800,.06,1700,.8)}
+      sp.tone([1200,2225],t,350,.025);sp.hiss(t+300,800,.06,1700,.8);
       t+=1100;
     }
     res='CONNECT';
   }else{ /* rings out, and nobody answers: the modem gives up when its wait (S7) is over */
-    for(var r=0;r<3;r++){if(loud)sp.tone(RING,t,1700,.03);t+=4000}
+    for(var r=0;r<3;r++){sp.tone(RING,t,1700,.03);t+=4000}
     res='NO CARRIER';
   }
   return {ms:t,res:res};
 }
 
 /* ---------- the modem: one per program that talks to it ---------- */
+function regs(){return {0:0,7:30,12:50}} /* S0 rings to answer, S7 the wait for carrier, S12 the escape guard time */
 var CODES={'OK':0,'CONNECT':1,'RING':2,'NO CARRIER':3,'ERROR':4,'CONNECT 1200':5,'NO DIALTONE':6,'BUSY':7,'NO ANSWER':8,'CONNECT 2400':10};
 P.modem={
   hush:hush,
@@ -107,7 +108,7 @@ P.modem={
   /* o.speed: 1200 or 2400; o.upper: results in capitals only (they are anyway). o.connect(M) is called, inside a
      queued step, when a call goes through; it runs the session and calls M.hangup() when the line drops */
   open:function(o){
-    var M={speed:o.speed||2400,verbose:true,quiet:false,speaker:1,regs:{0:0,7:30,12:50},online:false,last:'',number:''};
+    var M={speed:o.speed||2400,verbose:true,quiet:false,speaker:1,regs:regs(),online:false,last:'',number:''};
     M.result=function(r){ /* a result code, in words or as a number (ATV0) */
       if(M.quiet)return;
       if(r==='CONNECT'&&M.speed>300)r='CONNECT '+M.speed;
@@ -119,7 +120,7 @@ P.modem={
       if(s==='A/')s=M.last;
       if(!/^AT/.test(s))return false;
       M.last=s;
-      var i=2,c,n,err=false,dial=null,hang=false,on=false,info=[];
+      var i=2,c,n,err=false,dial=null,hang=false,on=false,ans=false,info=[];
       function num(){var m=s.slice(i).match(/^\d*/)[0];i+=m.length;return m===''?0:+m}
       while(i<s.length&&!err){
         c=s.charAt(i++);
@@ -131,9 +132,9 @@ P.modem={
         else if(c==='L'||c==='X'||c==='B'||c==='C'||c==='Y'||c==='P'||c==='T'){num()}
         else if(c==='H'){num();hang=true}
         else if(c==='O'){num();on=true}
-        else if(c==='Z'){num();M.verbose=true;M.quiet=false;M.speaker=1;M.regs={0:0,7:30,12:50}}
+        else if(c==='Z'){num();M.verbose=true;M.quiet=false;M.speaker=1;M.regs=regs()}
         else if(c==='I'){n=num();if(n===0)info.push(String(M.speed===2400?246:124));else if(n===1)info.push('063');else if(n===2){}else err=true}
-        else if(c==='A'){err=true;M.answering=true;break} /* nobody is calling */
+        else if(c==='A'){ans=true;break} /* nobody is calling */
         else if(c==='&'){if(/[A-Z]/.test(s.charAt(i))){i++;num()}else err=true}
         else if(c==='S'){
           n=num();
@@ -143,7 +144,7 @@ P.modem={
         }
         else err=true;
       }
-      if(M.answering){M.answering=false;P.pause(2000);M.result('NO CARRIER');return true}
+      if(ans){P.pause(2000);M.result('NO CARRIER');return true}
       if(err){M.result('ERROR');return true}
       info.forEach(function(x){P.typeLine(x)});
       if(hang){if(M.online){M.online=false;hush()}M.result('OK');return true}
@@ -156,7 +157,7 @@ P.modem={
       var stay=/;$/.test(str),pulse=(str.replace(/[^TP]/g,'').slice(-1)==='P'); /* the last of T or P says how */
       M.number=str;
       if(!digits(str)){P.pause(1500);M.result(stay?'OK':'NO CARRIER');return}
-      var sp=Speaker(M.speaker===0?0:M.speaker===2?.9:.6),p=plan(sp,str,pulse,M.speed,M.speaker),cut=false;
+      var sp=Speaker(M.speaker===0?0:M.speaker===2?.9:.6),p=plan(sp,str,pulse,M.speed),cut=false;
       if(stay)p={ms:p.ms-(p.res==='CONNECT'?4000:0),res:'OK'};
       P.queue(function(){
         var rang=false;setTimeout(function(){rang=true},Math.max(0,p.ms-20));

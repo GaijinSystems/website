@@ -8,7 +8,7 @@ Phosphor.setup(function(P){
 'use strict';
 var V=P.vm=P.vm||{};
 var up=V.up=V.up||function(s){return String(s).toUpperCase()};
-function p2(n){return String(n).padStart(2,'0')}
+var p2=P.p2;
 function z(n,w){return String(n).padStart(w,'0')}
 /* a message with its code, shown as CP's SET EMSG says: ON code and text, TEXT (as a logon starts) the text alone */
 V.em=function(s,cls){
@@ -24,7 +24,6 @@ V.em=function(s,cls){
 };
 function out(s){V.em(s,'')}
 function err(s){V.em(s,'err')}
-V.out=out;V.err=err;
 var DAYS=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
 V.hms=function(d){return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())};
 V.mdy=function(d){return p2(d.getMonth()+1)+'/'+p2(d.getDate())+'/'+p2(d.getFullYear()%100)};
@@ -68,6 +67,7 @@ V.directText=function(){
 };
 
 /* ---------- the virtual machine a logon gives ---------- */
+var TERM0={linend:'#',chardel:'@',escape:'"',linedel:'¢'}; /* the terminal's line editing characters, as a logon sets them */
 V.newMachine=function(user){
   V.user=user;V.cls=V.dir[user].cls;V.logon=P.now();V.vcpu=0;V.tcpu=0;
   V.devs={'009':{kind:'CONS'},'00C':{kind:'RDR',cls:'*'},'00D':{kind:'PUN',cls:'A',to:null,copy:1},'00E':{kind:'PRT',cls:'A',to:null,copy:1}};
@@ -78,7 +78,7 @@ V.newMachine=function(user){
   if(user!=='OPERATOR')V.devs['19E']={kind:'DASD',disk:V.disks['MAINT 19E'],rw:maint?'R/W':'R/O'};
   V.rdr=[];V.prtFiles=[];V.punFiles=[];
   V.set={msg:true,wng:true,emsg:'TEXT',imsg:true,run:false};
-  V.term={linend:'#',chardel:'@',escape:'"',linedel:'¢'};
+  V.term=Object.assign({},TERM0);
   V.cpMode=false;V.state='cp';V.stor=V.dir[user].stor;
 };
 
@@ -283,7 +283,7 @@ CP.TERMINAL=function(a,w){
     var v=w[++i];
     if(v===undefined)return bad('CFT',26,'OPERAND MISSING OR INVALID');
     var f={LINEND:'linend',CHARDEL:'chardel',LINEDEL:'linedel',ESCAPE:'escape'}[k];
-    if(f){if(up(v)==='OFF')V.term[f]='';else if(up(v)==='ON')V.term[f]={linend:'#',chardel:'@',linedel:'¢',escape:'"'}[f];else if(v.length===1)V.term[f]=v;else return bad('CFT',2,'INVALID OPERAND - '+v)}
+    if(f){if(up(v)==='OFF')V.term[f]='';else if(up(v)==='ON')V.term[f]=TERM0[f];else if(v.length===1)V.term[f]=v;else return bad('CFT',2,'INVALID OPERAND - '+v)}
   }
   return 0;
 };
@@ -327,7 +327,7 @@ function counted(n,what){return (n?z(n,4)+' ':' NO  ')+'FILE'+(n===1?'':'S')+' '
 CP.PURGE=function(a){
   var L=spoolList(a[0]);
   if(!L)return bad('CSV',35,'DEVICE TYPE MISSING OR INVALID');
-  var ids=a.slice(1),gone=0,rc=0;
+  var ids=a.slice(1),gone=0;
   if(!ids.length||ids[0]==='ALL'){gone=L.length;L.length=0;out(counted(gone,'PURGED'));return 0}
   for(var i=0;i<ids.length;i++){
     if(ids[i]==='CLASS'){var c=ids[++i];for(var j=L.length-1;j>=0;j--)if(L[j].cls===c){L.splice(j,1);gone++}continue}
@@ -337,7 +337,7 @@ CP.PURGE=function(a){
     L.splice(at,1);gone++;
   }
   out(counted(gone,'PURGED'));
-  return rc;
+  return 0;
 };
 CP.ORDER=function(a){
   var L=spoolList(a[0]);
@@ -542,6 +542,11 @@ V.logonLines=function(n){
   L.push('LOGON AT '+V.stamp(n));
   return L;
 };
+V.logonAs=function(user,at){ /* a logon accepted: the machine, the letter in the guest's reader, and what CP says */
+  V.newMachine(user);if(at)V.logon=at;
+  if(user==='GUEST'){var f=V.letterFile();if(f&&!V.letterGone)V.arrive(f,true)}
+  P.say(V.logonLines(V.logon));
+};
 V.logoff=function(dsc,forced){
   var n=P.now();
   P.typeLine(V.usage(n));
@@ -552,7 +557,6 @@ V.logoff=function(dsc,forced){
   P.queue(function(){P.typeLine('');P.typeLine('VM/370 ONLINE')});
 };
 V.shutdown=function(){
-  var n=P.now();
   V.ending();
   P.powerOff(['DMKCKP960I SYSTEM WARM START DATA SAVED','DMKCKP961W SYSTEM SHUTDOWN COMPLETE']);
 };
@@ -575,9 +579,7 @@ V.online=function(raw){
     if(!d){P.typeLine('DMKLOG053E '+user+' NOT IN CP DIRECTORY','err');return}
     if(pw!==d.pw||d.pw==='NOLOG'){P.pause(900);P.typeLine('DMKLOG050E PASSWORD INCORRECT','err');return}
     if(d.on&&d.on!=='DSC'){P.typeLine('DMKLOG054E ALREADY LOGGED ON LINE '+d.on,'err');return}
-    V.newMachine(user);
-    if(user==='GUEST'){var f=V.letterFile();if(f&&!V.letterGone)V.arrive(f,true)}
-    P.say(V.logonLines(V.logon));
+    V.logonAs(user);
     V.ipl();
   }
   if(W[2]){go(W[2]);return}
@@ -595,7 +597,7 @@ V.ask=function(then,trap,hidden){
 };
 V.lineEdit=function(s,one){ /* logical lines: the line end splits them, the character delete takes one back, the line delete
                               drops what came before it, the escape makes the next character plain */
-  var T=V.term||{linend:'#',chardel:'@',escape:'"',linedel:'¢'},L=[],o='';
+  var T=V.term||TERM0,L=[],o='';
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i);
     if(T.escape&&c===T.escape&&i+1<s.length){o+=s.charAt(++i);continue}

@@ -10,7 +10,7 @@ var DISKKEY='trs80/disk',TAPEKEY='trs80/tape';
 var vram=new Uint8Array(1024),cp=0,cursorOn=true,dirty=true,blinkOn=true;
 var calm=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
 var S=null,el=null,cv=null,closeFn=null,rows=[],cellW=8,cellH=24,mode='off',GL=null,keyCb=null,kq=[],brkFlag=false;
-var basic=null,disk=null,tape=null,sleepUntil=0,sleepCb=null,booting=false,clockOn=false;
+var basic=null,disk=null,tape=null,sleepUntil=0,sleepCb=null,booting=false,bootBreak=false,clockOn=false;
 var WELCOME=[],MAILNOTE='',TERMINAL={},hooked=false,date=null;
 
 /* ---------- the screen: 1024 bytes at 3C00H, as the Model III keeps them ---------- */
@@ -39,7 +39,8 @@ function say(s){for(var i=0;i<s.length;i++)put(s.charCodeAt(i))}
 function line(s){say(s);put(13)}
 function cls(){vram.fill(32);cp=0;if(clockOn)showClock();dirty=true}
 function col(){return cp&63}
-function rowText(r){var s='';for(var c=0;c<64;c++){var b=vram[r*64+c];s+=b>=32&&b<128?String.fromCharCode(b):' '}return s.replace(/ +$/,'')}
+function rowText(r,glyphs){ /* glyphs: [ \ ] ^ as the arrows the glass shows */
+  var s='';for(var c=0;c<64;c++){var b=vram[r*64+c];s+=b>=32&&b<128?(glyphs&&GLYPH[b]||String.fromCharCode(b)):' '}return s.replace(/ +$/,'')}
 function setPixel(x,y,on){ /* SET and RESET: a cell turns graphic, and one of its six blocks lights or goes out */
   var a=(y/3|0)*64+(x>>1),bit=1<<((y%3)*2+(x&1)),b=vram[a];
   if(b<128||b>191)b=128;
@@ -48,7 +49,7 @@ function setPixel(x,y,on){ /* SET and RESET: a cell turns graphic, and one of it
 function getPixel(x,y){var b=vram[(y/3|0)*64+(x>>1)];return b>=128&&b<=191&&(b&(1<<((y%3)*2+(x&1))))!==0}
 function showClock(){
   var d=date?clockNow():null;if(!d)return;
-  var t=P.p2(d.getHours())+':'+P.p2(d.getMinutes())+':'+P.p2(d.getSeconds());
+  var t=hms(d);
   for(var i=0;i<8;i++)vram[56+i]=t.charCodeAt(i);dirty=true;
 }
 
@@ -94,9 +95,7 @@ function draw(){
   if(!dirty)return;
   dirty=false;
   for(var r=0;r<16;r++){
-    var s='';
-    for(var c=0;c<64;c++){var b=vram[r*64+c];s+=b>=32&&b<128?(GLYPH[b]||String.fromCharCode(b)):' '}
-    s=s.replace(/ +$/,'');
+    var s=rowText(r,true);
     if(rows[r]&&rows[r].s===s)continue;
     var d=document.createElement('div');d.className='line trs-row';d.textContent=s;
     if(rows[r])el.replaceChild(d,rows[r].d);else el.insertBefore(d,cv);
@@ -130,13 +129,12 @@ function feed(k){
   if(c===94)c=91; /* ^ is the up arrow, BASIC's power sign */
   if(c>127)return;
   P.click(c===13?1:.667,c===13?700:undefined);
-  if(c===1&&mode!=='getln'&&mode!=='key')brkFlag=true;
+  if(c===1&&!waiting())brkFlag=true;
   if(mode==='getln'){glKey(c);idleNow();return}
   if(mode==='key'){var f=keyCb;keyCb=null;mode='busy';f(c);idleNow();return}
   if(booting&&c===1){bootBreak=true;return}
   if(c!==1&&kq.length<32)kq.push(c);
 }
-var bootBreak=false;
 function keyNow(){return kq.length?kq.shift():null}
 function waitKey(f){var k=keyNow();if(k!==null){f(k);return}keyCb=f;mode='key';dirty=true}
 
@@ -145,20 +143,19 @@ function getln(o,cb,brk){ /* o: {dots:n, max:n} */
   o=o||{};
   brkFlag=false;
   GL={buf:'',cb:cb,brk:brk,dots:o.dots||0,max:o.max||240,start:cp};
-  if(GL.dots){var save=cp;for(var i=0;i<GL.dots&&save+i<1024;i++)vram[save+i]=46;dirty=true}
+  if(GL.dots)vram.fill(46,cp,cp+GL.dots);
   mode='getln';dirty=true;
   while(mode==='getln'&&kq.length)glKey(kq.shift());
   if(mode==='getln'&&S)S.say(rowText(cp>>6));
 }
 function glKey(c){
   var G=GL;dirty=true;
-  if(c===13){
-    if(G.dots)vram.fill(32,cp,Math.min(1024,(cp>>6<<6)+64));
-    nl();mode='busy';GL=null;G.cb(G.buf);return;
-  }
-  if(c===1){if(G.brk){if(G.dots)vram.fill(32,cp,Math.min(1024,(cp>>6<<6)+64));mode='busy';GL=null;G.brk();}return}
-  if(c===8){if(G.buf.length){G.buf=G.buf.slice(0,-1);cp--;vram[cp]=G.dots?46:32}return}
-  if(c===24){while(G.buf.length){G.buf=G.buf.slice(0,-1);cp--;vram[cp]=G.dots?46:32}return}
+  function end(){if(G.dots)vram.fill(32,cp,(cp>>6<<6)+64);mode='busy';GL=null} /* the dots left over go */
+  function rub(){G.buf=G.buf.slice(0,-1);cp--;vram[cp]=G.dots?46:32}
+  if(c===13){end();nl();G.cb(G.buf);return}
+  if(c===1){if(G.brk){end();G.brk()}return}
+  if(c===8){if(G.buf.length)rub();return}
+  if(c===24){while(G.buf.length)rub();return}
   if(c===9){do{if(G.buf.length>=G.max)break;G.buf+=' ';put(32)}while(col()%8);return}
   if(c===10&&!G.dots){G.buf+=' ';nl();return}
   if(c<32)return;
@@ -197,13 +194,14 @@ function bytesOf(f){
   if(f.ascii)return f.src.reduce(function(a,l){return a+l.length+1},1);
   return progBytes(f).length;
 }
+function crunch(src){return src.map(function(l){var m=l.match(/^(\d+) ?(.*)$/);return [+m[1],P.trsBasic.parse(m[2])]})} /* a listing's lines, as BASIC keeps them */
 function progBytes(f){ /* the bytes a SAVE writes: FF, then each line with its link and number, crunched */
   if(f.ascii){var s=f.src.join('\r')+'\r',a=[];for(var i=0;i<s.length;i++)a.push(s.charCodeAt(i)&255);a.push(26);return a}
   var b=[255],addr=0x6A00;
-  f.src.forEach(function(l){
-    var m=l.match(/^(\d+) ?(.*)$/),t=P.trsBasic.parse(m[2]);
+  crunch(f.src).forEach(function(L){
+    var n=L[0],t=L[1];
     addr+=5+t.length;
-    b.push(addr&255,addr>>8,+m[1]&255,+m[1]>>8);t.forEach(function(x){b.push(x)});b.push(0);
+    b.push(addr&255,addr>>8,n&255,n>>8);t.forEach(function(x){b.push(x)});b.push(0);
   });
   b.push(0,0);return b;
 }
@@ -253,6 +251,8 @@ function table(words,first){ /* eight to a line, as LIB and HELP set them out */
 function dosError(n){line('* * ERROR '+n+' * *');line('Operation Aborted');dosReady()}
 function dosReady(){line('TRSDOS Ready');dosPrompt()}
 function dosPrompt(){mode='busy';basic=null;getln({dots:63,max:63},dosLine,function(){dosReady()})}
+var NOTHERE=['CMD','DO','ROUTE','TAPE','PATCH','DUMP','LOAD','APPEND','COPY','BUILD','ATTRIB','PROT','FORMAT','BACKUP',
+  'DUAL','MASTER','PURGE','SETCOM','FORMS','CREATE','RELO','PAUSE','WP','CLEAR']; /* TRSDOS's, that do nothing here */
 var DOSCMD={
   DIR:function(a){
     if(a&&!/^:0$/.test(a))return a.charAt(0)===':'?32:11;
@@ -311,7 +311,6 @@ var DOSCMD={
     var f=spec(a);if(!f)return 19;
     say('Killing '+f.n);
     var x=findFile(f.n);if(!x||f.drive)return 24;
-    if(/\*/.test(x.attr||'')&&x.t==='C'&&x.sys)return 25;
     disk.files.splice(disk.files.indexOf(x),1);saveDisk();put(13);
   },
   RENAME:function(a){
@@ -367,9 +366,7 @@ function dosLine(t){
   var w=(u.match(/^[A-Z0-9\/]+/)||[''])[0],rest=s.slice(w.length).replace(/^ +/,'');
   if(hooked&&TERMINAL[w]&&w!=='HELP'){terminal(w,rest,dosReady);return}
   if(joke(u)){dosReady();return}
-  if(w==='CMD'||w==='DO'||w==='ROUTE'||w==='TAPE'||w==='PATCH'||w==='DUMP'||w==='LOAD'||w==='APPEND'||w==='COPY'||w==='BUILD'||
-     w==='ATTRIB'||w==='PROT'||w==='FORMAT'||w==='BACKUP'||w==='DUAL'||w==='MASTER'||w==='PURGE'||w==='SETCOM'||w==='FORMS'||
-     w==='CREATE'||w==='RELO'||w==='PAUSE'||w==='WP'||w==='CLEAR'){
+  if(NOTHERE.indexOf(w)>=0){
     if(w==='PAUSE'){line(rest);say('Press <ENTER> to continue');mode='busy';getln({},function(){dosReady()},dosReady);return}
     if(!rest&&w!=='CLEAR'){dosError(10);return}
     dosError(w==='FORMAT'||w==='BACKUP'||w==='PURGE'?15:11);return;
@@ -402,13 +399,13 @@ function startBasic(withDisk,first){
   if(!withDisk){basic=P.trsBasic(MACH,false);ready();return}
   say('How Many Files? ');
   getln({max:2},function(t){
-    var n=t.trim()===''?3:+t.trim();
-    if(!/^\d*$/.test(t.trim())||n>15){startBasic(true,first);return}
+    t=t.trim();var n=t===''?3:+t;
+    if(!/^\d*$/.test(t)||n>15){startBasic(true,first);return}
     say('Memory Size? ');
     getln({max:5},function(m){
       basic=P.trsBasic(MACH,true);
       var free=38202+(3-n)*290; /* each file's buffer: an estimate, not measured */
-      basic.setMemory(free+2,n);
+      basic.setMemory(free+2);
       line('TRS-80 Model III Disk BASIC Rev 1.3');
       line('(c)(p) 1980 by Tandy Corp.  All Rights Reserved.');
       line('Created 5-Jul-80');
@@ -492,17 +489,18 @@ function runBasic(){
     return;
   }
   if(w.wait==='edit'){basic.answer();basic.stop();mode='busy';editLine(w.n);return}
-  if(w.wait==='tape'){mode='busy';cassette(w,function(err,lines){if(err)basic.fail(err);else{basic.answer();if(lines){basic.stop();basic.load(lines)}}if(basic.running())mode='run';else ready()});return}
+  if(w.wait==='tape'){mode='busy';cassette(w,function(err,lines){if(err)basic.fail(err);else{basic.answer();if(lines){basic.stop();basic.load(lines)}}goOn()});return}
   if(w.wait==='system'){basic.answer();basic.stop();system();return}
   if(w.wait==='disk'){mode='busy';diskOp(w,function(e,then,lines){
-    if(e){basic.fail(e);if(basic.running())mode='run';else ready();return}
+    if(e){basic.fail(e);goOn();return}
     basic.answer();
     if(lines){basic.stop();if(then==='merge')basic.merge(lines);else basic.load(lines)}
     if(then==='run'){basic.run();mode='run';return}
     if(then==='dos'){basic.stop();dosReady();return}
-    if(basic.running())mode='run';else ready();
+    goOn();
   });return}
 }
+function goOn(){if(basic.running())mode='run';else ready()} /* after the tape or the disk: the program runs on, or READY */
 
 /* ---------- the cassette: one tape, kept in this browser, and the relay's click ---------- */
 function loadTape(){
@@ -537,12 +535,11 @@ function cassette(w,done){
     if(t<total){sleepIn(120,go);return}
     stars(false);relay();
     if(w.op==='verify'){
-      var same=f.src.join('\n')===basic.listing().join('\n');
-      if(!same){line('BAD')}
+      if(f.src.join('\n')!==basic.listing().join('\n'))line('BAD');
       mode='busy';done();return;
     }
     mode='busy';
-    done(null,f.src.map(function(l){var m=l.match(/^(\d+) ?(.*)$/);return [+m[1],P.trsBasic.parse(m[2])]}));
+    done(null,crunch(f.src));
   })();
 }
 var tapeTimer=null;
@@ -582,8 +579,7 @@ function diskOp(w,done){
   if(!x){done('FNF');return}
   if(x.t!=='B'){done('BFM');return}
   sleep(400,function(){
-    var lines=x.src.map(function(l){var m=l.match(/^(\d+) ?(.*)$/);return [+m[1],P.trsBasic.parse(m[2])]});
-    done(null,op==='run'||op==='load'&&w.flag?'run':op,lines);
+    done(null,op==='run'||op==='load'&&w.flag?'run':op,crunch(x.src));
   });
 }
 
@@ -782,7 +778,7 @@ function openScreen(after){
   P.program(function(S0,done){
     S=S0;closeFn=done;el=document.getElementById('full');
     document.documentElement.classList.add('trs80');
-    rows=[];layout();
+    layout();
     S.every(16,tick);
     S.every(400,function(){blinkOn=!blinkOn;if(waiting())dirty=true});
     S.onThrow=function(e){console.error(e);closeScreen();P.queue(function(){P.typeLine('trs-80: '+(e&&e.message||e),'err')})};
@@ -801,7 +797,7 @@ P.setup(function(){
   WELCOME=P.profile.welcome||[];MAILNOTE=P.profile.mail.length?P.profile.mailNotice:'';
   P.profile.welcome=[];P.profile.mailNotice='';
   P.setPrompt(function(){return ''});
-  ['help','mail','about','source','fill','sound','effects','connect'].concat(Object.keys(P.cmds)).forEach(function(n){if(P.has(P.cmds,n))TERMINAL[n.toUpperCase()]=1});
+  Object.keys(P.cmds).forEach(function(n){TERMINAL[n.toUpperCase()]=1});
   P.fallback=function(){openScreen(function(){if(basic)prompt();else dosPrompt()});return true}; /* typed at the terminal's own prompt: back to the Model III */
   setTimeout(function(){
     P.queue(function(){if(P.profile.problems.length)return P.readKey('',true)});

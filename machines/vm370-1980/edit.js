@@ -9,7 +9,6 @@ var V=P.vm=P.vm||{};
 var up=V.up;
 function out(s){P.typeLine(s)}
 function err(s){V.em(s,'err')}
-var F_TYPES=/^(ASSEMBLE|MACRO|UPDATE|COBOL|FORTRAN|PLI|PLIOPT|DIRECT|AMSERV|BASIC|TEXT|DATA|SYNONYM|COPY|MEMBER)$/;
 var V_TYPES=/^(EXEC|LISTING|FREEFORT|VSBDATA|SCRIPT|MEMO)$/;
 var MIXED=/^(MEMO|SCRIPT)$/;
 var SUB=[ /* subcommands and their shortest forms */
@@ -21,7 +20,6 @@ var SUB=[ /* subcommands and their shortest forms */
 ];
 
 V.edit=function(a,o){
-  if(!a.length){err('DMSEDI054E INCOMPLETE FILEID SPECIFIED');return 24}
   if(a.length<2){err('DMSEDI054E INCOMPLETE FILEID SPECIFIED');return 24}
   var fn=a[0],ft=a[1],fm=a[2]||'',lrecl=0;
   if(a.length>3){err('DMSEDI003E INVALID OPTION \''+a[3]+'\'');return 24}
@@ -49,7 +47,7 @@ V.edit=function(a,o){
   loop(E);
   return 0;
 };
-function lineText(l){return V.text(l)}
+var lineText=V.text;
 function cur(E){return E.cur>=0&&E.cur<E.lines.length?lineText(E.lines[E.cur]):null}
 function show(E){
   if(!E.verify)return;
@@ -86,7 +84,7 @@ function input(E){
 function ins(E,t){if(E.cur>=E.lines.length)E.cur=E.lines.length-1;E.lines.splice(E.cur+1,0,t);E.cur++;changed(E)}
 function changed(E){
   E.changed=true;
-  if(E.auto&&++E.since>=E.auto){E.since=0;save(E,null,true)}
+  if(E.auto&&++E.since>=E.auto){E.since=0;save(E,true)}
 }
 function inZone(E,t){return t.slice(E.zone[0]-1,E.zone[1])}
 function delim(s){ /* /a/b/ into its parts, the delimiter being the first character */
@@ -104,11 +102,11 @@ function sub(E,raw){
   }
   if(l==='?'){out(E.last||'');return}
   if(l.charAt(0)==='='){var k=l.length-l.replace(/^=+/,'').length,again=l.replace(/^=+\s*/,'');
-    if(again){if(!sub(E,again)){}} for(var j=0;j<k;j++){var x=sub(E,E.last||'');if(x)return x}return}
+    if(again)sub(E,again);for(var j=0;j<k;j++){var x=sub(E,E.last||'');if(x)return x}return}
   if(l.charAt(0)==='/'){w='LOCATE';rest=l}
   var name=w?V.lookup(SUB,up(w)):null;
   if(!name){if(!l){show(E);return}bad(E,raw);return}
-  if(!/^(REUSE)$/.test(name))E.last=raw;
+  if(name!=='REUSE')E.last=raw;
   var A=up(rest).trim().split(/\s+/).filter(Boolean),n1=A[0]==='*'?Infinity:A.length?parseInt(A[0],10):1;
   switch(name){
     case 'TOP':E.cur=-1;show(E);return;
@@ -255,10 +253,10 @@ function sub(E,raw){
       return;}
     case 'SAVE':
       if(A.length&&!rename(E,A))return;
-      if(save(E,null,false)&&E.verify)out('EDIT:');return;
+      if(save(E,false)&&E.verify)out('EDIT:');return;
     case 'FILE':
       if(A.length&&!rename(E,A))return;
-      if(!save(E,null,false))return;
+      if(!save(E,false))return;
       return 'end';
     case 'QUIT':
       return 'end';
@@ -267,8 +265,7 @@ function sub(E,raw){
       subset(E);
       return 'end';
     case 'REUSE':
-      for(var k3=0;k3<1;k3++){var r3=sub(E,E.last||'');if(r3)return r3}
-      return;
+      return sub(E,E.last||'');
   }
   bad(E,raw);
 }
@@ -278,11 +275,11 @@ function rename(E,A){
   E.fn=A[0];if(A[1])E.ft=A[1];if(A[2]){E.mode=A[2].charAt(0);E.fmn=A[2].charAt(1)||E.fmn}
   return true;
 }
-function save(E,_,auto){
+function save(E,auto){
   var A=V.acc[E.mode];
   if(!A||!A.rw){out('SET NEW FILEMODE AND RETRY');return false}
   if(!E.lines.length){
-    var ex=A.disk.get(E.fn,E.ft);if(ex)A.disk.remove(E.fn,E.ft);
+    A.disk.remove(E.fn,E.ft);
     if(auto)out('SAVED');
     return true;
   }
