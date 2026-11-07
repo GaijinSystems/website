@@ -48,7 +48,7 @@ V.input=function(raw){
     });
     return;
   }
-  if(V.edRead&&V.state==='cms'&&!V.cpMode){var r=V.edRead;P.queue(function(){r(V.lineEdit(raw,true)[0])});P.queue(function(){if(!V.edRead&&V.state==='cms'&&!V.cpMode)V.ready(0)});return} /* the editor's, after a ^C stopped its typing */
+  if(V.edRead&&V.state==='cms'&&!V.cpMode){var r=V.edRead;P.queue(function(){r(V.lineEdit(raw,true)[0])});P.queue(function(){if(!V.edRead&&V.state==='cms'&&!V.cpMode){V.ready(0);if(V.stack.length)cmsLine(V.stack.shift())}});return} /* the editor's, after a ^C stopped its typing */
   V.lineEdit(raw).forEach(function(l){P.queue(function(){logical(l)})});
 };
 /* attention (^C): what is running stops, and what it left in the console stack goes too, so none of it runs later as commands */

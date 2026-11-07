@@ -51,9 +51,9 @@ V.edit=function(a,o){
 var lineText=V.text;
 function cur(E){return E.cur>=0&&E.cur<E.lines.length?lineText(E.lines[E.cur]):null}
 function show(E){
+  if(E.cur>=E.lines.length){out('EOF:');return} /* even with verify off, as the CMS User's Guide says */
   if(!E.verify)return;
   if(E.cur<0){out('TOF:');return}
-  if(E.cur>=E.lines.length){out('EOF:');return}
   var t=lineText(E.lines[E.cur]);
   out(E.vcol?t.slice(0,E.vcol):t.replace(/\s+$/,''));
 }
@@ -127,7 +127,7 @@ function sub(E,raw){
       var m=A.length?n1:1,col=A[1]==='*'?null:A[1]?+A[1]:E.vcol;
       if(E.cur<0){out('TOF:');if(m>1){E.cur=0;m--}else return}
       if(E.cur>=E.lines.length){out('EOF:');return}
-      for(var i=0;i<m&&E.cur<E.lines.length;i++){var t=lineText(E.lines[E.cur]);out(col?t.slice(0,col):t.replace(/\s+$/,''));if(i<m-1)E.cur++}
+      for(var i=0;i<m&&E.cur<E.lines.length;i++){var t=lineText(E.lines[E.cur]);out(col?t.slice(0,col):t.replace(/\s+$/,''));if(i<m-1){if(E.cur>=E.lines.length-1)break;E.cur++}}
       if(m===Infinity){E.cur=E.lines.length;out('EOF:')}
       return;
     case 'LOCATE':{
