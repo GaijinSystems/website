@@ -37,7 +37,8 @@ V.ready=function(rc){
 
 /* ---------- a typed line ---------- */
 V.input=function(raw){
-  if(!(V.edRead&&V.state==='cms'&&!V.cpMode)){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it */
+  var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
+  if(!ed){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -49,7 +50,7 @@ V.input=function(raw){
     });
     return;
   }
-  if(V.edRead&&V.state==='cms'&&!V.cpMode){ /* the editor's, after a ^C stopped its typing; when the edit ends, the EXECs that ran it carry on */
+  if(ed){ /* the editor's, after a ^C stopped its typing; when the edit ends, the EXECs that ran it carry on */
     var r=V.edRead,l0=V.lineEdit(raw,true)[0];
     if(up(l0.trim())==='HX'){V.edRead=null;V.abend();V.execs=[];V.level=0;P.queue(function(){V.ready(0)});return} /* HX, the one way to stop them: CMS, as on Release 6 */
     P.queue(function(){r(l0)});
