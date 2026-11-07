@@ -320,10 +320,9 @@ function one(c,fromEc){
   exec(W);
 }
 /* other systems' words, which Multics never had: after its own message, a word from a Multics hand of 1981 */
-var ELSEWHERE=Object.assign(Object.create(null),{unix:'One of whatever Multics is many of.  Try Murray Hill.',
-  cat:'That is UNIX.  Here it is print (pr).',rm:'That is UNIX.  Here it is delete (dl).',mkdir:'That is UNIX.  Here it is create_dir (cd).',
-  man:'That is UNIX.  Here it is help.',chmod:'That is UNIX.  Here it is set_acl (sa).',
-  logoff:'This is Multics.  The word is logout.',bye:'This is Multics.  The word is logout.',exit:'This is Multics.  The word is logout.'});
+var ELSEWHERE={unix:'One of whatever Multics is many of.  Try Murray Hill.'};
+[['cat','print (pr)'],['rm','delete (dl)'],['mkdir','create_dir (cd)'],['man','help'],['chmod','set_acl (sa)']].forEach(function(u){ELSEWHERE[u[0]]='That is UNIX.  Here it is '+u[1]+'.'});
+['logoff','bye','exit'].forEach(function(w){ELSEWHERE[w]='This is Multics.  The word is logout.'});
 function exec(W){
   var n=W[0],a=W.slice(1);
   charge();

@@ -164,7 +164,7 @@ Phosphor.setup(function(P){
   /* /usr/games and what goes with it */
   sys('/usr/share/games','d');
   sys('/usr/local/share/games/zork','d',{date:new Date(2025,10,2,19,6)});
-  [['zork1.z3',86838,'zork1'],['zork2.z3',92524,'zork2'],['zork3.z3',87984,'zork3']].forEach(function(z){sys('/usr/local/share/games/zork/'+z[0],'f',{bin:true,size:z[1],story:z[2],owner:OWNER,group:OWNER,date:new Date(2025,10,2,19,6)})});
+  [['zork1',86838],['zork2',92524],['zork3',87984]].forEach(function(z){sys('/usr/local/share/games/zork/'+z[0]+'.z3','f',{bin:true,size:z[1],story:z[0],owner:OWNER,group:OWNER,date:new Date(2025,10,2,19,6)})});
   sys('/usr/share/games/fortunes','d');
   sys('/usr/share/games/fortunes/fortunes','f',{body:FORTUNES.join('\n%\n').split('\n').concat(['%'])});
   sys('/usr/share/games/fortunes/fortunes.dat','f',{bin:true,size:8+FORTUNES.length*4+16});
