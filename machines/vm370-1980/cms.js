@@ -29,6 +29,7 @@ function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.
 function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
 V.rcs=rcs;
 V.ready=function(rc){
+  if(V.abended){V.abended=false;P.typeLine('CMS');return} /* after an abend or HX: CMS, and no ready message */
   var c=cost(),n=P.now();
   if(V.opt.rdymsg==='SMSG'){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
   P.typeLine((rc?'R('+rcs(rc)+'); ':'R; ')+'T='+c[0].toFixed(2)+'/'+c[1].toFixed(2)+' '+V.hms(n));
@@ -36,7 +37,7 @@ V.ready=function(rc){
 
 /* ---------- a typed line ---------- */
 V.input=function(raw){
-  V.level=0; /* a new line from the terminal: whatever an attention cut short is over */
+  if(!(V.edRead&&V.state==='cms'&&!V.cpMode)){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -48,7 +49,17 @@ V.input=function(raw){
     });
     return;
   }
-  if(V.edRead&&V.state==='cms'&&!V.cpMode){var r=V.edRead;P.queue(function(){r(V.lineEdit(raw,true)[0])});P.queue(function(){if(!V.edRead&&V.state==='cms'&&!V.cpMode){V.ready(0);if(V.stack.length)cmsLine(V.stack.shift())}});return} /* the editor's, after a ^C stopped its typing */
+  if(V.edRead&&V.state==='cms'&&!V.cpMode){ /* the editor's, after a ^C stopped its typing; when the edit ends, the EXECs that ran it carry on */
+    var r=V.edRead,l0=V.lineEdit(raw,true)[0];
+    if(up(l0.trim())==='HX'){V.edRead=null;V.abend();V.execs=[];V.level=0;P.queue(function(){V.ready(0)});return} /* HX, the one way to stop them: CMS, as on Release 6 */
+    P.queue(function(){r(l0)});
+    P.queue(function(){
+      if(V.edRead||V.state!=='cms'||V.cpMode)return;
+      if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
+      P.queue(function(){if(V.state==='cms'&&!V.cpMode&&V.stack.length)cmsLine(V.stack.shift())});
+    });
+    return;
+  }
   V.lineEdit(raw).forEach(function(l){P.queue(function(){logical(l)})});
 };
 /* attention (^C): what is running stops, and what it left in the console stack goes too, so none of it runs later as commands */

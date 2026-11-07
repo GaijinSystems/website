@@ -313,7 +313,8 @@ var DOSCMD={
     var f=spec(a);if(!f)return 19;
     say('Killing '+f.n);
     var x=findFile(f.n);if(!x||f.drive)return 24;
-    disk.files.splice(disk.files.indexOf(x),1);saveDisk();put(13);
+    var i=disk.files.indexOf(x);disk.files.splice(i,1);put(13);
+    if(!saveDisk()&&full()){disk.files.splice(i,0,x);return 18} /* the browser's storage full: the directory write fails */
   },
   RENAME:function(a){
     var m=(a||'').toUpperCase().match(/^(\S+)\s+(?:TO\s+)?(\S+)$/);
@@ -321,7 +322,7 @@ var DOSCMD={
     var f=spec(m[1]),g=spec(m[2]);if(!f||!g)return 19;
     var x=findFile(f.n);if(!x)return 24;
     if(findFile(g.n))return 40;
-    x.n=g.n;saveDisk();
+    x.n=g.n;if(!saveDisk()&&full()){x.n=f.n;return 18} /* the browser's storage full: the directory write fails */
   },
   LIST:function(a,done){
     if(!a)return 10;
@@ -579,7 +580,12 @@ function diskOp(w,done){
     if(e){done('DF');return}
     sleep(500,function(){done(null)});return;
   }
-  if(op==='kill'){if(!x){done('FNF');return}disk.files.splice(disk.files.indexOf(x),1);saveDisk();sleep(300,function(){done(null)});return}
+  if(op==='kill'){
+    if(!x){done('FNF');return}
+    var i=disk.files.indexOf(x);disk.files.splice(i,1);
+    if(!saveDisk()&&full()){disk.files.splice(i,0,x);done('DNR');return} /* the browser's storage full: the directory write fails */
+    sleep(300,function(){done(null)});return;
+  }
   if(!x){done('FNF');return}
   if(x.t!=='B'){done('BFM');return}
   sleep(400,function(){

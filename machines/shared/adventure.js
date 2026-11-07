@@ -1016,10 +1016,11 @@ function Adventure(resume){
     return G&&G.v===FORMAT&&Number.isFinite(G.when)&&Array.isArray(G.n)&&G.n.length===39&&
       Object.keys(T).every(function(k){return Array.isArray(G[k])&&G[k].length===T[k].length});
   }
+  function slot(n){return 'adventure/'+P.fold(n)} /* a save's key: its file name, as this machine's file system has it (VMS and TOPS-20 know no case) */
   function* restore(name){ /* the wait, and the wizard who can waive it */
-    var G=P.saved('adventure/'+name);
+    var G=P.saved(slot(name));
     if(!G){write("adventure: can't open file\n");exit()}
-    if(!fits(G)){rspeak(202);P.save('adventure/'+name,null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
+    if(!fits(G)){rspeak(202);P.save(slot(name),null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
     var delay=Math.floor(Date.now()/60000)-Math.floor(G.when/60000); /* whole clock minutes, as datime() counts */
     if(delay<latency){
       write('This adventure was suspended a mere '+delay+' minute'+(delay===1?'':'s')+' ago.');
@@ -1036,7 +1037,7 @@ function Adventure(resume){
     }
     unpack(G);
     saved=-1;
-    P.save('adventure/'+name,null); /* do not re-use the save */
+    P.save(slot(name),null); /* do not re-use the save */
   }
 
   /* ---------- the main loop; each label is the one in the C, and so in the FORTRAN ---------- */
@@ -1294,7 +1295,7 @@ function Adventure(resume){
             var fname=yield;
             if(fname===null||fname===P.INT||!fname.trim()){at_='l2';break}
             fname=fname.trim();
-            if(!P.save('adventure/'+fname,pack(when))){write("I can't find anywhere to keep it.\n");at_='l2';break}
+            if(!P.save(slot(fname),pack(when))){write("I can't find anywhere to keep it.\n");at_='l2';break}
             write('To resume, say "adventure '+(/\s/.test(fname)?"'"+fname+"'":fname)+'".\n"With these rooms I might now have been familiarly acquainted."\n');
             exit();
             break;

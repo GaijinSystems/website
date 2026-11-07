@@ -198,8 +198,11 @@ function put(f,n,t,d){ /* SAVE and BSAVE: file f, or a new one named n, of type 
   var undo;
   if(f){if(f.l)throw {dos:10};if(f.t!==t)throw {dos:13};var keep=f.d;f.d=d;undo=function(){f.d=keep};if(used()>496){undo();throw {dos:9}}}
   else{f={n:n,t:t,l:false,d:d};addFile(f);undo=function(){disk.files[disk.files.indexOf(f)]=null}}
+  commit(undo,9);
+}
+function commit(undo,code){ /* keeps the disk in the browser; when the browser's storage is full, undo() puts the disk back as it was and DOS says code. A browser that keeps nothing still has this visit's disk */
   if(saveDisk()||!P.save(KEY+'-probe',null))return;
-  undo();saveDisk();throw {dos:9};
+  undo();saveDisk();throw {dos:code};
 }
 function bytesOf(f){
   if(f.t==='A'||f.t==='I')return 2+(f.d||[]).reduce(function(a,L){return a+5+L[1].length},2);
@@ -279,9 +282,10 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
   switch(c){
   case 'INIT':
     return {job:function(done){sleep(2500,function(){
-      disk={v:1,vol:D.opt.V||254,files:[]};
+      var was=disk;disk={v:1,vol:D.opt.V||254,files:[]};
       try{addFile({n:D.name,t:'A',l:false,d:basic.program()})}catch(e){}
-      saveDisk();done();
+      try{commit(function(){disk=was},8)}catch(e){done(e);return} /* the browser's storage full: the format fails, and the old disk stays */
+      done();
     })}};
   case 'LOAD':case 'RUN':case 'CHAIN':
     if(!f)throw {dos:6};
@@ -295,12 +299,12 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
     return {job:function(done){sleep(400,function(){done()})}};
   case 'DELETE':
     if(!f)throw {dos:6};if(f.l)throw {dos:10};
-    disk.files[disk.files.indexOf(f)]=null;saveDisk();return 'ok';
+    x=disk.files.indexOf(f);disk.files[x]=null;commit(function(){disk.files[x]=f},8);return 'ok'; /* the catalog not written: I/O ERROR */
   case 'LOCK':case 'UNLOCK':
-    if(!f)throw {dos:6};f.l=c==='LOCK';saveDisk();return 'ok';
+    if(!f)throw {dos:6};x=f.l;f.l=c==='LOCK';commit(function(){f.l=x},8);return 'ok';
   case 'RENAME':
     if(!f)throw {dos:6};if(!D.name2||!/^[A-Z]/.test(D.name2))throw {dos:11};if(f.l)throw {dos:10};
-    f.n=D.name2.slice(0,30);saveDisk();return 'ok';
+    x=f.n;f.n=D.name2.slice(0,30);commit(function(){f.n=x},8);return 'ok';
   case 'VERIFY':if(!f)throw {dos:6};return 'ok';
   case 'BLOAD':case 'BRUN':
     if(!f)throw {dos:6};if(f.t!=='B')throw {dos:13};
@@ -314,19 +318,22 @@ function dos(line,inProg){ /* a DOS command: null when it is not one; else what 
     put(f,D.name,'B',{a:D.opt.A,b:b});return 'ok';
   case 'OPEN':
     if(f&&f.t!=='T')throw {dos:13};
-    if(!f){f={n:D.name,t:'T',l:false,d:''};addFile(f);saveDisk()}
-    DOS.open[D.name]={f:f,at:0};return 'ok';
-  case 'CLOSE':
+    if(!f){f={n:D.name,t:'T',l:false,d:''};addFile(f);commit(function(){disk.files[disk.files.indexOf(f)]=null},9)}
+    DOS.open[D.name]={f:f,at:0,keep:f.d};return 'ok';
+  case 'CLOSE': /* the text written goes to the disk now; with the browser's storage full, DISK FULL and the files as they were */
+    var shut=D.name?(DOS.open[D.name]?[DOS.open[D.name]]:[]):Object.keys(DOS.open).map(function(k){return DOS.open[k]});
     if(D.name)delete DOS.open[D.name];else DOS.open={};
-    saveDisk();return 'ok';
+    shut=shut.filter(function(o){return o.wrote});
+    if(shut.length)commit(function(){shut.forEach(function(o){o.f.d=o.keep})},9);else saveDisk();
+    return 'ok';
   case 'APPEND':
     if(!f)throw {dos:6};if(f.t!=='T')throw {dos:13};
-    DOS.open[D.name]={f:f,at:(f.d||'').length,append:true};return 'ok';
+    DOS.open[D.name]={f:f,at:(f.d||'').length,append:true,keep:f.d};return 'ok';
   case 'WRITE':case 'READ':case 'POSITION':case 'EXEC':
     if(!f)throw {dos:6};if(f.t!=='T')throw {dos:13};
     if(c==='EXEC'){DOS.exec=(f.d||'').split('\r').filter(function(l,i,a){return i<a.length-1||l});return 'ok'}
     var o=DOS.open[D.name];
-    if(!o){o=DOS.open[D.name]={f:f,at:0}}
+    if(!o){o=DOS.open[D.name]={f:f,at:0,keep:f.d}}
     if(c==='POSITION'){var n=D.opt.R||0,t=f.d||'';while(n-->0){var q=t.indexOf('\r',o.at);if(q<0)throw {dos:5};o.at=q+1}return 'ok'}
     if(c==='WRITE'){if(f.l)throw {dos:10};if(!o.append&&o.at===0&&!o.wrote)f.d='';o.wrote=true;DOS.w=f;return 'ok'}
     DOS.r=o;return 'ok';
