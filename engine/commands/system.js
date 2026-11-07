@@ -135,7 +135,7 @@ P.command({names:['fill'],terminal:true,noHelpFlag:true,help:'bigger screen, on 
 /* effects: the terminal's other switch, on every machine. */
 P.command({names:['effects'],terminal:true,help:'tube effects: auto, full or lite',
   man:{what:'tube effects, full or lite',syn:'effects [ auto | full | lite ]',desc:[
-    'full draws the whole tube: a double glow round the text, the bright band rolling down the glass, the flicker and the swaying cable. lite does less work and looks much the same: one small glow, the band moving in small steps, the flicker and the cable held still. auto, the usual, picks lite when the browser draws without a graphics chip, or draws the warm-up slowly.',
+    'full draws the whole tube: a double glow round the text, the bright band rolling down the glass, the flicker and the swaying cable. lite does less work and looks much the same: one small glow, the band moving in small steps, the flicker held still. auto, the usual, picks lite when the browser draws without a graphics chip, or draws the warm-up slowly.',
     '',
     'with no argument, says which is in use. this browser remembers which you chose.']},
   run:function(a){
