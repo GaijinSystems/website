@@ -1604,7 +1604,7 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
   return L;
 }
 function dosLine(s){ /* cd\  cd..  dir/w: a command name ends at the first of these */
-  return s.replace(/^(\s*)([a-z0-9]+)(?=[\\\/.;])/i,function(m,sp,c){return has(CMDS,c.toLowerCase())?sp+c+' ':m});
+  return s.replace(/^(\s*)([a-z0-9]+)(?=[\\\/.;])/i,function(m,sp,c,o,s){return has(CMDS,c.toLowerCase())&&(s.charAt(o+m.length)!==';'||/^path$/i.test(c))?sp+c+' ':m}); /* a ; straight after a word only for PATH; (no path) */
 }
 function nextPrompt(pre){
   queue(function(){while(KEPT.length)KEPT[KEPT.length-1]();if(pre)pre();if(LOGOUT){LOGOUT=false;return}showPrompt()},true);
