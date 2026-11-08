@@ -1357,8 +1357,9 @@ function andOr(s){ /* [{op,text}], split at && and || outside quotes, `commands`
   return L;
 }
 function skipped(op){return op==='&&'?STATUS!==0:op==='||'&&STATUS===0} /* a && after a failure, a || after a success */
+function isBack(seg){var p=splitCmds(seg);return p.length===2&&!p[1].trim()} /* the & is the split's own, not one in a comment */
 function execSeg(seg){
-  if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)){var back=keep();execSeg(seg.replace(/&\s*$/,''));queue(function(){back();STATUS=0},true);return} /* echo a &: its own process, which nobody waits for */
+  if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)&&isBack(seg)){var back=null;queue(function(){back=keep()});execSeg(seg.replace(/&\s*$/,''));queue(function(){if(back)back();STATUS=0},true);return} /* echo a &: its own process, which nobody waits for */
   var parts=PROFILE.dos||PROFILE.csh&&/^\s*if\s*\(/.test(seg)?null:andOr(seg),dead=false;
   if(!parts||parts.length<2){queue(function(){substitute(seg,function(text){execText(text)})});return}
   parts.forEach(function(p){ /* cd /tmp && echo `pwd`: the pwd runs in /tmp */
@@ -1586,7 +1587,7 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
 }
 var KEPT=[]; /* child shells not yet undone: a ^C can end their program before it calls back() */
 function keep(){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes */
-  var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV);
+  var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV),wds=Object.assign(Object.create(null),CSHW);
   KEPT.push(back);
   return back;
   function back(){
@@ -1594,6 +1595,7 @@ function keep(){ /* a program's child shell starts here: what the shell does to 
     if(find(cwd,true))ST.cwd=cwd;
     Object.keys(ENV).forEach(function(k){if(!has(env,k))delete ENV[k]});Object.assign(ENV,env);
     Object.keys(CSHV).forEach(function(k){if(!has(vars,k))delete CSHV[k]});Object.assign(CSHV,vars);
+    Object.keys(CSHW).forEach(function(k){if(!(k in wds))delete CSHW[k]});Object.assign(CSHW,wds);
   }
 }
 function child(lines){var back=keep(),st=STATUS;runScript(lines);queue(function(){back();STATUS=st},true)} /* one command, as a child process: its status is not the program's */
