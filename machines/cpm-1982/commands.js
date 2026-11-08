@@ -53,9 +53,9 @@ cmd(['type'],'print a file',function(a,raw,w){
   P.say(P.text(n));
 });
 function eraseAll(m){ /* the BDOS stops at the first read-only file: STAT NAME $R/W first */
-  var F=files().filter(m);
-  for(var i=0;i<F.length;i++){var n=P.root.kids[F[i]];if(!n.prot&&!P.mayAlter(n)){P.typeLine('BDOS ERR ON A: FILE R/O');return}}
-  F.forEach(function(k){var n=P.root.kids[k];if(!n.prot)delete P.root.kids[k]});
+  var F=files().filter(m),N=F.map(function(k){return P.root.kids[k]});
+  if(N.some(function(n){return !n.prot&&!P.mayAlter(n)})){P.typeLine('BDOS ERR ON A: FILE R/O');return}
+  F.forEach(function(k,i){if(!N[i].prot)delete P.root.kids[k]});
 }
 cmd(['era'],null,function(a,raw,w){
   if(!w[1]){P.typeLine('ERA?');return}
