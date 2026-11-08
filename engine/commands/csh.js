@@ -73,7 +73,7 @@ builtin(['set'],function(){
   P.status(0);
   if(t)P.typeLine('set: Syntax error.','err');
 });
-builtin(['unset'],function(a){if(!a.length){P.typeLine('unset: Too few arguments.','err');return}a.forEach(function(k){delete P.shvars[k]})});
+builtin(['unset'],function(a){if(!a.length){P.typeLine('unset: Too few arguments.','err');return}a.forEach(function(k){delete P.shvars[k];delete P.shwords[k]})});
 builtin(['setenv'],function(a){
   if(!a.length){P.say(Object.keys(P.env).map(function(k){return k+'='+P.env[k]}));return}
   P.env[a[0]]=a.slice(1).join(' ');
