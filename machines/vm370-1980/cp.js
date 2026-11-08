@@ -492,6 +492,7 @@ CP.BEGIN=function(){
   if(V.state!=='cms'||!V.acc){V.halted();return 0}
   V.cpMode=false;
   if(V.cpReady){V.cpReady=false;V.ready(0)}
+  else V.begin(); /* after #CP: what the virtual machine was doing goes on, with no ready message of its own */
   return 0;
 };
 CP.IPL=function(a){

@@ -439,7 +439,7 @@ function typeLine(text,cls,cb,opt){
       if(to.pipe&&to.pipe.gone){if(!to.broke)pipeBroke(to);if(cb)cb();res();return} /* its reader has gone: this write gets SIGPIPE */
       var l=' '.repeat(opt.indent||0)+(opt.pre||'')+plain(text);
       if(to.open&&to.length)to[to.length-1]+=l;else to.push(l); /* after a line left open (echo -n): this goes on in it */
-      to.open=!!opt.open;
+      to.open=!!opt.open;to.w=(to.w||0)+1; /* w: the writes made to it */
       if(cb)cb();res();return;
     }
     if(glassBusy(job)){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
@@ -511,8 +511,8 @@ function typeLine(text,cls,cb,opt){
 var GL={n:0,bg:0,wait:[]}; /* lines typing on the glass now, how many of them a background job's, and those waiting their turn */
 function glassBusy(job){return job?GL.n:GL.bg} /* a job's line waits for any line, the rest only for a job's */
 function glassNext(){while(GL.wait.length&&!glassBusy(GL.wait[0].job))GL.wait.shift().go()}
-function say(lines){
-  lines.forEach(function(l){var x=lineOf(l);typeLine(x[0],x[1],null,x[2])});
+function say(lines){ /* lines.open: the last one has no newline after it (a file or a pipe that ended without one), so it is left open */
+  lines.forEach(function(l,i){var x=lineOf(l);typeLine(x[0],x[1],null,lines.open&&i===lines.length-1?Object.assign({},x[2],{open:true}):x[2])});
 }
 function charBox(host){ /* the size of ten characters in this element */
   var p=document.createElement('span');p.textContent='0000000000';
@@ -547,7 +547,7 @@ var MODE='shell',JOIN=null,OPEN=null; /* shell | login | password (password inpu
 function showPrompt(p,mode){
   MODE=mode||'shell';OPEN=null; /* what comes after the prompt and what is typed starts a line of its own */
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
-  var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';d.cut=d===JOIN;JOIN=null; /* after the text cut short, when nothing came between */
+  var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';d.cut=d===JOIN&&!!d.attnCut;JOIN=null; /* after the text cut short, when nothing came between; cut: by an attention (ATTN OFF), not an echo -n */
   if(MODE!=='read')HIDE=false;
   bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
   d.appendChild(document.createTextNode(UP(p==null?(RP?PROFILE.rootPrompt:promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
@@ -766,12 +766,12 @@ function input(names,done){ /* the lines a command works on: named files, else i
     names.forEach(function(x){
       var n=find(x);
       if(!n||n.type==='d'||n.prot)PROFILE.bash?gnuOops(x,n):oops('',x,n,CURRENT+": can't open "+x);
-      else L=L.concat(textOf(n));
+      else{var T=textOf(n),J=L.open&&T.length?L.slice(0,-1).concat([L[L.length-1]+T[0]],T.slice(1)):L.concat(T);J.open=T.length?T.open:L.open;L=J} /* cat a b: b goes on in a's last line when a has no newline at its end */
     });
     done(L);
     return;
   }
-  if(STDIN){done(STDIN.splice(0));return} /* it reads the rest: a read after it, or the next round of a read loop, finds nothing */
+  if(STDIN){var R=STDIN.splice(0);R.open=!!STDIN.open&&R.length>0;STDIN.open=false;done(R);return} /* it reads the rest: a read after it, or the next round of a read loop, finds nothing */
   var got=[];
   queue(function(){
     return (function more(){return readLine().then(function(l){if(l===null)return;got.push(l);return more()})})();
@@ -853,7 +853,7 @@ function find(p,exact,locks){ /* node or null; nobody gets through a locked fold
   return n;
 }
 function named(p){return find(p,true,true)} /* what a program opens by its full name: not through a locked folder either */
-function textOf(n){return (body(n)||[]).map(function(l){return plain(lineOf(l)[0])})}
+function textOf(n){var B=body(n)||[],T=B.map(function(l){return plain(lineOf(l)[0])});T.open=!!B.open&&T.length>0;return T} /* open: no newline at its end */
 function isScript(n){return n.type==='f'&&/x/.test(n.mode||'')&&n.body}
 function dirOf(abs){return abs.slice(0,abs.lastIndexOf('/'))||'/'}
 function sys(p,type,o){return put(p,type,Object.assign({owner:'root',date:SD},o))} /* a file of the system's own */
@@ -878,10 +878,11 @@ function writeFile(p,lines,append){ /* false if it cannot be written */
   var abs=norm(p),ex=find(abs,true);
   if(ex&&ex.dev)return !ex.prot; /* /dev/null and friends swallow it */
   if(ex&&(ex.type==='d'||ex.prot||ex.parent.prot)||!canWrite(abs))return false;
-  var L=ex&&append?textOf(ex).concat(lines):lines.slice();
+  var old=ex&&append?textOf(ex):[],L=old.open&&lines.length?old.slice(0,-1).concat([old[old.length-1]+plain(lineOf(lines[0])[0])],lines.slice(1)):old.concat(lines); /* after a last line with no newline, what comes goes on in it */
+  L.open=lines.length?!!lines.open:old.open;
   if(bsize(L)>DISK){ /* what fits goes in, and the rest is lost, the way a full disk did it */
     for(var i=0,n=0;n+lineOf(L[i])[0].length+1<=DISK;i++)n+=lineOf(L[i])[0].length+1;
-    L=L.slice(0,i);
+    L=L.slice(0,i);L.open=false;
     typeLine(PROFILE.diskFull||(PROFILE.dcl?'%SYSTEM-F-EXDISKQUOTA, disk quota exceeded':PROFILE.dos?'Insufficient disk space':
       PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 6/0'),'err'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
   }
@@ -889,7 +890,7 @@ function writeFile(p,lines,append){ /* false if it cannot be written */
   else{ex.body=L;ex.size=0;ex.date=now()}
   return true;
 }
-function bsize(L){return L.reduce(function(n,l){return n+lineOf(l)[0].length+1},0)}
+function bsize(L){return L.reduce(function(n,l){return n+lineOf(l)[0].length+1},0)-(L.open&&L.length?1:0)}
 function body(n){return typeof n.body==='function'?n.body():n.body}
 function fsize(n){
   if(n.type==='d')return 16*(Object.keys(n.kids).length+2);
@@ -1162,6 +1163,7 @@ function aliasOf(cmd){
 }
 var CURRENT='',SOURCE=''; /* SOURCE: the command as typed, $variables and all */
 function runOne(s,words,src){
+  var typed=s; /* the line as typed, blanks and all, for a machine's own fallback (CMS) */
   s=s.trim();
   SOURCE=src===undefined?s:src;
   words=words||s.split(/\s+/);
@@ -1183,7 +1185,7 @@ function runOne(s,words,src){
     CURRENT=name;
     try{f(args,s,words)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   }
-  else if(!(PH.fallback&&PH.fallback(word,s,args)))typeLine(PROFILE.notFound.replace('%s',word),'err');
+  else if(!(PH.fallback&&PH.fallback(word,s,args,typed)))typeLine(PROFILE.notFound.replace('%s',word),'err');
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 var ARGS=[]; /* $0 $1 ... of the script that is running */
@@ -1396,7 +1398,7 @@ function runPipeline(stages){
       if(st.in!==null){
         var n=find(st.in);
         if(!n||n.type==='d'||n.prot){typeLine(PROFILE.bash?'bash: '+st.in+': '+(!n?'No such file or directory':n.prot?'Permission denied':'Is a directory'):st.in+(PROFILE.csh?': No such file or directory':': cannot open'),'err');pipe=[];ok=false;return}
-        pipe=textOf(n);
+        pipe=textOf(n);pipe.from=n; /* from: the file, which wc's widths look at */
       }
       if(st.err!==null&&!writeFile(st.err,[],!!st.errApp)){oopsW('',st.err,st.err+': cannot create');pipe=[];ok=false;return}
       if(st.out!==null&&!writeFile(st.out,[],true)){if(PROFILE.csh&&!PROFILE.perror)typeLine(st.out+': Permission denied','err');else oopsW('',st.out,st.out+': cannot create');pipe=[];ok=false;return}
@@ -1410,7 +1412,7 @@ function runPipeline(stages){
         if(toGlass)SINK=ERRSINK!==GLASS?ERRSINK:null; /* wherever errors go now: sh x 2>e, with echo y >&2 in x */
         else if(sink)SINK=sink;
       }
-      if(sink&&!last&&st.out===null&&!st.closed){sink.cap=PIPEMAX;sink.pipe=newPipe(pipeReader(stages,i+1));sink.fed=0} /* what the next stage reads */
+      if(sink&&!last&&st.out===null&&!st.closed){sink.cap=PIPEMAX;sink.pipe=newPipe(pipeReader(stages,i+1));sink.fed=sink.fedc=0} /* what the next stage reads */
       if(st.e2o&&st.e2oFirst&&st.out!==null)ERRSINK=last?keepSink||GLASS:epipe=[]; /* 2>&1 >f: errors where the output was before >f */
       else if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
       if(pipe)STDIN=pipe;
@@ -2164,22 +2166,23 @@ function runBlock(B){
 }
 function afterLoop(){var was=LOOP;if(was!=='exit'&&was!=='stop')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at */
 function over(was){return was==='break'||was==='exit'||was==='stop'}
-var PIPEMAX=65536,PIPEBUF=4096; /* PIPEMAX: the lines a pipe takes from a loop before the loop's process is ended (memory stays bounded).
+var PIPEMAX=65536,PIPEBUF=4096; /* PIPEMAX: the writes a pipe takes from a loop before the loop's process is ended (memory stays bounded).
    PIPEBUF: the bytes a pipe holds before the writer has to wait for its reader (V7's and 4.3BSD's pipe size), so a reader
    is taken to read once that much waits for it: a short loop is done before head has even started, as it usually is on the real systems */
-function pipeReader(stages,i){ /* what the command at stages[i] does with the pipe into it: {done, take(line)}, or null when it reads all of it.
+function pipeReader(stages,i){ /* what the command at stages[i] does with the pipe into it: {done, take(text, part)}, or null when it reads all of it.
+                                  part: a piece of a line that has no newline yet (echo -n), which a line reader does not count as a line
                                   head -5 or read: they stop reading and exit, and the loop's next write gets SIGPIPE; cat, grep, tr
                                   and tee pass what they read on, and stop once their own pipe's reader has */
   var st=stages[i],w=st&&st.words,gone={done:true,take:function(){}};
   if(!st||st.sub!==undefined||!w.length||markNode(w[0]))return null;
   if(st.in!==null)return gone; /* it reads a file instead */
-  function lines(n,bytes){var r={done:n<=0,take:function(l){if((n-=bytes?l.length+1:1)<=0)r.done=true}};return r}
+  function lines(n,bytes){var r={done:n<=0,take:function(l,part){if((n-=(bytes?l.length:0)+(part?0:1))<=0)r.done=true}};return r}
   if(w[0]==='read')return lines(1);
   if(w[0]==='head'){
     if(!has(CMDS,'head'))return gone; /* V7 has none */
     if(!PH.headArgs)return null;
     var o=PH.headArgs(w.slice(1));
-    return o.err||o.F.some(function(x){return x.f!=='-'||!PROFILE.bash})?gone:o.c!==null?o.c<0?null:lines(o.c,true):o.n<0?null:lines(o.n);
+    return o.err||o.F.some(function(x){return x.f!=='-'||!PROFILE.bash})?gone:o.c!==null?o.c<0?null:lines(o.c,true):o.n<0||o.z?null:lines(o.n); /* -z: its lines end at a NUL */
   }
   var ops=w.slice(1).filter(function(x){return x.charAt(0)!=='-'||x==='-'}),pass,fl,re;
   if(w[0]==='cat'||w[0]==='tee'||w[0]==='tr')pass=function(){return true};
@@ -2191,19 +2194,21 @@ function pipeReader(stages,i){ /* what the command at stages[i] does with the pi
   if(w[0]!=='tee'&&w[0]!=='tr'&&ops.some(function(x){return x!=='-'}))return gone; /* cat f, grep x f: they read their files */
   var down=i<stages.length-1&&st.out===null&&!st.closed&&!st.glass?pipeReader(stages,i+1):null;
   if(!down)return null;
-  var p=newPipe(down),r={done:false,take:function(l){if(pass(l)&&!pipeWrite(p,l))r.done=true}, /* its write after its reader went: SIGPIPE */
+  var p=newPipe(down),buf='',r={done:false,take:function(l,part){ /* its write after its reader went: SIGPIPE */
+      if(re){if(part){buf+=l;return}l=buf+l;buf='';if(!pass(l))return} /* grep looks at whole lines */
+      if(!pipeWrite(p,l,part))r.done=true},
     flush:function(){pipeTake(p);r.done=p.gone}};
   return r;
 }
 function newPipe(r){return r&&{r:r,q:[],n:0,gone:false}}
-function pipeWrite(p,l){ /* false: the reader has gone, and the writer gets SIGPIPE */
+function pipeWrite(p,l,part){ /* false: the reader has gone, and the writer gets SIGPIPE. part: no newline after it yet */
   if(p.gone)return false;
-  p.q.push(l);p.n+=l.length+1;
+  p.q.push([l,part]);p.n+=l.length+(part?0:1);
   if(p.n>=PIPEBUF)pipeTake(p);
   return true;
 }
 function pipeTake(p){ /* the reader reads what waits in the pipe; cat, grep, tr or tee pass it straight on down theirs */
-  for(var k=0;k<p.q.length&&!p.r.done;k++)p.r.take(p.q[k]);
+  for(var k=0;k<p.q.length&&!p.r.done;k++)p.r.take(p.q[k][0],p.q[k][1]);
   if(p.r.flush&&!p.r.done)p.r.flush();
   p.q=[];p.n=0;p.gone=p.r.done;
 }
@@ -2211,8 +2216,12 @@ function pipeBroke(S){S.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true} 
 function pipeFull(){ /* a loop writing to a pipe whose reader has gone: the loop's process dies of SIGPIPE */
   var S=SINK,bad;
   if(!S||!S.cap)return false;
-  bad=S.length>=S.cap;
-  if(S.pipe)for(;!bad&&S.fed<S.length;S.fed++)bad=!pipeWrite(S.pipe,S[S.fed]);
+  bad=S.w>=S.cap;
+  while(S.pipe&&!bad&&S.fed<S.length){ /* each line once; one left open (echo -n) goes in a piece at a time, as it was written */
+    var l=S[S.fed],piece=l.slice(S.fedc);
+    if(S.fed===S.length-1&&S.open){if(piece)bad=!pipeWrite(S.pipe,piece,true);S.fedc=l.length;break}
+    bad=!pipeWrite(S.pipe,piece);S.fed++;S.fedc=0;
+  }
   return bad&&pipeBroke(S);
 }
 function pipeWait(){ /* in a step: the writer waits (sleep, a read from the terminal), so its reader gets to read what is in the pipe now,
@@ -2225,7 +2234,7 @@ function pipeWait(){ /* in a step: the writer waits (sleep, a read from the term
 }
 function passWait(){ /* between rounds of a while loop, so that ^C can reach it; a loop writing into a pipe only now and then */
   var S=SINK;
-  if(S&&S.cap&&S.length!==S.at){S.at=S.length;S.runs=(S.runs||0)+1;if(S.runs%256)return}
+  if(S&&S.cap&&S.w!==S.at){S.at=S.w;S.runs=(S.runs||0)+1;if(S.runs%256)return}
   return sleep(0);
 }
 function round(body,again){ /* a while loop's body, then again() unless it ended in break or exit */
@@ -2673,7 +2682,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 function atCursor(s){var at=cursor.parentNode;if(at)at.insertBefore(document.createTextNode(s),cursor)} /* text just before the cursor, where it is */
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var q=PH.onInterrupt&&!(bufNode&&!READ&&MODE!=='shell')?PH.onInterrupt(!!(READ&&TRAP)):null; /* a machine's own QUIT (Multics): what it shows instead of ^C; true when a program takes the ^C itself */
-  if(q&&typeof q==='object'){if(q.same&&(bufNode||GL.n))JOIN=cursor.parentNode;q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one, at a read or in a line cut short as it typed (VM/370's TERMINAL ATTN OFF) */
+  if(q&&typeof q==='object'){if(q.same&&(bufNode||GL.n)){JOIN=cursor.parentNode;JOIN.attnCut=true}q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one, at a read or in a line cut short as it typed (VM/370's TERMINAL ATTN OFF) */
   atCursor(q==null?'^C':q);
   HOLD=false; /* and, as the tty did, undo a ^S: nothing waits for a ^Q that will not come */
   if(READ&&TRAP){finishRead(INT);return}
