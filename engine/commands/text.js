@@ -142,8 +142,9 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       if(bsd&&!/^[lwc]/.test(A[0].slice(1))){P.typeLine('Usage: wc [-lwc] [files]','err');P.status(1);return}
       wd=A.shift().slice(1);if(!bsd)break;
     }
-    var dirCounts=function(d){ /* V7's fopen and getc read a directory as they read any file (4.3BSD's read() and IRIX 4's EFS do too): its raw
-                                   entries, a 2-byte inode (ls -i's) and a 14-byte name each, ., .. and the rest, counted as wc.c counts bytes */
+    var dirCounts=function(d){ /* V7's fopen and getc read a directory as they read any file (4.3BSD's read() and IRIX 4's EFS do too): the bytes of
+                                   its raw entries, ., .. and the rest, counted as wc.c counts bytes; 16 to an entry, V7's layout (a 2-byte inode,
+                                   ls -i's, and a 14-byte name); 4.3BSD's and IRIX's real layouts differ */
       var c={l:0,w:0,c:0},tok=false;
       ['.','..'].concat(Object.keys(d.kids)).forEach(function(nm){
         var ino=P.hash(nm,9973)+2,b=[ino&255,ino>>8&255];
