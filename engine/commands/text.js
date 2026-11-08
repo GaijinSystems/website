@@ -51,6 +51,7 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
   var n=P.find(a[0],true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true);
+  if(n&&!n.prot&&there&&there!==n&&there.type!=='d'&&(there.prot||!P.mayAlter(there))&&P.canWrite(from)){P.typeLine('mv: cannot unlink '+a[1],'err');return} /* a locked file, or someone else's, in the way */
   if(!n||n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
   if(there&&there!==n&&(there.prot||there.dev)){P.typeLine('mv: cannot unlink '+a[1],'err');return}
@@ -344,6 +345,19 @@ cmd('true','succeed','true','does nothing, successfully.',function(){P.status(0)
 cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1)});
 cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine(P.profile.csh?'/dev/tty02':'/dev/tty0')});
 cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.',function(a){
+  var T=P.teletype&&P.teletype();
+  if(T){ /* V7 on a Teletype Model 33: the modes getty set for it (ANYP ECHO CRMOD XTABS LCASE CR1), told as V7's stty told them; lcase and -lcase switch the case mapping */
+    if(!a.length){P.say(['speed '+T.speed+' baud',"erase = '#'; kill = '@'",'even odd -nl echo '+(T.lcase?'lcase ':'')+'-tabs cr1']);return}
+    var V7=/^(0|50|75|110|134|134\.5|150|200|300|600|1200|1800|2400|4800|9600|exta|extb|even|-even|odd|-odd|raw|-raw|cooked|nl|-nl|echo|-echo|tabs|-tabs|cbreak|-cbreak|cr[0-3]|tab[0-2]|nl[0-3]|ff[01]|bs[01]|33|tty33|37|tty37|05|vt05|tn|tn300|ti|ti700|tek|ek|gspeed|hup)$/;
+    for(var i=0;i<a.length;i++){
+      if(/^(lcase|LCASE)$/.test(a[i]))T.lcase=true;
+      else if(/^-(lcase|LCASE)$/.test(a[i]))T.lcase=false;
+      else if(/^(erase|kill)$/.test(a[i]))i++;
+      else if(!V7.test(a[i]))P.typeLine('unknown mode: '+a[i],'err');
+      else if(/^[\d.]+$/.test(a[i]))T.speed=Math.floor(+a[i]); /* the line's speed; the teletype still prints ten characters a second */
+    }
+    return;
+  }
   if(!a.length){
     if(P.profile.perror){P.typeLine('new tty, speed '+(P.baud()||9600)+' baud; -tabs ff1 crt');return}
     P.typeLine('speed '+(P.baud()||9600)+' baud');

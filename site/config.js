@@ -17,6 +17,7 @@ uppercase: no
 sound:     on
 source:    https://github.com/GaijinSystems/phosphor
 protected: photo01.pic, photo02.pic, photo03.pic, secrets, .trash/core, .old/terminal.rom
+# persist:  no
 
 cord turns:     7
 cord desktop:   13
