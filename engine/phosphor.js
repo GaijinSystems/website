@@ -1113,7 +1113,7 @@ function runOne(s,words,src){
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 var ARGS=[]; /* $0 $1 ... of the script that is running */
-var VAR=PROFILE.csh?'\\$(\\?\\w+|#\\w+|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)',VAR_AT=new RegExp('^'+VAR),VAR_ALL=new RegExp(VAR,'g'); /* csh also has $?name: is it set */
+var VAR=PROFILE.csh?'\\$(\\?\\w+|#\\w+|\\w+\\[\\d+\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)',VAR_AT=new RegExp('^'+VAR),VAR_ALL=new RegExp(VAR,'g'); /* csh also has $?name: is it set */
 function varsIn(t){return t.replace(VAR_ALL,function(m,k){return envOf(k)})}
 function envOf(k){
   if(k.charAt(0)==='{')return envOf(k.slice(1,-1)); /* ${name} is $name */
@@ -1125,6 +1125,8 @@ function envOf(k){
   if(k==='#')return String(Math.max(0,ARGS.length-1));
   if(k.charAt(0)==='#')return String((k==='#argv'?ARGS.slice(1).join(' '):envOf(k.slice(1))).split(/\s+/).filter(Boolean).length); /* csh: $#name, how many words */
   if(k==='*')return ARGS.slice(1).join(' ');
+  var sub=/^(\w+)\[(\d+)\]$/.exec(k); /* csh: $z[2], the second word */
+  if(sub){var L=envOf(sub[1]).split(/\s+/).filter(Boolean);if(sub[2]<1||sub[2]>L.length)throw {undefinedVar:k,msg:'Subscript out of range.'};return L[sub[2]-1]}
   if(/^\d+$/.test(k))return ARGS[+k]||'';
   if(k==='$')return '23';
   if(k==='HOME')return ST.home;
@@ -1176,7 +1178,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
   function endWord(){
     if(w===null)return;
-    if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='n<'){}else if(redir==='n>'||redir==='n>>')st.mk.push({f:w,app:redir==='n>>'});else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>'}else{st.out=w;st.app=redir==='>>';st.glass=false}redir=null}
+    if(redir){w=unguard(w);if(redir==='<')st.in=w;else if(redir==='n<'){}else if(redir==='n>'||redir==='n>>')st.mk.push({f:w,app:redir==='n>>'});else if(redir==='2>'||redir==='2>>'){st.err=w;st.errApp=redir==='2>>';st.e2o=false;if(st.glass)st.glassOld=true}else{st.out=w;st.app=redir==='>>';st.glass=false}redir=null}
     else if(quoted||PROFILE.dos)st.words.push(unguard(w));
     else w.split(fromVar?/\s+/:/\0/).filter(function(x){return (x||!fromVar)&&!(x.indexOf('\uE010')>=0&&unguard(x)==='')}).forEach(function(x){ /* empty backtick output is no word at all */
       x=unguard(x);
@@ -1211,13 +1213,13 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       if((PROFILE.csh||PROFILE.bash)&&two==='|&'){st.both=true;i++} /* |&: the errors go down the pipe too */
       endStage('|');piped=true;i++;continue;
     }
-    if(ch==='&'){i++;continue} /* no background here: it just runs */
+    if(ch==='&'){if(blank())throw {syntax:'&'};endList(null);i++;continue} /* no background here: it just runs, and what follows is a command of its own */
     if(ch==='>'||ch==='<'){
       var fd=!PROFILE.csh&&w!==null&&!quoted&&!fromVar&&/^\d$/.test(w)?w:null; /* sh: 2> names a file descriptor, not an argument. csh has no such thing */
       if(fd!==null){w=null;st.raw=st.raw.slice(0,-1);st.src=st.src.slice(0,-1)}
       endWord();
       if(two==='>&'&&!PROFILE.csh&&/^[\d-](?=$|[\s|&<>])/.test(s.slice(i+2))){var to=s.charAt(i+2),one=fd===null||fd==='1';
-        if(fd==='2'&&to==='1'){st.e2o=true;st.e2oFirst=st.out===null}else if(to==='2'&&one&&!st.e2o)st.glass=true;else if(to==='-'&&one)st.closed=true;else if(to==='-'&&fd==='2')st.errClosed=true;
+        if(fd==='2'&&to==='1'){st.e2o=true;st.e2oFirst=st.out===null}else if(to==='2'&&one&&!st.e2o){st.glass=true;st.glassOld=false}else if(to==='-'&&one)st.closed=true;else if(to==='-'&&fd==='2')st.errClosed=true;
         i+=3;continue} /* 2>&1, 2>&-: errors are on the glass either way. >&2 sends the output there too */
       if(two==='>&'){redir='>';if(PROFILE.csh)st.both=true;i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file, errors and all */
       redir=two==='>>'?'>>':ch;
@@ -1272,8 +1274,8 @@ function runPipeline(stages){
       if(st.out!==null&&!st.app)writeFile(st.out,[],false);
       for(var k=0;k<st.mk.length;k++)if(!writeFile(st.mk[k].f,[],st.mk[k].app)){oopsW('',st.mk[k].f,st.mk[k].f+': cannot create');pipe=[];ok=false;return}
       if(st.err!==null||st.errClosed)errs=[];
-      var toGlass=st.glass&&!errs;
-      if(st.glass&&errs)SINK=errs; /* >&2 when 2 is a file */
+      var toGlass=st.glass&&(!errs||st.glassOld); /* >&2 2>f: the >&2 took the old 2 */
+      if(st.glass&&!toGlass)SINK=errs; /* >&2 when 2 is a file */
       else{
         if(st.closed||(!last||st.out!==null)&&!toGlass)sink=[];
         if(toGlass)SINK=ERRSINK!==GLASS?ERRSINK:null; /* wherever errors go now: sh x 2>e, with echo y >&2 in x */
@@ -1364,7 +1366,7 @@ function execLine(line){ /* a whole command line: aliases, and any number of com
 function parsed(seg){ /* parseList, or null once it has said what was wrong */
   try{return parseList(seg)}
   catch(e){
-    if(e&&e.undefinedVar)typeLine(e.undefinedVar+': Undefined variable.','err');
+    if(e&&e.undefinedVar)typeLine(e.msg||e.undefinedVar+': Undefined variable.','err');
     else if(e===NOMATCH)typeLine('No match.','err');
     else if(e&&e.syntax)typeLine(syntaxError(e.syntax,e.redir),'err');
     else throw e;
@@ -1388,10 +1390,24 @@ function ifAfter(seg){ /* where && or || is followed by csh's if ( ), outside qu
   }
   return null;
 }
+function bareOp(s){ /* a < > | or & outside quotes and ( ), which csh's lexer takes for a redirection, pipe or & */
+  var depth=0,q=null;
+  for(var i=0;i<s.length;i++){
+    var c=s.charAt(i);
+    if(q){if(c===q)q=null}
+    else if(c==='\\')i++;
+    else if(c==='"'||c==="'")q=c;
+    else if(c==='(')depth++;
+    else if(c===')')depth=Math.max(0,depth-1);
+    else if(/^(<<|>>)=/.test(s.substr(i,3)))i+=2; /* @ x <<= 1: left to @ to say it is a syntax error */
+    else if(!depth&&/[<>|&]/.test(c))return true;
+  }
+  return false;
+}
 function execText(seg,failed){ /* failed: told when the line could not be read, which ends the rest of it */
   queue(function(){
     if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg.replace(/^\s*if\s*\(/,'if ('));return} /* its ( ) comes before any < or > */
-    if(PROFILE.csh&&/^\s*@\s*[A-Za-z_]/.test(seg)){if(!LOGOUT)runOne(seg);return} /* @ x = 2 * 3: no wildcards, and ( 2 > 1 ) is no redirection */
+    if(PROFILE.csh&&/^\s*@\s*[A-Za-z_]/.test(seg)&&!bareOp(seg)){if(!LOGOUT)runOne(seg);return} /* @ x = 2 * 3: no wildcards, and ( 2 > 1 ) is no redirection */
     var k=PROFILE.csh&&ifAfter(seg);
     if(k){
       if(!parsed(seg.slice(0,k.at))){if(failed)failed();return}
@@ -1418,7 +1434,7 @@ function statements(lines){
   var S=[];
   lines.forEach(function(l){
     splitCmds(l).forEach(function(seg){
-      var t=seg.trim(),m=t.match(/^(do|then|else)\s+(.*)$/);
+      var t=seg.trim(),m=t.match(/^(do|then|else)\s+([\s\S]*)$/);
       if(m){S.push(m[1]);S.push(m[2])}else S.push(t);
     });
   });
@@ -1448,7 +1464,7 @@ function parseTree(lines){
       i++;
       if(!t)continue;
       if(w==='for'){
-        m=t.match(/^for\s+(\w+)(?:\s+in\s*(.*))?$/);
+        m=t.match(/^for\s+(\w+)(?:\s+in\s*([\s\S]*))?$/);
         if(!m)throw new Error('syntax error');
         expect('do');
         var body=block(['done']);expect('done');
@@ -1462,7 +1478,7 @@ function parseTree(lines){
       }
       else if(w==='if'&&!(PROFILE.csh&&/^if\s*\(/.test(t))){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())} /* csh's one-line if is a command */
       else if(w==='case'){
-        m=t.match(/^case\s+(\S+)\s+in(?:\s+(.*))?$/);
+        m=t.match(/^case\s+(\S+)\s+in(?:\s+([\s\S]*))?$/);
         if(!m)throw new Error('syntax error');
         if(m[2])S.splice(i,0,m[2]);
         var arms=[];
@@ -1470,7 +1486,7 @@ function parseTree(lines){
           while(i<S.length&&!S[i])i++;
           if(i>=S.length)throw MORE;
           if(firstWord(S[i])==='esac'){i++;break}
-          var a=S[i].match(/^\(?([^)]*)\)\s*(.*)$/);
+          var a=S[i].match(/^\(?([^)]*)\)\s*([\s\S]*)$/);
           if(!a)throw new Error('syntax error');
           S[i]=a[2];
           arms.push({pats:a[1].split('|').map(function(x){return x.trim()}),body:block(['','esac'])});
@@ -1478,7 +1494,7 @@ function parseTree(lines){
         out.push({k:'case',word:m[1],arms:arms});
       }
       else if(w==='foreach'){
-        m=t.match(/^foreach\s+(\w+)\s*\((.*)\)$/);
+        m=t.match(/^foreach\s+(\w+)\s*\(([\s\S]*)\)$/);
         if(!m)throw new Error('foreach: Words not parenthesized.');
         var b3=block(['end']);expect('end');
         out.push({k:'for',v:m[1],words:m[2],body:b3});
@@ -1583,7 +1599,11 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   try{tree=parseTree(lines)}
   catch(e){
     if(e!==MORE){typeLine(e.message,'err');return}
-    ask(PROFILE.csh?'? ':'> ',function(l){if(l===null)return;runCompound(lines.concat(l))});
+    ask(PROFILE.csh?'? ':'> ',function(l){
+      if(l===null)return;
+      var n=lines.length-1; /* do echo "g, then h": one line, with the newline in the quote */
+      runCompound(!PROFILE.csh&&openQuote(lines[n])?lines.slice(0,n).concat(lines[n]+'\n'+l):lines.concat(l));
+    });
     return;
   }
   runBlock(tree);

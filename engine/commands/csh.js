@@ -47,7 +47,7 @@ function listVars(){ /* set, or @, on its own */
   P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
 }
 function said(e,as){ /* says an error csh reports: Undefined variable, or one of exp()'s with as (if) named in place of @. Anything else is thrown on */
-  if(e&&e.undefinedVar)P.typeLine(e.undefinedVar+': Undefined variable.','err');
+  if(e&&e.undefinedVar)P.typeLine(e.msg||e.undefinedVar+': Undefined variable.','err');
   else if(e&&e.csh)P.typeLine((as?e.csh.replace(/^@/,as):e.csh)+'.','err');
   else throw e;
 }
@@ -56,7 +56,10 @@ builtin(['set'],function(){
   var t=P.source().replace(/^\s*set\s*/,''),m;
   if(!t){listVars();return}
   try{
-    while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
+    while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){
+      P.shvars[m[1]]=m[2]&&m[2].charAt(0)==='('?value(m[2].slice(1,-1)).trim().replace(/\s+/g,' '):value(m[2]||''); /* ( 1 2 3 ): its words */
+      t=t.slice(m[0].length);
+    }
   }catch(e){said(e);return}
   P.status(0);
   if(t)P.typeLine('set: Syntax error.','err');
@@ -178,10 +181,13 @@ function cexp(W,k){ /* 4.3BSD csh's exp() over words W from k: {n, k after it}. 
 function truth(e){ /* true, false, or null when it makes no sense */
   e=e.trim();
   var o=operator(e,'||')||operator(e,'&&'),q;
-  if(o){ /* both sides, as csh substitutes the whole line before it evaluates any of it */
-    var x=truth(o[0]),y=truth(o[2]);
-    if(x===null||y===null)return null;
-    return o[1]==='||'?x||y:x&&y;
+  if(o){ /* both sides are read, but once the left decides, the right is not worked out: 0 && 1 / 0 is no Divide by 0 */
+    var x=truth(o[0]),y,decided;
+    if(x===null)return null;
+    decided=o[1]==='||'?x:!x;
+    try{y=truth(o[2])}catch(e){if(!decided||!e||!/^(Divide|Mod) by 0$/.test(e.csh))throw e}
+    if(y===null)return null;
+    return decided?x:y;
   }
   if(e.charAt(0)==='('&&closing(e,1)===e.length-1)return truth(e.slice(1,-1));
   o=operator(e);
@@ -225,7 +231,11 @@ builtin(['@'],function(){ /* @ name = expr, @ name op= expr, @ name++ (4.3BSD's 
     return String(r.n);
   }
   try{
-    var W=value(P.source().replace(/^\s*@/,'')).match(/&&|\|\||<<|>>|[&|<>()]|[^\s&|<>()]+/g)||[]; /* < > & | ( ) are words of their own, as csh's lexer makes them */
+    var W=[]; /* < > & | ( ) are words of their own, as csh's lexer makes them; a quoted word stays one word, "1 + 2" and all */
+    (P.source().replace(/^\s*@/,'').match(/(?:"[^"]*"|'[^']*'|\\.|[^\s"'\\&|<>()])+|&&|\|\||<<|>>|[&|<>()]/g)||[]).forEach(function(x){
+      if(/["']/.test(x.replace(/\\./g,'')))W.push(value(x));
+      else W=W.concat(value(x).match(/&&|\|\||<<|>>|[&|<>()]|[^\s&|<>()]+/g)||[]);
+    });
     if(!W.length){listVars();return}
     var v=0,p=W[v++];
     do{
