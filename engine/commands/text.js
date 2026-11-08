@@ -90,7 +90,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
 });
 
 cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints the lines that match. -v the lines that do not, -c only how many, -n with line numbers, -i ignoring case.',function(a,raw,words){
-  var w=words.slice(1),fl=flags(w),rest=operands(w),re;
+  var w=words.slice(1),fl=flags(w),rest=w.filter(function(x){return x.charAt(0)!=='-'||x==='-'&&P.profile.bash}),re; /* GNU's - : its input */
   if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
   var gnu=P.profile.bash,only=gnu&&/o/.test(fl),pat=gnu&&/F/.test(fl)?rest[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):rest[0]; /* GNU's -F: the pattern as it is; -o: just what matched */
   try{re=new RegExp(pat,/i/.test(fl)?'i':'')}catch(e){P.typeLine('grep: bad pattern '+rest[0],'err');return}
@@ -118,11 +118,14 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
     return n;
   }
   if(!F.length){P.input([],function(L){P.status(scan(L)?0:1)});return}
-  for(var k=0;k<F.length;k++){
-    var x=F[k],fx=P.fold(x),nd=P.find(fx);
-    if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([fx],function(){});bad=true;if(v7)break;continue}
-    if(scan(P.text(nd),x)&&quiet&&gnu)break;
-  }
+  var stop=false;
+  F.forEach(function(x){P.queue(function(){ /* in turn: GNU's - may wait for the keyboard */
+    if(stop)return;
+    if(gnu&&x==='-'){P.input([],function(L){if(scan(L,'(standard input)')&&quiet)stop=true});return}
+    var fx=P.fold(x),nd=P.find(fx);
+    if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([fx],function(){});bad=true;if(v7)stop=true;return}
+    if(scan(P.text(nd),x)&&quiet&&gnu)stop=true;
+  })});
   P.queue(function(){P.status(bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
@@ -139,13 +142,23 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       if(bsd&&!/^[lwc]/.test(A[0].slice(1))){P.typeLine('Usage: wc [-lwc] [files]','err');P.status(1);return}
       wd=A.shift().slice(1);if(!bsd)break;
     }
+    var dirCounts=function(d){ /* V7's fopen and getc read a directory as they read any file (4.3BSD's read() and IRIX 4's EFS do too): its raw
+                                   entries, a 2-byte inode (ls -i's) and a 14-byte name each, ., .. and the rest, counted as wc.c counts bytes */
+      var c={l:0,w:0,c:0},tok=false;
+      ['.','..'].concat(Object.keys(d.kids)).forEach(function(nm){
+        var ino=P.hash(nm,9973)+2,b=[ino&255,ino>>8&255];
+        for(var i=0;i<14;i++)b.push(i<nm.length?nm.charCodeAt(i)&255:0);
+        b.forEach(function(x){c.c++;if(x>32&&x<127){if(!tok)c.w++;tok=true;return}if(x===10)c.l++;else if(x!==32&&x!==9)return;tok=false});
+      });
+      return c;
+    };
     var col=function(k,n){return bsd?' '+String(n).padStart(7):String(n).padStart(7)+(v7&&k==='w'?' ':'')};
     var put=function(c,name){var o='';for(var i=0;i<wd.length;i++){var k=wd.charAt(i);if(c[k]!==undefined)o+=col(k,c[k])}P.typeLine(o+(name!==undefined?' '+name:''))};
     if(!A.length){P.input([],function(L){put(counts(L))});return}
     A.forEach(function(x){P.queue(function(){
       var n=P.find(x),c;
       if(!n||n.prot){P.input([x],function(){});return} /* it says it cannot open it, and goes on with the next */
-      if(n.type==='d'){P.input([x],function(){});c={l:0,w:0,c:0}}else c=counts(P.text(n));
+      c=n.type==='d'?dirCounts(n):counts(P.text(n));
       put(c,x);T.l+=c.l;T.w+=c.w;T.c+=c.c;
     })});
     if(A.length>1)P.queue(function(){put(T,'total')});
@@ -346,16 +359,25 @@ cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1
 cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine(P.profile.csh?'/dev/tty02':'/dev/tty0')});
 cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.',function(a){
   var T=P.teletype&&P.teletype();
-  if(T){ /* V7 on a Teletype Model 33: the modes getty set for it (ANYP ECHO CRMOD XTABS LCASE CR1), told as V7's stty told them; lcase and -lcase switch the case mapping */
-    if(!a.length){P.say(['speed '+T.speed+' baud',"erase = '#'; kill = '@'",'even odd -nl echo '+(T.lcase?'lcase ':'')+'-tabs cr1']);return}
-    var V7=/^(0|50|75|110|134|134\.5|150|200|300|600|1200|1800|2400|4800|9600|exta|extb|even|-even|odd|-odd|raw|-raw|cooked|nl|-nl|echo|-echo|tabs|-tabs|cbreak|-cbreak|cr[0-3]|tab[0-2]|nl[0-3]|ff[01]|bs[01]|33|tty33|37|tty37|05|vt05|tn|tn300|ti|ti700|tek|ek|gspeed|hup)$/;
+  if(T){ /* V7 on a Teletype Model 33: the modes getty set for it (ANYP ECHO CRMOD XTABS LCASE CR1), told as V7's stty told them;
+            lcase, echo, raw, cbreak, erase, kill and ek change the line; speed 0 hangs it up, which logs out */
+    var shown=function(c){return c<' '?'^'+String.fromCharCode(64+c.charCodeAt(0)):c}; /* a control character as stty shows it: ^H */
+    if(!a.length){P.say(['speed '+T.speed+' baud',"erase = '"+shown(T.erase)+"'; kill = '"+shown(T.kill)+"'",'even odd '+(T.raw?'raw ':'')+'-nl '+(T.echo?'echo ':'')+(T.lcase?'lcase ':'')+'-tabs '+(T.cbreak?'cbreak ':'')+'cr1']);return}
+    var V7=/^(0|50|75|110|134|134\.5|150|200|300|600|1200|1800|2400|4800|9600|exta|extb|even|-even|odd|-odd|raw|-raw|cooked|nl|-nl|echo|-echo|tabs|-tabs|cbreak|-cbreak|cr[0-3]|tab[0-2]|nl[0-3]|ff[01]|bs[01]|33|tty33|37|tty37|05|vt05|tn|tn300|ti|ti700|tek|ek|gspeed|hup)$/,hup=false;
     for(var i=0;i<a.length;i++){
-      if(/^(lcase|LCASE)$/.test(a[i]))T.lcase=true;
-      else if(/^-(lcase|LCASE)$/.test(a[i]))T.lcase=false;
-      else if(/^(erase|kill)$/.test(a[i]))i++;
-      else if(!V7.test(a[i]))P.typeLine('unknown mode: '+a[i],'err');
-      else if(/^[\d.]+$/.test(a[i]))T.speed=Math.floor(+a[i]); /* the line's speed; the teletype still prints ten characters a second */
+      var m=a[i];
+      if(/^(lcase|LCASE)$/.test(m))T.lcase=true;
+      else if(/^-(lcase|LCASE)$/.test(m))T.lcase=false;
+      else if(/^(erase|kill)$/.test(m)){var c=a[++i];if(c)T[m]=c.charAt(0)==='^'&&c.length>1?String.fromCharCode(c.charCodeAt(1)&31):c.charAt(0)} /* stty erase ^h: a control character */
+      else if(!V7.test(m))P.typeLine('unknown mode: '+m,'err');
+      else if(m==='ek'){T.erase='#';T.kill='@'}
+      else if(m==='echo'||m==='-echo')T.echo=m==='echo';
+      else if(m==='raw'||m==='-raw'||m==='cooked')T.raw=m==='raw';
+      else if(m==='cbreak'||m==='-cbreak')T.cbreak=m==='cbreak';
+      else if(m==='0')hup=true; /* no speed: the line drops, and with it the login */
+      else if(/^[\d.]+$/.test(m))T.speed=Math.floor(+m); /* the line's speed; the teletype still prints ten characters a second */
     }
+    if(hup)P.logout();
     return;
   }
   if(!a.length){

@@ -99,10 +99,16 @@ V.carryOn=function(){
   if(V.execs.length)V.rc=0; /* a command at the terminal keeps its own */
   V.flush();
   V.execs.slice().reverse().forEach(function(S){
-    P.queue(function(){if(S.waiting)after(S);run(S)});
+    P.queue(function(){carry(S)});
     P.queue(function(){done(S)});
   });
 };
+function carry(S){ /* an EXEC going on: a command it had come to that the attention kept from starting runs now */
+  var C=S.todo;
+  if(!C){if(S.waiting)after(S);run(S);return}
+  P.queue(function(){S.todo=null;V.rc=V.execCommand(C,S)||0});
+  P.queue(function(){after(S);run(S)});
+}
 function setArgs(S,args){
   S.args=args.slice(0,30).map(function(a){return a==='%'?'':a});
   S.vars['&INDEX']=String(S.args.length); /* as the arguments were given: &5 = X later does not change it (so on Release 6) */
@@ -260,8 +266,8 @@ function stmt(S,raw){
 function command(S,C){
   var line=C.join(' ');
   if(S.control==='CMS'||S.control==='ALL')out((S.time?V.hms(P.now())+' ':'')+line);
-  S.waiting=true;
-  P.queue(function(){V.rc=V.execCommand(C,S)||0});
+  S.waiting=true;S.todo=C;
+  P.queue(function(){S.todo=null;V.rc=V.execCommand(C,S)||0});
   P.queue(function(){after(S)});
   return 'wait';
 }

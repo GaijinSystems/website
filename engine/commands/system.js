@@ -156,7 +156,7 @@ P.command({names:['effects'],terminal:true,help:'tube effects: auto, full or lit
 P.command({names:['teletype'],terminal:true,help:'print on a teletype: on or off',
   enabled:function(p){return !!p.teletype},
   man:{what:'use a teletype model 33 instead of the screen',syn:'teletype [ on | off ]',desc:[
-    'on prints everything on a teletype model 33, as the machine\'s console was in 1979: ten characters a second, capitals only, with its clatter and its bell. off goes back to the screen.',
+    'on prints everything on a teletype model 33, as many pdp-11 consoles were in 1979: ten characters a second, capitals only, with its clatter and its bell. off goes back to the screen.',
     '',
     'with no argument, says which is in use. this browser remembers which you chose.']},
   run:function(a){
@@ -219,7 +219,7 @@ P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<
 
 P.command({names:['rm'],path:'/bin',
   man:{what:'remove files',syn:'rm [ -r ] file ...',desc:[
-    'removes each file named. -r also removes folders and everything in them. you can only remove what is in your own home folder or in /tmp, and only until the terminal is switched off: a reload puts it all back.']},
+    'removes each file named. -r also removes folders and everything in them. you can only remove your own files, in your own home folder or in /tmp. unless the site says otherwise, what you remove stays removed at your next visit in this browser; /tmp starts empty.']},
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
     if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}

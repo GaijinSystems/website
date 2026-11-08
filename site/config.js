@@ -15,6 +15,8 @@ title:     Gaijin Systems
 speed:     1.25
 uppercase: no
 sound:     on
+# the V7 machine's teletype command (a Teletype Model 33; off for each visitor until they turn it on)
+teletype:  yes
 source:    https://github.com/GaijinSystems/phosphor
 protected: photo01.pic, photo02.pic, photo03.pic, secrets, .trash/core, .old/terminal.rom
 # persist:  no
