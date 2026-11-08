@@ -544,7 +544,7 @@ function showPrompt(p,mode){
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
   var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';JOIN=null; /* after the text cut short, when nothing came between */
   if(MODE!=='read')HIDE=false;
-  BUFAT=0;bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
+  bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
   d.appendChild(document.createTextNode(UP(p==null?(RP?PROFILE.rootPrompt:promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
@@ -576,7 +576,7 @@ function readKey(p,trap){ /* one keypress, no return needed. Call it from inside
 }
 /* What has the terminal now, a read or a full screen: ^Z puts it aside with its job (hide) and fg gives it back (show); a kill ends it */
 var TTYH=null;
-function hold(){var h={owner:owner()||FGJOB||FGP};TTYH=h;return h} /* whose it is: called from a step, or in a promise after one (input's reads), the foreground's */
+function hold(){var h={owner:owner()||FGJOB||FGP};TTYH=h;return h} /* whose it is: the step's job or foreground pipeline, else (in a promise after a step, as input's reads are) the foreground job's */
 function letGo(h){if(TTYH===h)TTYH=null} /* done with the terminal */
 function owns(job,h){return !!h&&!!h.owner&&jobOf(h.owner)===job}
 var HIDE=false,READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a line from the keyboard */
@@ -1400,7 +1400,7 @@ function runPipeline(stages){
         if(toGlass)SINK=ERRSINK!==GLASS?ERRSINK:null; /* wherever errors go now: sh x 2>e, with echo y >&2 in x */
         else if(sink)SINK=sink;
       }
-      if(sink&&!last&&st.out===null&&!st.closed)sink.cap=pipeCap(stages[i+1].words); /* what the next stage reads */
+      if(sink&&!last&&st.out===null&&!st.closed){sink.cap=PIPEMAX;sink.pipe=newPipe(pipeReader(stages,i+1));sink.fed=0} /* what the next stage reads */
       if(st.e2o&&st.e2oFirst&&st.out!==null)ERRSINK=last?keepSink||GLASS:epipe=[]; /* 2>&1 >f: errors where the output was before >f */
       else if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
       if(pipe)STDIN=pipe;
@@ -1533,7 +1533,12 @@ function jobWords(c){ /* a command as the job table shows it: ( list ) spaced ou
   var k=markNode(c);
   if(k)return compText(k.node,'').join('\n')+c.slice(k.len); /* a loop as bash prints it, then | cat */
   var m=/^\(([\s\S]*)\)$/.exec(c);
-  return m?'( '+splitCmds(m[1]).map(oneLine).filter(Boolean).map(subWords).join('; ')+' )':c;
+  if(!m)return c;
+  var L=splitCmds(m[1]).map(oneLine).filter(Boolean).map(subWords);
+  return '( '+L.map(function(x,i){ /* bash: a & b; csh's padd leaves the & out: a; b */
+    var bg=/&$/.test(x);if(PROFILE.csh&&bg)x=x.replace(/\s*&$/,'');
+    return i<L.length-1?x+(bg&&!PROFILE.csh?' ':'; '):x;
+  }).join('')+' )';
 }
 function subWords(t){ /* a command of a ( list ): its own ( ) spaced out too, as the printers do all the way down */
   return andOr(t).map(function(p){return (p.op?p.op+' ':'')+pipeRaw(p.text).map(function(x){return jobWords(oneLine(x))}).join(' | ')}).join(' ');
@@ -1877,7 +1882,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     queue(function(){ran=true;return waitJobs(J)});
     queue(function(){
       if(!ran)return; /* ^C before it began */
-      if(!J.every(function(j){return j.over})){if(v7w&&g!==GEN)STATUS=0;else STATUS=130;return} /* ^C. V7's await: wait(2) fails with EINTR, the -1 its post(-1) waits for, and exitval is 0 */
+      if(!J.every(function(j){return j.over})){if(v7w&&g!==GEN)STATUS=0;else STATUS=130;return} /* ^C. V7's await: wait(2) fails with EINTR and returns -1, the entry its post(-1) added, so rc stays 0 and exitval is 0 */
       if(!control())v7Notes();
       J.forEach(function(j){j.noted=true;drop(j)});
       if(bash&&all)mine().forEach(function(j){if(j.over){j.noted=true;drop(j)}}); /* mark_dead_jobs_as_notified */
@@ -1942,7 +1947,7 @@ function procTable(){ /* the processes ps lists besides the jobs: {pid,mine,cmd}
 function shellPid(){var r=loginShell();return r?r.pid:23} /* $$: the login shell ps shows */
 function shellSignal(n,group){ /* kill $$, or kill 0 (its process group: with no job control, the jobs too). What the shell does not set aside ends it */
   if(group&&!control())liveJobs().forEach(function(j){if(j.owner===0)signal(j,n)});
-  var x=(SIG[n]||{}).name,kept=control()?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(TERM|QUIT|INT)$/; /* interactive: bash and csh set TERM aside; V7 sh sets TERM and QUIT aside and catches INT */
+  var x=(SIG[n]||{}).name,kept=control()?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(TERM|QUIT|INT|SEGV|ALRM)$/; /* interactive: bash and csh set TERM and QUIT aside and catch INT; V7 sh sets TERM and QUIT aside and catches INT, SEGV and ALRM (fault.c: SEGV grows its memory, ALRM ends it only while it waits at the prompt) */
   if(kept.test(x||'')||sigDo(n)!=='end'||SCRIPTS||ASIDE||group&&(SUB||SHID))return; /* a script's own shell is another process. $$ in ( ), a pipe or a `command` is still the shell's; their kill 0 is their own group */
   PH.logout();
 }
@@ -2146,16 +2151,60 @@ function runBlock(B){
 }
 function afterLoop(){var was=LOOP;if(was!=='exit'&&was!=='stop')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at */
 function over(was){return was==='break'||was==='exit'||was==='stop'}
-var PIPEMAX=65536; /* the lines a pipe takes from a loop before the loop's process is ended (memory stays bounded); a pipe to head or read takes what it reads */
-function pipeCap(w){var m;return w[0]==='head'?(m=/^-(\d+)$/.exec(w[1]||''))?+m[1]||1:10:w[0]==='read'?1:PIPEMAX} /* head -5 | read: they stop reading and go, and the next write gets SIGPIPE */
-function pipeFull(){ /* a loop writing to a pipe that has all its reader takes: the loop's process dies of SIGPIPE (bash: status 141) */
-  if(!SINK||!SINK.cap||SINK.length<SINK.cap)return false;
-  SINK.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true;
+var PIPEMAX=65536,PIPEBUF=4096; /* PIPEMAX: the lines a pipe takes from a loop before the loop's process is ended (memory stays bounded).
+   PIPEBUF: the bytes a pipe holds before the writer has to wait for its reader (V7's and 4.3BSD's pipe size), so a reader
+   is taken to read once that much waits for it: a short loop is done before head has even started, as it usually is on the real systems */
+function pipeReader(stages,i){ /* what the command at stages[i] does with the pipe into it: {done, take(line)}, or null when it reads all of it.
+                                  head -5 or read: they stop reading and exit, and the loop's next write gets SIGPIPE; cat, grep, tr
+                                  and tee pass what they read on, and stop once their own pipe's reader has */
+  var st=stages[i],w=st&&st.words,gone={done:true,take:function(){}};
+  if(!st||st.sub!==undefined||!w.length||markNode(w[0]))return null;
+  if(st.in!==null)return gone; /* it reads a file instead */
+  function lines(n,bytes){var r={done:n<=0,take:function(l){if((n-=bytes?l.length+1:1)<=0)r.done=true}};return r}
+  if(w[0]==='read')return lines(1);
+  if(w[0]==='head'){
+    if(!has(CMDS,'head'))return gone; /* V7 has none */
+    if(!PH.headArgs)return null;
+    var o=PH.headArgs(w.slice(1));
+    return o.err||o.F.some(function(x){return x.f!=='-'||!PROFILE.bash})?gone:o.c!==null?o.c<0?null:lines(o.c,true):o.n<0?null:lines(o.n);
+  }
+  var ops=w.slice(1).filter(function(x){return x.charAt(0)!=='-'||x==='-'}),pass,fl,re;
+  if(w[0]==='cat'||w[0]==='tee'||w[0]==='tr')pass=function(){return true};
+  else if(w[0]==='grep'&&ops.length&&!/[co]/.test(fl=w.slice(1).filter(function(x){return /^-./.test(x)}).join(''))){ /* the lines it prints */
+    try{re=new RegExp(PROFILE.bash&&/F/.test(fl)?ops[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):ops[0],/i/.test(fl)?'i':'')}catch(e){return gone}
+    pass=function(l){return re.test(l)!==/v/.test(fl)};ops=ops.slice(1);
+  }
+  else return null;
+  if(w[0]!=='tee'&&w[0]!=='tr'&&ops.some(function(x){return x!=='-'}))return gone; /* cat f, grep x f: they read their files */
+  var down=i<stages.length-1&&st.out===null&&!st.closed&&!st.glass?pipeReader(stages,i+1):null;
+  if(!down)return null;
+  var p=newPipe(down),r={done:false,take:function(l){if(pass(l)&&!pipeWrite(p,l))r.done=true}}; /* its write after its reader went: SIGPIPE */
+  return r;
+}
+function newPipe(r){return r&&{r:r,q:[],n:0,gone:false}}
+function pipeWrite(p,l){ /* false: the reader has gone, and the writer gets SIGPIPE */
+  if(p.gone)return false;
+  p.q.push(l);p.n+=l.length+1;
+  if(p.n>=PIPEBUF){for(var k=0;k<p.q.length&&!p.r.done;k++)p.r.take(p.q[k]);p.q=[];p.n=0;p.gone=p.r.done}
+  return true;
+}
+function pipeFull(){ /* a loop writing to a pipe whose reader has gone: the loop's process dies of SIGPIPE (bash: status 141) */
+  var S=SINK,bad;
+  if(!S||!S.cap)return false;
+  bad=S.length>=S.cap;
+  if(S.pipe)for(;!bad&&S.fed<S.length;S.fed++)bad=!pipeWrite(S.pipe,S[S.fed]);
+  if(!bad)return false;
+  S.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true;
+}
+function passWait(){ /* between rounds of a while loop, so that ^C can reach it; a loop writing into a pipe only now and then */
+  var S=SINK;
+  if(S&&S.cap&&S.length!==S.at){S.at=S.length;S.runs=(S.runs||0)+1;if(S.runs%256)return}
+  return sleep(0);
 }
 function round(body,again){ /* a while loop's body, then again() unless it ended in break or exit */
   runBlock(body);
   var stop;
-  queue(function(){var was=afterLoop();stop=over(was)||pipeFull();if(!stop)return sleep(0)});
+  queue(function(){var was=afterLoop();stop=over(was)||pipeFull();if(!stop)return passWait()});
   queue(function(){if(!stop&&!LOOP)again()});
 }
 var NODES=[],NODEID=new Map(),MARK='\uE031',MARKP=new RegExp('^'+MARK),MARKN=new RegExp('^'+MARK+'(\\d+)'); /* a loop with a pipe or redirection after it: the pipeline's stage MARK n runs NODES[n]; NODEID: each node's n */
@@ -2474,11 +2523,10 @@ function login(name){
 }
 
 /* ---------- input ---------- */
-var BUFAT=0; /* how much of buf is shown before a ^Z the tty echoed (zEcho); bufNode shows the rest */
-function renderBuf(){if(bufNode){BUFAT=Math.min(BUFAT,buf.length);bufNode.data=MODE==='password'||HIDE?'':UP(buf.slice(BUFAT));scrollBottom()}}
-function zEcho(){ /* ^Z at a read the shell does: the tty echoes it where the typing is, and the line goes on */
+function renderBuf(){if(bufNode){bufNode.data=MODE==='password'||HIDE?'':UP(buf);scrollBottom()}}
+function zEcho(){ /* ^Z at a read the shell does: the tty echoes it where the typing is and throws away what was typed (n_tty's isig flushes the line); the read goes on */
   if(!bufNode||!bufNode.parentNode){atCursor('^Z');return}
-  bufNode.parentNode.insertBefore(document.createTextNode((MODE==='password'||HIDE?'':UP(buf.slice(BUFAT)))+'^Z'),bufNode);BUFAT=buf.length;renderBuf();
+  bufNode.parentNode.insertBefore(document.createTextNode((MODE==='password'||HIDE?'':UP(buf))+'^Z'),bufNode);setBuf('');
 }
 function setBuf(v){
   buf=v.replace(/[\r\n]/g,'').slice(0,255);
@@ -2598,7 +2646,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 function atCursor(s){var at=cursor.parentNode;if(at)at.insertBefore(document.createTextNode(s),cursor)} /* text just before the cursor, where it is */
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var q=PH.onInterrupt&&!(bufNode&&!READ&&MODE!=='shell')?PH.onInterrupt(!!(READ&&TRAP)):null; /* a machine's own QUIT (Multics): what it shows instead of ^C; true when a program takes the ^C itself */
-  if(q&&typeof q==='object'){if(q.same&&bufNode)JOIN=cursor.parentNode;q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one (VM/370's TERMINAL ATTN OFF) */
+  if(q&&typeof q==='object'){if(q.same&&(bufNode||GL.n))JOIN=cursor.parentNode;q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one, at a read or in a line cut short as it typed (VM/370's TERMINAL ATTN OFF) */
   atCursor(q==null?'^C':q);
   HOLD=false; /* and, as the tty did, undo a ^S: nothing waits for a ^Q that will not come */
   if(READ&&TRAP){finishRead(INT);return}

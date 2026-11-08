@@ -54,9 +54,15 @@ V.input=function(raw){
     return;
   }
   if(V.attn&&!V.cpMode){attention(raw);return}
-  if(ed){ /* the editor's, after a ^C stopped its typing; when the edit ends, the EXECs that ran it carry on (HX here is the editor's: ?EDIT: HX, as Release 6 answered) */
-    var r=V.edRead,l0=V.lineEdit(raw,true)[0];
-    P.queue(function(){r(l0)});
+  /* after a ^C stopped the editor's typing. DMSEDI sets no attention exit, so this is CMS's attention read (DMSCIT): HX
+     ends the edit and every EXEC around it (CMS, no ready message), HT and RT stop and resume the typing, and the
+     editor's read is still to come; any other line is the editor's. When the edit ends, the EXECs that ran it carry on */
+  if(ed){
+    var r=V.edRead,l0=V.lineEdit(raw,true)[0],w=V.immediate(up(l0.trim()));
+    if(w==='HX'){V.edRead=null;V.abend();V.execs=[];V.pend=[];V.level=0;P.queue(function(){V.ready(0)});return}
+    if(w)return;
+    V.stack.push(l0);var l1=V.stack.shift(); /* after what was stacked already (DMSCIT) */
+    P.queue(function(){r(l1)});
     P.queue(function(){
       if(V.edRead||V.state!=='cms'||V.cpMode)return;
       if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
@@ -64,7 +70,15 @@ V.input=function(raw){
     });
     return;
   }
-  V.lineEdit(raw).forEach(function(l){P.queue(function(){logical(l)})});
+  var L=V.lineEdit(raw);
+  /* CMS reads the first logical line and stacks the rest in front of the console stack, LIFO, for its next reads
+     (DMSCRD, by DMSCAT): an attention while the first runs leaves them there */
+  if(V.state==='cms'&&!V.cpMode){
+    V.stack=L.slice(1).concat(V.stack);
+    P.queue(function(){logical(L[0])});
+    return;
+  }
+  L.forEach(function(l){P.queue(function(){logical(l)})});
 };
 /* attention (^C) to a CMS command or an EXEC running (not the editor's, not at a read): CMS takes it as a virtual machine
    interruption, and DMSCIT reads a line from the terminal (its attention read): HX ends the command, HT stops the typing,
@@ -72,9 +86,9 @@ V.input=function(raw){
    command carries on (CMS User's Guide, GC20-1819, Section 2: Virtual Machine Interruptions; Command and Macro
    Reference, GC20-1818: Immediate Commands). While that line is read what it types goes on above it, as Release 6 does
    under Hercules; a read of its own waits for the line. What a command types goes through V.pend (exec.js), so the
-   attention loses none of it. Elsewhere (CP, the editor typing) what is running stops, and the console stack goes too */
+   attention loses none of it. Elsewhere (CP, the editor typing) what is running stops; in CP the console stack goes too */
 /* At every attention CP types an exclamation point where the carriage is and starts a new line, or nothing with TERMINAL
-   ATTN OFF (DMKCNS: "restore, exclamation, idles, CR, idles", the exclamation alone for a teletype); a line being typed
+   ATTN OFF (DMKCNS: "restore, exclamation, idles, CR, idles", without the restore for a teletype); a line being typed
    in is cancelled, and the read is up again (DMSCIT reissues it) */
 P.onInterrupt=function(trap){
   release();
@@ -86,7 +100,8 @@ P.onInterrupt=function(trap){
     return bang;
   }
   V.asking=false;
-  if(!V.attn){V.stack=[];V.pend=[]}
+  if(!V.attn&&!V.edRead)V.stack=[]; /* the editor's attention is CMS's (V.input): its console stack stays */
+  if(!V.attn)V.pend=[];
   return bang;
 };
 /* the line typed after an attention to a running command or EXEC. HX ends it and every EXEC, and CMS answers CMS; HT
@@ -130,7 +145,11 @@ function logical(l){
 }
 function cmsLine(l){
   V.rc=0;
-  if(!l.trim()&&!V.first){P.typeLine('CMS');return} /* a null line: CMS says it is there */
+  if(!l.trim()&&!V.first){ /* a null line: CMS says it is there, and reads on */
+    P.typeLine('CMS');
+    if(V.stack.length)P.queue(function(){cmsLine(V.stack.shift())});
+    return;
+  }
   if(V.first){
     V.first=false;
     var W=V.words(l);
@@ -730,7 +749,7 @@ V.sort=function(a){
     var s=n[0]-1,e=n[1],L=x.f.lines.map(V.text).slice().sort(function(p,q){var u=p.slice(s,e),v=q.slice(s,e);return u<v?-1:u>v?1:0});
     if(!rw('SRT',a[5]))return;
     V.write('SRT',a[5].charAt(0),V.file(a[3],a[4],L,{recfm:x.f.recfm,lrecl:x.f.lrecl}));
-  },false,true);
+  });
   return 0;
 };
 
