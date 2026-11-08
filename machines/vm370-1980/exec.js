@@ -28,7 +28,7 @@ V.globals=[1,1,1,1,1,1,1,1,1,1];
 var fromStack=0;
 V.read=function(then,trap,prog){
   if(V.hold(function(){V.read(then,trap,prog)}))return;
-  if(V.stack.length){var l=V.pop();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
+  if(V.stack.length){var l=V.pop();if(++fromStack%250===0)P.pause(V.dsc?DSC_WAIT:1);P.queue(function(){then(l)});return}
   fromStack=0;
   V.ask(then,trap,false,prog);
 };
@@ -79,7 +79,13 @@ V.abend=function(msg){
   V.execs.forEach(function(S){S.stop=true});
   V.stack=[];V.abended=true;
 };
-function done(S){V.level=Math.max(0,V.level-1);V.rc=S.rc;var i=V.execs.indexOf(S);if(i>=0)V.execs.splice(i)}
+/* DISCONN from an EXEC in the one queue: CMS goes on in a queue of its own (V.dark, cms.js), from where each EXEC was, so
+   the terminal is CP's at once, at VM/370 ONLINE; the steps it had left in the one queue do nothing. Disconnected, a
+   virtual machine looping in an EXEC gets CP's time slices, not the whole processor, and with nobody to see its output
+   nothing else holds it back: it waits a little every 250 statements and at each command */
+function gone(){return !!V.dsc&&!P.asideNow()}
+var DSC_WAIT=40,DSC_CMD=20;
+function done(S){if(gone())return;V.level=Math.max(0,V.level-1);V.rc=S.rc;var i=V.execs.indexOf(S);if(i>=0)V.execs.splice(i)}
 /* attention (^C) while the editor typed for an EXEC stopped the typing and, with it, what the EXECs had still to do; on
    Release 6 the attention only interrupts the typing, and once the edit ends (FILE or QUIT) the EXECs carry on, the
    innermost first, each from the command it was waiting on. True when there were EXECs to carry on */
@@ -104,6 +110,7 @@ V.carryOn=function(){
   });
 };
 function carry(S){ /* an EXEC going on: a command it had come to that the attention kept from starting runs now */
+  if(gone())return;
   var C=S.todo;
   if(!C){if(S.waiting)after(S);run(S);return}
   P.queue(function(){S.todo=null;V.rc=V.execCommand(C,S)||0});
@@ -202,8 +209,9 @@ function show(S,T){if(S.control==='ALL')out(T.join(' '))}
 var SPACEMAX=1000; /* &SPACE: more blank lines than a page or two of fanfold is only a long wait */
 
 function run(S){
+  if(gone())return;
   while(!S.stop&&S.pc<S.lines.length){
-    if(++S.n%250===0){P.pause(1);P.queue(function(){run(S)});return} /* every 250 statements, CMS commands and &READs among them: let the terminal breathe, and ^C stop it */
+    if(++S.n%250===0){P.pause(V.dsc?DSC_WAIT:1);P.queue(function(){run(S)});return} /* every 250 statements, CMS commands and &READs among them: let the terminal breathe, and ^C stop it */
     var raw=S.lines[S.pc];S.pc++;
     var r=stmt(S,raw);
     loopEnd(S);
@@ -267,11 +275,13 @@ function command(S,C){
   var line=C.join(' ');
   if(S.control==='CMS'||S.control==='ALL')out((S.time?V.hms(P.now())+' ':'')+line);
   S.waiting=true;S.todo=C;
-  P.queue(function(){S.todo=null;V.rc=V.execCommand(C,S)||0});
+  if(V.dsc)P.pause(DSC_CMD);
+  P.queue(function(){if(gone())return;S.todo=null;V.rc=V.execCommand(C,S)||0});
   P.queue(function(){after(S)});
   return 'wait';
 }
 function after(S){ /* the command's return code, as the EXEC sees it */
+  if(gone())return;
   var rc=V.rc||0;
   S.waiting=false;
   if(V.abended){S.stop=true;return}

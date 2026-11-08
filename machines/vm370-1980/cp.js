@@ -569,12 +569,14 @@ V.logoff=function(){
 function ended(){V.dsc=null;V.ending();V.state='online';V.user=null;V.cls='';V.cpMode=false;V.stack=[]} /* the virtual machine is no more */
 /* DISCONN: the terminal is let go and the virtual machine runs on (DMKUSODS: "LET VM RUN, DON'T POST READ"); what it
    types meanwhile is lost, there being no SPOOL CONSOLE here. LOGON reconnects it, in CP mode till BEGIN; it is logged
-   off 15 minutes after it reads from the terminal (CP Command Reference, GC20-1820, DISCONN), and CMS is soon at a read */
+   off 15 minutes after it reads from the terminal (CP Command Reference, GC20-1820, DISCONN), and CMS is soon at a read;
+   here the 15 minutes count from DISCONN, whatever it is doing, and the logoff comes then, unseen */
 V.disconn=function(){
   if(V.dsc)return;
-  var n=P.now();
+  var n=P.now(),d={at:n};
   V.raw('DISCONNECT AT '+V.stamp(n));
-  V.dsc={at:n};V.letGo();
+  V.dsc=d;V.letGo();
+  setTimeout(function(){if(V.dsc===d){V.stopAll();ended()}},9e5);
   if(V.state==='cms'){V.cpMode=false;V.cpReady=false;V.held=false}
   P.pause(700);
   P.queue(function(){V.raw('');V.raw('VM/370 ONLINE')});

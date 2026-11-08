@@ -439,7 +439,8 @@ function ttPrint(t){ /* what the driver sends and the type box prints: with LCAS
     if(c==='\u0005'){o+=c+t.charAt(++i);continue} /* a colour code and its digit */
     k=c.charCodeAt(0);
     if(k>127){ /* the bytes of a character past ASCII, each cut to seven bits: what prints of them, a control code prints nothing */
-      var u=unescape(encodeURIComponent(c+(k>=0xd800&&k<0xdc00?t.charAt(++i):'')));c='';
+      if(k>=0xd800&&k<0xdc00&&/[\udc00-\udfff]/.test(t.charAt(i+1)))c+=t.charAt(++i);else if(k>=0xd800&&k<0xe000)c='\ufffd'; /* half a pair alone: its bytes are U+FFFD's, as the browser writes it */
+      var u=unescape(encodeURIComponent(c));c='';
       for(var n=0;n<u.length;n++){k=u.charCodeAt(n)&127;if(k>=32&&k<127)c+=String.fromCharCode(k)}
       o+=ttPrint(c);continue;
     }
@@ -573,9 +574,10 @@ function typeLine(text,cls,cb,opt){
     }
     if(glassBusy(job)){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
     function gone(){return job?job.dead:own&&own.job?own.job.dead:gen!==GEN} /* killed, or ^C */
-    function go(){
-    GL.n++;if(job)GL.bg++;
-    res=function(){GL.n--;if(job)GL.bg--;glassNext();res0()};
+    function go(){try{go1()}catch(e){res();throw e}} /* whatever goes wrong, the glass is let go: the lines waiting for it still come */
+    function go1(){
+    var freed=false;GL.n++;if(job)GL.bg++;
+    res=function(){if(freed)return;freed=true;GL.n--;if(job)GL.bg--;glassNext();res0()};
     if(gone()){res();return}
     text=UP(text);
     var above=side&&bufNode?bufNode.parentNode:null,more=!above&&OPEN&&OPEN===out.lastElementChild?OPEN:null; /* an aside's line goes in above the one being typed in; more: the line left open, which this goes on in */
@@ -591,7 +593,8 @@ function typeLine(text,cls,cb,opt){
     var at=host===d&&!above?cursor:null; /* new text goes before the cursor; a link has no cursor inside it, nor a line typed above */
     var sp=opt.speed||1,i=0,crlf=false,col=TELE.on?(more?d.textContent.length-(cursor.parentNode===d?cursor.textContent.length:0):(opt.indent||0)+pre.length):0; /* col: where the teletype's carriage is */
     function here(){return at&&at.parentNode===host?at:null} /* a prompt that came up meanwhile has the cursor now */
-    function step(){
+    function step(){try{step1()}catch(e){res();throw e}}
+    function step1(){
       if(gone()){res();return}
       if(HOLD){held=step;return}
       if(i>=text.length){
@@ -1309,14 +1312,21 @@ PROFILE.protected.forEach(function(p){
    games still have room: what does not fit is left out, largest first, and the disk is said to be full once for it. */
 if(ATTRS)(function mark(d){Object.keys(d.kids).forEach(function(k){var n=d.kids[k];if(n.type==='d'){if(n!==d)mark(n)}else if(!n.dev)n.ro=true})})(ROOT); /* every file on the disk is read-only (ATTRIB +R) */
 var KEEP=PROFILE.persist!==false&&!(CAT&&CAT.saves==='own'),FKEY=(PH.machine||'terminal')+'/files'+(function(){
-    var d=location.pathname.replace(/[^\/]*$/,'');return d==='/'?'':':'+d; /* sites sharing one web address keep apart by their folder */
+    var d=location.pathname.replace(/[^\/]*$/,'');return d==='/'?'':':'+d; /* sites sharing one host keep apart by their folder */
   })(),BUDGET=262144,
   BASE=null,LAST=null,OUT=new Set(),ORIG=new Map(),FIELDS=['type','owner','mode','bin','size','ro','hidden','user','del','group','store'];
 function scratch(p){return p==='/tmp'||p.indexOf('/tmp/')===0}
+function homeAt(){ /* where a login under another name has taken the boot home (login renames it), or null */
+  var a=BASE&&!PROFILE.home&&BASE.get(HOME0);if(!a)return null;
+  for(var s=[],x=a.n,i=0;x&&x!==ROOT&&i<256;i++){s.unshift(x.name);x=x.parent}
+  var p='/'+s.join('/');
+  return x===ROOT&&p!==HOME0&&p===(RP?RP.home:ST.home)&&!find(HOME0,true)?p:null;
+}
+function asBoot(p,H){return H&&(p===H||p.indexOf(H+'/')===0)?HOME0+p.slice(H.length):p} /* kept under the boot home's own name: every reload logs in as the boot user */
 function tree(){ /* path -> node, each folder once (a link to one is listed, not walked again) */
-  var M=new Map(),seen=new Set([ROOT]);
+  var M=new Map(),seen=new Set([ROOT]),H=homeAt();
   (function walk(d,at){Object.keys(d.kids).forEach(function(k){
-    var n=d.kids[k],p=at+'/'+k;
+    var n=d.kids[k],p=asBoot(at+'/'+k,H);
     if(scratch(p)||n===ROOT)return;
     M.set(p,n);
     if(n.type==='d'&&!seen.has(n)){seen.add(n);walk(n,p)}
@@ -1324,11 +1334,11 @@ function tree(){ /* path -> node, each folder once (a link to one is listed, not
   return M;
 }
 function firsts(M){ /* node -> the path it is kept under: its own place, unless that is gone; any other is a link to it */
-  var F=new Map();
+  var F=new Map(),H=homeAt();
   M.forEach(function(n,p){if(!F.has(n))F.set(n,p)});
   F.forEach(function(p,n){
     for(var s=[],x=n,i=0;x&&x!==ROOT&&i<256;i++){s.unshift(x.name);x=x.parent}
-    var own='/'+s.join('/');
+    var own=asBoot('/'+s.join('/'),H);
     if(x===ROOT&&own!==p&&M.get(own)===n)F.set(n,own);
   });
   return F;
@@ -1365,7 +1375,10 @@ function keepFiles(){ /* false when something more than before could not be kept
   for(;;){
     var v=any?{v:1,keep:keep,gone:gone}:null;
     if(PH.save(FKEY,v))break;
-    if(!big.length){full=true;out=out.concat(Object.keys(keep),Object.keys(gone));break} /* the browser is full: nothing could be kept */
+    if(!big.length){ /* the browser is full: nothing could be kept, and no older save is left to bring back what has gone since */
+      if(!PH.save(FKEY,any?{v:1,keep:{},gone:gone}:null))PH.save(FKEY,null);
+      full=true;out=out.concat(Object.keys(keep),Object.keys(gone));break;
+    }
     drop(size/2);full=true;
   }
   if(full)LAST=null; /* the browser's own room: tried again at each prompt, in case it has some now */
@@ -1405,17 +1418,18 @@ var NOT_COPIED=new Set(['name','parent','kids','date','body'].concat(FIELDS)); /
 function restoreFiles(){
   var s=PH.saved(FKEY);
   if(!s||typeof s!=='object'||s.v!==1)return;
-  function good(p){return typeof p==='string'&&p.charAt(0)==='/'&&p.length>1&&!scratch(p)&&!parts(p).some(function(x){return x==='.'||x==='..'})}
+  function good(p){return typeof p==='string'&&p.length>1&&p==='/'+parts(p).join('/')&&!scratch(p)&&!parts(p).some(function(x){return x==='.'||x==='..'})}
   function obj(x){return x&&typeof x==='object'&&!Array.isArray(x)?x:{}}
   var gone=obj(s.gone),keep=obj(s.keep),dropped=new Set(),links=[];
   function under(p){for(var q=dirOf(p);q!=='/';q=dirOf(q))if(dropped.has(q))return true;return false}
   function folder(p){var d=find(dirOf(p),true);return d&&d.type==='d'&&!under(p)?d:null} /* what it goes in: a folder that is there, and not one left out */
   Object.keys(gone).sort().reverse().forEach(function(p){
-    var a=BASE.get(p),d=good(p)&&a&&was(a)===gone[p]&&find(dirOf(p),true);
+    var a=BASE.get(p),d=good(p)&&p!==HOME0&&a&&was(a)===gone[p]&&find(dirOf(p),true); /* the boot home stays: the reload logs in to it */
     if(d&&d.type==='d')delete d.kids[p.split('/').pop()];
   });
   Object.keys(keep).sort().forEach(function(p){
-    var e=keep[p],a=BASE.get(p);
+    var e=keep[p],a=BASE.get(p),x;
+    if(good(p)&&okEntry(e)&&e.t==='d'&&folder(p)&&(x=find(p,true))&&x!==ROOT&&x.type==='d'&&(e.h!==undefined?!a||was(a)!==e.h:!!a))return; /* a folder the site has made or changed since: the site's stays, and what was kept in it goes back in */
     if(!good(p)||!okEntry(e)||(e.h!==undefined?!a||was(a)!==e.h:!!a)||!folder(p)){dropped.add(p);return} /* the site's file changed, or the site has made one here since, or what it was in is not a folder now */
     if(e.t==='l'){links.push(p);return}
     var src=e.o!==undefined?(good(e.o)?BASE.get(e.o):null):a;
@@ -1431,8 +1445,8 @@ function restoreFiles(){
     if(e.t==='f'){n.body=e.g?src.b:e.b?e.b.slice():null;if(n.body&&e.open)n.body.open=true}
   });
   links.forEach(function(p){ /* a second name, once what it names is back */
-    var to=keep[p].to,t=good(to)&&!dropped.has(to)&&!under(to)?find(to,true):null,d=folder(p);
-    if(t&&t!==ROOT&&d&&to!==p&&(t.type!=='d'||(p+'/').indexOf(to+'/')!==0))d.kids[p.split('/').pop()]=t;
+    var to=keep[p].to,t=good(to)?find(to,true):null,d=folder(p),a=BASE.get(p); /* what it names, even where the site's own version now stands */
+    if(t&&t!==ROOT&&d&&to!==p&&(t.type!=='d'||a&&a.n.type==='d'&&ORIG.get(a.n)!==p&&(p+'/').indexOf(to+'/')!==0))d.kids[p.split('/').pop()]=t; /* a second name for a folder only where the system had one (Debian's /bin) */
   });
 }
 if(KEEP){
@@ -1936,7 +1950,7 @@ function runPipeline(stages){
       var nm=markNode(st.words[0]);
       if(nm&&nm.len===(st.words[0]||'').length){if(STDIN){var cp=STDIN.slice();cp.open=STDIN.open;STDIN=cp}runStmt(nm.node);return} /* its reads take the lines in turn, the last one perhaps with no newline */
       var k=0;
-      while((!PROFILE.dos&&!PROFILE.noUnix||PROFILE.dcl&&PH.symbols)&&(!k||!PROFILE.csh&&!PROFILE.dos)&&k<st.words.length&&asgOf(st.words[k]))k++; /* csh and VMS: only a lone x=1; CMS, TOPS-20, Multics, DOS, CP/M and the BASICs: none, the line is theirs */
+      while((!PROFILE.dos&&!PROFILE.noUnix||PROFILE.dcl&&PH.symbols)&&(!k||!PROFILE.csh&&!PROFILE.dos)&&k<st.words.length&&asgOf(st.words[k]))k++; /* csh, and VMS (PH.symbols): a first word x=1 counts only as the whole command (x=1 y=2 and x=1 cmd run as typed); CMS, TOPS-20, Multics, DOS, CP/M and the BASICs: none, the line is theirs */
       if(k&&k===st.words.length){ /* x=1 y=2 */
         var good=true;
         try{st.words.forEach(function(x){if(!setAsg(asgOf(x)))good=false})}catch(x){if(!x||x.arith===undefined)throw x;arithBad(x);return}
@@ -3043,14 +3057,21 @@ function runCompound(lines,chk){ /* typed at the prompt: keeps asking until it i
    heredoc): the line has to be the word as typed, quotes and all, and a quote in it leaves the body as it is */
 var HD=[],HDN=new Map(),HDM='\uE033',HDRE=/<<\uE033(\d+)/g;
 function hereOps(line,q){ /* the here-document operators in line, {ops:[{at,end,word,quoted,strip}], q: the quote it leaves open}. q: one open before it */
-  var ops=[],i=0,j;
-  if(q){j=q==='"'&&!PROFILE.csh?closeDq(line,-1):line.indexOf(q);if(j<0)return {ops:ops,q:q};i=j+1}
+  var ops=[],i=0,j,depth=0,spec=false,cs=0; /* csh: how deep in ( ) it is, whether the command is one whose ( ) are an expression or a list, and where it starts */
+  if(q){j=q==='"'&&!PROFILE.csh?closeDq(line,-1):line.indexOf(q);if(j<0)return {ops:ops,q:q};i=j+1;cs=i}
   for(;i<line.length;i++){
     var c=line.charAt(i);
     if(c==='\\'){i++;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(line.charAt(i-1))))break;
     if(c==='`'||c==="'"||c==='"'){if((j=quoteEnd(line,i))<0)return {ops:ops,q:c};i=j;continue}
     if(c==='$'&&line.substr(i+1,2)==='(('&&(j=parenEnd(line,i+1))>0){i=j;continue}
+    if(PROFILE.bash&&line.substr(i,2)==='(('&&(atCmd(line,i)||/(^|[\s;&|(])for\s*$/.test(line.slice(0,i)))&&(j=parenEnd(line,i))>0){i=j;continue} /* (( 1 << 2 )) and for (( )): arithmetic */
+    if(PROFILE.csh){ /* sh.parse.c's syn3: in @, if, while, set and the rest, a < or > inside ( ) is a word; a ( ) list's own << is its here-document */
+      if(c==='('){if(!depth)spec=/^\s*(else\s+)*(@|exit|foreach|if|set|switch|while)(\s|$)/.test(line.slice(cs,i)+' ');depth++;continue}
+      if(c===')'){if(depth)depth--;continue}
+      if(!depth&&/[;|&]/.test(c)){cs=i+1;continue}
+      if(depth&&spec)continue;
+    }
     if(line.substr(i,3)==='<<<'&&PROFILE.bash){i+=2;continue}
     if(line.substr(i,2)!=='<<'||line.charAt(i+2)===HDM)continue;
     var k=i+2,strip=PROFILE.bash&&line.charAt(k)==='-';
@@ -3120,15 +3141,15 @@ function hereText(h,then,fail){ /* in a step: the lines a here-document gives it
   }
   P.push(lit);
   var out='';
-  (function next(k){ /* each in turn: a $((y++)) changes the $y after it */
-    if(LOOP==='abort'){fail();return}
-    if(k>=P.length){then(out.split('\n'));return}
-    var p=P[k];
-    if(typeof p==='string'){out+=p;next(k+1);return}
-    if(p.v!==undefined){
+  (function next(k){ /* each in turn: a $((y++)) changes the $y after it. Text and $names in a loop, a `command` through its capture */
+    for(;;k++){
+      if(LOOP==='abort'){fail();return}
+      if(k>=P.length){then(out.split('\n'));return}
+      var p=P[k];
+      if(typeof p==='string'){out+=p;continue}
+      if(p.v===undefined)break;
       try{out+=envOf(p.v)}
       catch(e){if(e&&e.undefinedVar){typeLine(e.msg||e.undefinedVar+': Undefined variable.','err');STATUS=1;fail();return}if(e&&e.arith!==undefined){arithBad(e);fail();return}throw e}
-      next(k+1);return;
     }
     capture(p.cmd,function(L){L=L.slice();while(L.length&&L[L.length-1]==='')L.pop();out+=L.join('\n');next(k+1)});
   })(0);
@@ -3198,20 +3219,21 @@ function shellPrompt(p,mode,kept){ /* the shell's prompt, after what has become 
   if(p!=null||mode||!notesDue()){showPrompt(p,mode);return}
   jobNotes();queue(function(){showPrompt()},true);
 }
-function dollarParen(s){ /* bash: $(command) is `command`, outside single quotes, a $( ) inside it a \`command\` in that. $((sum)) is a `command` of its own */
-  var o='',sq=false,dq=false,j,c,in_;
+function dollarParen(s,deep){ /* bash: $(command) is `command`, outside single quotes, a $( ) inside it a \`command\` in that. $((sum)) is a `command` of its own.
+                                   deep: how many $( ) it is inside. Each level doubles the backslashes, so past DEEPMAX one is a fork that fails, as past 32 processes */
+  var o='',sq=false,dq=false,j,c,in_;deep=deep||0;
   for(var i=0;i<s.length;i++){
     c=s.charAt(i);
     if(c==='\\'&&!sq){o+=s.substr(i,2);i++;continue}
     if(c==="'"&&!dq)sq=!sq;
     else if(c==='"'&&!sq)dq=!dq;
     else if(!sq&&c==='$'&&s.substr(i+1,2)==='(('&&(j=sumEnd(s,i+1))>0){o+='`'+SUM+' "'+s.slice(i+3,j-1)+'"`';i=j;continue}
-    else if(!sq&&c==='$'&&s.charAt(i+1)==='('&&s.charAt(i+2)!=='('&&(j=parenEnd(s,i+1))>=0){in_=dollarParen(s.slice(i+2,j));o+='`'+in_.replace(/[\\`]/g,'\\$&')+'`';i=j;continue}
+    else if(!sq&&c==='$'&&s.charAt(i+1)==='('&&s.charAt(i+2)!=='('&&(j=parenEnd(s,i+1))>=0){in_=deep<DEEPMAX?dollarParen(s.slice(i+2,j),deep+1):DEEP;o+='`'+in_.replace(/[\\`]/g,'\\$&')+'`';i=j;continue}
     o+=c;
   }
   return o;
 }
-var SUM='\uE020'; /* the name of the command that works out a $(( )): nobody can type it */
+var SUM='\uE020',DEEP='\uE021',DEEPMAX=20; /* the names of the commands that work out a $(( )) and stand for a $( ) too deep to fork: nobody can type them */
 function sumEnd(s,k){ /* the ) that closes the ( at k, when the one before it closes the ( at k+1: $((...)) */
   for(var d=0,j=k;j<s.length;j++){
     if(s.charAt(j)==='(')d++;
@@ -3223,6 +3245,7 @@ if(PROFILE.bash)CMDS[SUM]=function(a,raw,words){ /* bash's $(( )): what arith() 
   try{typeLine(String(arith(words.slice(1).join(' '))))}
   catch(x){if(!x||x.arith===undefined)throw x;arithBad(x)}
 };
+if(PROFILE.bash)CMDS[DEEP]=function(){noFork()};
 function arithBad(x){typeLine('bash: '+x.arith,'err');STATUS=1;LOOP='abort'} /* a $(( )) that went wrong: the rest of the line does not run */
 var ARITH_OPS=['<<=','>>=','**','<<','>>','<=','>=','==','!=','&&','||','*=','/=','%=','+=','-=','&=','^=','|=','++','--','=','+','-','*','/','%','<','>','&','^','|','!','~','?',':','(',')',','];
 function arith(e,depth){ /* bash 5.2's expr.c: 64-bit whole numbers, its operators and their order, names with or without $ (a name's value is itself
