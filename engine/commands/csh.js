@@ -41,15 +41,15 @@ function value(x){ /* a word as written: 'as is', "with $variables", or bare, wh
   if(/^".*"$/.test(x))return P.vars(P.unquote(x));
   return x.split(/(\\.)/).map(function(p,i){return i%2?P.unguard(p.charAt(1)):P.vars(P.unquote(p))}).join('');
 }
+function listVars(){ /* set, or @, on its own */
+  var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
+  Object.keys(P.shvars).forEach(function(k){V[k]=P.shvars[k]});
+  P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
+}
 builtin(['set'],function(){
   P.status(P.lastStatus()); /* set s = $status: the one from before */
   var t=P.source().replace(/^\s*set\s*/,''),m;
-  if(!t){
-    var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
-    Object.keys(P.shvars).forEach(function(k){V[k]=P.shvars[k]});
-    P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
-    return;
-  }
+  if(!t){listVars();return}
   try{
     while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){P.shvars[m[1]]=value(m[2]||'');t=t.slice(m[0].length)}
   }catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
@@ -108,13 +108,67 @@ function operand(x){ /* a side of a comparison, as a string; null when there is 
   return arith(value(x).trim());
 }
 function arith(v){ /* 1 + 1, $x%2: whole numbers and + - * / %; a lone operator among other words makes no sense */
-  var t=v.replace(/\s+/g,''),i=0,bad=false;
+  var t=v.replace(/\s+/g,'');
   if(!/^-?\d+([-+*\/%]-?\d+)+$/.test(t))return /\S\s+[-+*\/%](\s|$)|(^|\s)[-+*\/%]\s+\S/.test(v.trim())?null:v; /* a lone / is a word; an operator among words is not */
-  function num(){var m=/^-?\d+/.exec(t.slice(i));i+=m[0].length;return +m[0]}
-  function term(){var x=num();while(i<t.length&&/[*\/%]/.test(t.charAt(i))){var o=t.charAt(i++),y=num();if(o!=='*'&&!y){bad=true;return 0}x=o==='*'?x*y:o==='/'?Math.trunc(x/y):x%y}return x}
-  var x=term();
-  while(i<t.length){var o=t.charAt(i++),y=term();x=o==='+'?x+y:x-y}
-  return bad?null:String(x);
+  var W=[];t.match(/(?:^|[-+*\/%])-?\d+/g).forEach(function(x,i){if(i)W.push(x.charAt(0),x.slice(1));else W.push(x)}); /* 3*-2: the - is the number's */
+  return String(cexp(W,0).n);
+}
+function cexp(W,k){ /* 4.3BSD csh's exp() over words W from k: {n, k after it}. Operators of one level group from the right, as its
+                       recursive descent has them: 10 - 3 - 2 is 9. Throws {csh:message} as its errors do */
+  function bad(m){throw {csh:'@: '+m}}
+  function num(x){ /* egetn */
+    if(x&&x.charAt(0)!=='-'&&!/^\d/.test(x))bad('Expression syntax');
+    var m=/^(-?)(\d*)$/.exec(x);
+    if(!m||m[1]&&!m[2])bad('Badly formed number');
+    return (m[1]?-m[2]:+m[2])|0;
+  }
+  function op(x){return x!==undefined&&/^(\+|-|\*|\/|%|[()!~^"]|\|&|<<|>>|==|=~|!=|!~|<.*|>.*)$/.test(x)} /* isa(ANYOP) */
+  function two(lower,ops,same,fn){ /* p1 = lower(); an operator of this level, then this level again for the right side */
+    return function(ig){
+      var p1=lower(ig);
+      if(ops.indexOf(W[k])<0)return p1;
+      var o=W[k++],p2=same(ig);
+      return fn(o,p1,p2,ig);
+    };
+  }
+  function e6(ig){
+    var w=W[k];
+    if(w===undefined)bad('Expression syntax');
+    if(w==='!'||w==='~'){k++;var c=num(e6(ig));return String(w==='!'?+!c:~c)}
+    if(w==='('){k++;var r=e0(ig);if(W[k]!==')')bad('Expression syntax');k++;return String(r)}
+    if(op(w))return '';
+    k++;return w;
+  }
+  var e5=two(e6,['*','/','%'],function(ig){return e5(ig)},function(o,a,b,ig){
+    if(ig)return '0';
+    var y=num(b);
+    if(o!=='*'&&!y)throw {csh:o==='/'?'Divide by 0':'Mod by 0'};
+    var x=num(a);
+    return String(o==='*'?Math.imul(x,y):o==='/'?(x/y)|0:x%y);
+  });
+  var e4=two(e5,['+','-'],function(ig){return e4(ig)},function(o,a,b,ig){return ig?'0':String(o==='+'?(num(a)+num(b))|0:(num(a)-num(b))|0)});
+  var e3a=two(e4,['<<','>>'],function(ig){return e3a(ig)},function(o,a,b){return String(o==='<<'?num(a)<<num(b):num(a)>>num(b))});
+  function e3(ig){
+    var p1=e3a(ig),w=W[k];
+    if(w===undefined||!/^[<>]/.test(w))return p1;
+    k++;var eq=W[k]==='=';if(eq)k++;
+    var a=num(p1),b=num(e3(ig)),c=w.charAt(0)==='<'?(eq?a<=b:a<b):(eq?a>=b:a>b);
+    return String(+c);
+  }
+  function e2c(ig){
+    var p1=e3(ig),o=W[k];
+    if(['==','!=','=~','!~'].indexOf(o)<0)return num(p1);
+    k++;var p2=e3(ig);
+    if(o==='=='||o==='!=')return +((p1===p2)===(o==='=='));
+    var re;try{re=P.globRe(p2)}catch(x){return 0}
+    return +(re.test(p1)===(o==='=~'));
+  }
+  function bits(lower,o,fn){var f=function(ig){var p1=lower(ig);if(W[k]!==o)return p1;k++;return fn(p1,f(ig))};return f}
+  var e2b=bits(e2c,'&',function(a,b){return a&b}),e2a=bits(e2b,'^',function(a,b){return a^b}),e2=bits(e2a,'|',function(a,b){return a|b});
+  function e1(ig){var p1=e2(ig);if(W[k]!=='&&')return p1;k++;var p2=e1(ig||!p1);return +(p1&&p2)}
+  function e0(ig){var p1=e1(ig);if(W[k]!=='||')return p1;k++;var p2=e0(ig||!!p1);return +(p1||p2)}
+  var n=e0(false);
+  return {n:n,k:k};
 }
 function truth(e){ /* true, false, or null when it makes no sense */
   e=e.trim();
@@ -152,10 +206,45 @@ builtin(['if'],function(){ /* the one-line form: if (expr) command */
   if(end<0||/^then\b/.test(cmd)){P.typeLine('if: Expression syntax.','err');return}
   P.status(P.lastStatus()); /* if ($status != 0) asks about the command before */
   try{yes=truth(s.slice(m[0].length,end).trim())}
-  catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
+  catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}if(e&&e.csh){P.typeLine(e.csh.replace(/^@/,'if')+'.','err');return}throw e}
   if(yes===null){P.typeLine('if: Expression syntax.','err');return}
   if(yes&&cmd)P.exec(cmd); /* a command like any other: exit here logs you out. $status in it is still the one from before */
   else P.status(0);
+});
+builtin(['@'],function(){ /* @ name = expr, @ name op= expr, @ name++ (4.3BSD's dolet); @ alone lists the variables as set does */
+  var W;
+  try{W=value(P.source().replace(/^\s*@/,'')).match(/&&|\|\||<<|>>|[&|<>()]|[^\s&|<>()]+/g)||[]} /* < > & | ( ) are words of their own, as csh's lexer makes them */
+  catch(e){if(e&&e.undefinedVar){P.typeLine(e.undefinedVar+': Undefined variable.','err');return}throw e}
+  if(!W.length){listVars();return}
+  function syn(){throw {csh:'@: Syntax error'}}
+  function xset(p,v){if(p)W[--v]=p;var r=cexp(W,v);return {s:String(r.n),v:r.k}} /* what is left of the word starts the expression */
+  function operate(o,cur,p){
+    var V=(cur?[cur]:[]).concat([o,p]),r=cexp(V,0);
+    if(r.k<V.length)throw {csh:'@: Expression syntax'};
+    return String(r.n);
+  }
+  try{
+    var v=0,p=W[v++];
+    do{
+      var name=/^\w*/.exec(p)[0];
+      if(!/^[A-Za-z_]/.test(name))syn();
+      p=p.slice(name.length);
+      if(!p&&v<W.length)p=W[v++];
+      var o=p.charAt(0),x;
+      if(!o)syn();
+      p=p.slice(1);
+      if(o==='=')x=xset(p,v);
+      else{
+        var c=p.charAt(0);p=p.slice(1);
+        if(c==='+'||c==='-'){if(c!==o||p)syn();x={s:operate(o,P.shvars[name]||'','1'),v:v}}
+        else if(o==='<'||o==='>'||c!=='=')syn(); /* <<= and >>= too: 4.3BSD falls into its syntax error */
+        else{x=xset(p,v);x.s=operate(o,P.shvars[name]||'',x.s)}
+      }
+      v=x.v;P.shvars[name]=x.s;
+    }while((p=W[v++])!==undefined);
+    P.status(0);
+  }
+  catch(e){if(e&&e.csh){P.typeLine(e.csh+'.','err');return}throw e}
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});

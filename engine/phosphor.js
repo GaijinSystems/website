@@ -1206,14 +1206,18 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     }
     if(ch==='#'&&w===null)break;
     if(two==='&&'||two==='||'){endList(two);i+=2;continue}
-    if(ch==='|'){if(blank())throw {syntax:'|'};endStage('|');piped=true;i++;continue} /* | echo: no command before it */
+    if(ch==='|'){
+      if(blank())throw {syntax:'|'}; /* | echo: no command before it */
+      if((PROFILE.csh||PROFILE.bash)&&s.charAt(i+1)==='&'){st.both=true;i++} /* |&: the errors go down the pipe too */
+      endStage('|');piped=true;i++;continue;
+    }
     if(ch==='&'){i++;continue} /* no background here: it just runs */
     if(ch==='>'||ch==='<'){
       var fd=!PROFILE.csh&&w!==null&&!quoted&&!fromVar&&/^\d$/.test(w)?w:null; /* sh: 2> names a file descriptor, not an argument. csh has no such thing */
       if(fd!==null){w=null;st.raw=st.raw.slice(0,-1);st.src=st.src.slice(0,-1)}
       endWord();
       if(two==='>&'&&!PROFILE.csh&&/^[\d-](?=$|[\s|&<>])/.test(s.slice(i+2))){var to=s.charAt(i+2),one=fd===null||fd==='1';
-        if(fd==='2'&&to==='1')st.e2o=true;else if(to==='2'&&one&&!st.e2o)st.glass=true;else if(to==='-'&&one)st.closed=true;else if(to==='-'&&fd==='2')st.errClosed=true;
+        if(fd==='2'&&to==='1'){st.e2o=true;st.e2oFirst=st.out===null}else if(to==='2'&&one&&!st.e2o)st.glass=true;else if(to==='-'&&one)st.closed=true;else if(to==='-'&&fd==='2')st.errClosed=true;
         i+=3;continue} /* 2>&1, 2>&-: errors are on the glass either way. >&2 sends the output there too */
       if(two==='>&'){redir='>';if(PROFILE.csh)st.both=true;i+=s.charAt(i+2)==='!'?3:2;continue} /* csh: >& file, errors and all */
       redir=two==='>>'?'>>':ch;
@@ -1255,7 +1259,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
 function runPipeline(stages){
   var pipe=null;
   stages.forEach(function(st,i){
-    var last=i===stages.length-1,sink=null,keepSink,keepIn,keepErr,errs=null,ok=true,own=false,prefix=null;
+    var last=i===stages.length-1,sink=null,keepSink,keepIn,keepErr,errs=null,epipe=null,ok=true,own=false,prefix=null;
     queue(function(){
       keepSink=SINK;keepIn=STDIN;keepErr=ERRSINK;
       if(st.in!==null){
@@ -1272,10 +1276,11 @@ function runPipeline(stages){
       if(st.glass&&errs)SINK=errs; /* >&2 when 2 is a file */
       else{
         if(st.closed||(!last||st.out!==null)&&!toGlass)sink=[];
-        if(toGlass)SINK=null;
+        if(toGlass)SINK=ERRSINK!==GLASS?ERRSINK:null; /* wherever errors go now: sh x 2>e, with echo y >&2 in x */
         else if(sink)SINK=sink;
       }
-      if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
+      if(st.e2o&&st.e2oFirst&&st.out!==null)ERRSINK=last?keepSink||GLASS:epipe=[]; /* 2>&1 >f: errors where the output was before >f */
+      else if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
       if(pipe)STDIN=pipe;
       if(stages.length>1){SUB++;own=true} /* a stage of a pipeline is its own process */
       var A=/^([A-Za-z_]\w*)=([\s\S]*)$/,k=0;
@@ -1293,7 +1298,7 @@ function runPipeline(stages){
       if(!ok)return;
       if(st.out!==null&&sink&&!st.glass)writeFile(st.out,sink,true);
       if(st.err!==null&&errs)writeFile(st.err,errs,true);
-      pipe=st.out!==null||st.glass||st.closed?[]:sink;
+      pipe=epipe||(st.out!==null||st.glass||st.closed?[]:sink);
       SINK=keepSink;STDIN=keepIn;ERRSINK=keepErr;
     },true);
   });
@@ -1386,6 +1391,7 @@ function ifAfter(seg){ /* where && or || is followed by csh's if ( ), outside qu
 function execText(seg,failed){ /* failed: told when the line could not be read, which ends the rest of it */
   queue(function(){
     if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg.replace(/^\s*if\s*\(/,'if ('));return} /* its ( ) comes before any < or > */
+    if(PROFILE.csh&&/^\s*@\s*[A-Za-z_]/.test(seg)){if(!LOGOUT)runOne(seg);return} /* @ x = 2 * 3: no wildcards, and ( 2 > 1 ) is no redirection */
     var k=PROFILE.csh&&ifAfter(seg);
     if(k){
       if(!parsed(seg.slice(0,k.at))){if(failed)failed();return}
@@ -1582,6 +1588,19 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   }
   runBlock(tree);
 }
+function openQuote(s){ /* the quote a line leaves open, or '': where the parser would take it as a quote (opens), or csh's if takes it after ( */
+  for(var i=0,j;i<s.length;i++){
+    var c=s.charAt(i);
+    if(c==='\\'){i++;continue}
+    if(c==='#'&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))return '';
+    if(c==='`'||(c==="'"||c==='"')&&(opens(s,i)||s.charAt(i-1)==='(')){
+      j=c==='"'&&!PROFILE.csh?closeDq(s,i):s.indexOf(c,i+1);
+      if(j<0)return c;
+      i=j;
+    }
+  }
+  return '';
+}
 function closeDq(s,i){ /* the " that closes the one at i: a `command` inside it may hold its own */
   for(var j=i+1,k;j<s.length;j++){
     if(s.charAt(j)==='\\'){j++;continue}
@@ -1662,6 +1681,19 @@ function run(raw){
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
     nextPrompt();
+    return;
+  }
+  var oq=openQuote(raw);
+  if(oq&&PROFILE.csh){typeLine('Unmatched '+oq+'.','err');nextPrompt();return} /* csh reads no further line for it */
+  if(oq){ /* sh and bash: the quoted text goes on on the next line */
+    var g0=GEN,l0;
+    queue(function(){return readLine('> ').then(function(x){l0=x})});
+    queue(function(){
+      if(g0!==GEN)nextPrompt();
+      else if(l0!==null)run(raw+'\n'+l0);
+      else if(PROFILE.bash){typeLine("bash: unexpected EOF while looking for matching `"+oq+"'",'err');queue(function(){STATUS=2});nextPrompt()}
+      else run(raw+'\n'+oq); /* V7: the end of input ends the quoted word, and the line runs */
+    },true);
     return;
   }
   if(!PROFILE.csh&&/(\||&&)\s*$/.test(raw.replace(/\\[\s\S]/g,'x').replace(/'[^']*'|"(?:[^"\\]|\\.)*"|`[^`]*`/g,'q').replace(/(^|\s)#.*$/,''))){ /* echo x | : the rest is on the next line */

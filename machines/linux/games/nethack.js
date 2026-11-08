@@ -6228,7 +6228,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
       if(C&&$E.dirty){$E.dirty=false;var g=$keptSig($FS);if(g!==sig&&!$keepFiles($FS))lost=true;sig=g} /* a save restored is gone at once, as on disk */
       var r=Math.min(S.rows,24),c=Math.min(S.cols,80);
       if(T.y<oy)oy=T.y<r?0:T.y;else if(T.y>=oy+r)oy=T.y-r+1;
-      if(T.x<ox)ox=T.x<c-4?0:T.x-4;else if(T.x>=ox+c)ox=Math.min(80-c,T.x-c+5);
+      ox=T.x-c+5; /* as far left as keeps the cursor in view: a prompt or --More-- shows from its start when it fits */
       oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
       var x=S.pan(ox,80-c,T.x);
       S.drawGrid(T.scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),T.y-oy,T.x-x);
