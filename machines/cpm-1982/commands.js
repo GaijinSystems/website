@@ -16,13 +16,14 @@ function write(k,L,full){ /* full: what to say when the name is another user are
   var g=get(k);k=g?g.name:P.fcb.cut(k); /* the file its eight and three find, or a new one cut to them, as the FCB holds it */
   var o=P.root.kids[k];
   if(o&&!o.prot&&(o.user||0)!==user){P.typeLine(full||'NO DIRECTORY SPACE');return}
-  if(!P.writeFile(k,L,false)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
+  if(!P.writeFile(k,L,false)){bdos('A','File R/O');return}
   var n=P.root.kids[k];
   if(n)n.user=user;
 }
 function matcher(pat){return P.fcb.matcher(pat.toLowerCase().replace(/^a:/,''))}
-function bdos(d,why){ /* the classic: a drive that is not there, and a key, ctrl-c or any other, gets you out */
-  P.typeLine('BDOS ERR ON '+d+': '+(why||'SELECT'));
+function bdos(d,why){ /* the classic: a drive that is not there, or a file set R/O, and a key, ctrl-c or any other, gets you
+  out. The words are 2.2's BDOS (dskmsg, selmsg, rofmsg), in its own case */
+  P.typeLine('Bdos Err On '+d+': '+(why||'Select'));
   P.queue(function(){return P.readKey('')});
 }
 function elsewhere(x){ /* a name on a drive that is not there: the error, and true */
@@ -54,7 +55,7 @@ cmd(['type'],'print a file',function(a,raw,w){
 });
 function eraseAll(m){ /* the BDOS stops at the first read-only file: STAT NAME $R/W first */
   var F=files().filter(m),N=F.map(function(k){return P.root.kids[k]});
-  if(N.some(function(n){return !n.prot&&!P.mayAlter(n)})){P.typeLine('BDOS ERR ON A: FILE R/O');return}
+  if(N.some(function(n){return !n.prot&&!P.mayAlter(n)})){bdos('A','File R/O');return}
   F.forEach(function(k,i){if(!N[i].prot)delete P.root.kids[k]});
 }
 cmd(['era'],null,function(a,raw,w){
@@ -74,7 +75,7 @@ cmd(['ren'],null,function(a,raw,w){ /* backwards, as it should be: REN NEW=OLD *
   q=q.map(function(x){return x.replace(/^a:/i,'')});
   var n=get(q[2]),to=P.fcb.cut(q[1]);
   if(!n){P.typeLine('NO FILE');return}
-  if(n.prot||!P.mayAlter(n)){P.typeLine('BDOS ERR ON A: FILE R/O');return}
+  if(n.prot||!P.mayAlter(n)){bdos('A','File R/O');return}
   if(P.root.kids[to]||get(q[1])){P.typeLine('FILE EXISTS');return} /* in any user area: one name, one file here */
   delete P.root.kids[n.name];n.name=to;P.root.kids[to]=n;
 });

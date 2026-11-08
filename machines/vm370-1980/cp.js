@@ -253,7 +253,7 @@ var REPLIES=['WHO IS THIS?','THIS IS THE CONSOLE. CALL USER SERVICES IN THE MORN
 V.operatorReply=function(text){
   var r=/PASSWORD|MAINT/.test(text)?'NICE TRY.':REPLIES[Math.min(said++,REPLIES.length-1)],who=V.user;
   P.pause(1400);
-  P.queue(function(){if(V.user===who)V.msgFrom('OPERATOR',r)});
+  P.queue(function(){if(V.user===who&&!V.dsc)V.msgFrom('OPERATOR',r)});
 };
 
 CP.SET=function(a){
@@ -504,8 +504,11 @@ CP.IPL=function(a){
   if(k){V.halted();return 0}
   err('DMKCFG030E SYSTEM '+w+' DOES NOT EXIST');return 30;
 };
-CP.DISCONN=function(){V.logoff(true);return 0};
-CP.LOGOFF=CP.LOGOUT=function(){V.logoff(false);return 0};
+CP.DISCONN=function(a){
+  if(a[0]&&V.lookup([['HOLD',1]],a[0])!=='HOLD')return bad('USO',3,'INVALID OPTION - '+a[0]);
+  V.disconn();return 0;
+};
+CP.LOGOFF=CP.LOGOUT=function(){V.logoff();return 0};
 CP.DIAL=function(){err('DMKDIA045E DIAL NOT AVAILABLE');return 45};
 CP.WARNING=CP.WNG=function(a,w,line){
   if(!a[0])return bad('WRN',20,'USERID MISSING OR INVALID');
@@ -518,7 +521,7 @@ CP.WARNING=CP.WNG=function(a,w,line){
 CP.FORCE=function(a){
   var u=a[0];
   if(!u)return bad('CPU',20,'USERID MISSING OR INVALID');
-  if(u===V.user){V.logoff(false,true);return 0}
+  if(u===V.user){V.logoff();return 0}
   if(!V.others().some(function(x){return x[0]===u}))return bad('CPU',45,u+' NOT LOGGED ON');
   return 0;
 };
@@ -554,15 +557,28 @@ V.logonAs=function(user,at){ /* a logon accepted: the machine, the letter in the
   if(user==='GUEST'){var f=V.letterFile();if(f&&!V.letterGone)V.arrive(f,true)}
   P.say(V.logonLines(V.logon));
 };
-V.logoff=function(dsc,forced){
+V.logoff=function(){
+  var dsc=V.dsc,n=P.now();
   V.stopAll();
-  var n=P.now();
-  P.typeLine(V.usage(n));
-  P.typeLine((dsc?'DISCONNECT AT ':'LOGOFF AT ')+V.stamp(n));
-  V.ending();
-  V.state='online';V.user=null;V.cls='';V.cpMode=false;V.stack=[];
+  if(!dsc){P.typeLine(V.usage(n));P.typeLine('LOGOFF AT '+V.stamp(n))}
+  ended();
+  if(dsc)return; /* disconnected: its terminal is at VM/370 ONLINE already */
   P.pause(700);
   P.queue(function(){P.typeLine('');P.typeLine('VM/370 ONLINE')});
+};
+function ended(){V.dsc=null;V.ending();V.state='online';V.user=null;V.cls='';V.cpMode=false;V.stack=[]} /* the virtual machine is no more */
+/* DISCONN: the terminal is let go and the virtual machine runs on (DMKUSODS: "LET VM RUN, DON'T POST READ"); what it
+   types meanwhile is lost, there being no SPOOL CONSOLE here. LOGON reconnects it, in CP mode till BEGIN; it is logged
+   off 15 minutes after it reads from the terminal (CP Command Reference, GC20-1820, DISCONN), and CMS is soon at a read */
+V.disconn=function(){
+  if(V.dsc)return;
+  var n=P.now();
+  V.raw('DISCONNECT AT '+V.stamp(n));
+  V.dsc={at:n};V.letGo();
+  if(V.state==='cms'){V.cpMode=false;V.cpReady=false;V.held=false}
+  P.pause(700);
+  P.queue(function(){V.raw('');V.raw('VM/370 ONLINE')});
+  V.dark();
 };
 V.shutdown=function(){
   V.stopAll();V.ending();
@@ -570,7 +586,8 @@ V.shutdown=function(){
 };
 
 /* ---------- before anyone logs on, CP takes only LOGON, DIAL and MSG ---------- */
-V.online=function(raw){
+V.online=function(raw,dsc){ /* dsc: a line typed while the virtual machine runs disconnected: CP's lines are typed, the machine's are not */
+  if(dsc){tty(function(){var w0=up(raw.trim().split(/\s+/)[0]||'');if(!(w0&&V.termWord(w0,raw)))V.online(raw)})();return}
   var W=V.lineEdit(raw)[0].trim().split(/\s+/).filter(Boolean),w=up(W[0]||'');
   if(!w)return;
   var c=V.lookup([['LOGON',1],['LOGIN',5],['DIAL',4],['MSG',3],['MESSAGE',1]],w);
@@ -580,25 +597,35 @@ V.online=function(raw){
   if(!c){P.typeLine('RESTART');return}
   var user=up(W[1]||'');
   if(!user||!/^[A-Z0-9$#@]{1,8}$/.test(user)){P.typeLine('DMKLOG020E USERID MISSING OR INVALID','err');return}
-  function go(pw){
+  var go=tty(function(pw){
     if(pw===null||pw===P.INT)return;
     pw=pwOf(String(pw));
     var d=V.dir[user];
     if(!d){P.typeLine('DMKLOG053E '+user+' NOT IN CP DIRECTORY','err');return}
     if(pw!==d.pw||d.pw==='NOLOG'){P.pause(900);P.typeLine('DMKLOG050E PASSWORD INCORRECT','err');return}
     if(d.on&&d.on!=='DSC'){P.typeLine('DMKLOG054E ALREADY LOGGED ON LINE '+d.on,'err');return}
+    var n=P.now();
+    if(V.dsc&&(user!==V.user||n-V.dsc.at>=9e5)){V.stopAll();ended()} /* logged off by now; one virtual machine here, so another user's logon ends it too */
+    if(V.dsc){ /* the virtual machine is still there: reconnected to it, with the log message and the files waiting (DMKLOG, DMKLOH) */
+      var L=V.logmsg(true);
+      if(V.rdr.length||V.prtFiles.length||V.punFiles.length)L.push(V.filesLine());
+      L.push('RECONNECTED AT '+V.stamp(n));
+      P.say(L);V.reconnect();return;
+    }
     V.logonAs(user);
     V.ipl();
-  }
+  });
   if(W[2]){go(W[2]);return}
   P.typeLine('ENTER PASSWORD:');
   P.typeLine('XXXXXXXX'); /* the mask a typewriter strikes for the password to be typed over */
   V.ask(go,true,true);
 };
+function tty(f){return function(){var was=V.tty;V.tty=true;try{return f.apply(this,arguments)}finally{V.tty=was}}} /* CP's own lines, typed even while the virtual machine is disconnected */
 
 /* ---------- a line as CP's line editing reads it ---------- */
 V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an attention does not end (V.progRead) */
   if(V.hold(function(){V.ask(then,trap,hidden,prog)}))return;
+  if(V.dsc&&!V.tty){then(null);return} /* a read with no terminal, by what went on after DISCONN in line with the terminal's own: it gets nothing */
   P.queue(function(){V.asking=prog?'prog':true}); /* the read is up: an attention now is the read's, not a running program's */
   P.ask('',function(l){
     V.asking=false;

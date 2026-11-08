@@ -99,7 +99,7 @@ function human(b,suffix){ /* 4.0K, 13K, 1.9G: GNU rounds up */
 }
 
 /* ---------- the shell ---------- */
-var BUILTIN=['alias','bg','cd','command','echo','exit','export','false','fg','help','history','jobs','kill','logout','printf','pwd','read','set','shift','source','test','true','type','umask','unalias','unset','wait'];
+var BUILTIN=['alias','bg','cd','command','declare','echo','exit','export','false','fg','help','history','jobs','kill','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
 cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
   'changes the working directory to dir, or to your home directory if there is none. cd - goes back to the one before, and says where that is.',
   function(a){
@@ -172,6 +172,15 @@ cmd('export','','set export attribute for shell variables','export [-fn] [name[=
     if(m[2]!==undefined)P.env[m[1]]=m[2];
   });
 });
+cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [name ...]','gives each name the value after its =; the attributes are not kept here. with no name, lists the variables.',function(a,raw,w){
+  var args=w.slice(1).filter(function(x){return x.charAt(0)!=='-'&&x.charAt(0)!=='+'});
+  if(!args.length){var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));return}
+  args.forEach(function(x){var m=x.match(/^([A-Za-z_]\w*)(?:=([\s\S]*))?$/);if(!m){err('bash: '+w[0]+": `"+x+"': not a valid identifier");return}if(m[2]!==undefined)P.env[m[1]]=m[2]});
+});
+cmd('readonly','','mark shell variables as unchangeable','readonly [-aAf] [name[=value] ...] or readonly -p','gives each name the value after its =; that it may not be changed is not kept here.',function(a,raw,w){
+  w.slice(1).filter(function(x){return x.charAt(0)!=='-'}).forEach(function(x){var m=x.match(/^([A-Za-z_]\w*)(?:=([\s\S]*))?$/);if(!m){err("bash: readonly: `"+x+"': not a valid identifier");return}if(m[2]!==undefined)P.env[m[1]]=m[2]});
+});
+cmd('local','','define local variables','local [option] name[=value] ...','makes a variable local to a shell function; there are none here, so it says so.',function(){err('bash: local: can only be used in a function')});
 cmd('unset','','unset values and attributes of shell variables and functions','unset [-f] [-v] [-n] [name ...]','removes each variable named.',function(a){a.forEach(function(k){delete P.env[k]})});
 cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... [-] [NAME=VALUE]... [COMMAND [ARG]...]','with no command, prints the environment, one NAME=value to a line.',function(){
   var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));
