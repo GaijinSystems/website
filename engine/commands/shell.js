@@ -48,8 +48,8 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
     if(!P.profile.csh&&(m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()} /* csh's alias is always name, then the words: an = in them is theirs */
     else{
       var key=P.fold(rest).split(/\s+/).join(' '),hit=P.aliases.filter(function(x){return x.from.join(' ')===key});
-      if(hit.length){P.typeLine(aliasRow(hit[0]));return}
-      if(rest.indexOf(' ')<0){P.typeLine('alias: '+P.fold(rest)+': not found','err');return}
+      if(hit.length){P.typeLine(P.profile.csh?hit[0].to:aliasRow(hit[0]));return} /* csh: alias name prints just what it stands for */
+      if(rest.indexOf(' ')<0){if(!P.profile.csh)P.typeLine('alias: '+P.fold(rest)+': not found','err');return} /* and nothing for one it doesn't know */
       nm=P.fold(rest.split(/\s+/)[0]);to=P.unquote(rest.replace(/^\S+\s+/,'')); /* csh style: alias name value */
     }
     if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
