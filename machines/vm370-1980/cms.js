@@ -16,8 +16,8 @@ function err(s){if(!(V.nomsg&&/^DMS...002E/.test(s)))V.em(s,'err')}
 /* ---------- the session: IPL, the first line, the ready message ---------- */
 V.cmsVersion='CMS VERSION 6.0 - 10/19/79 14.12'; /* the id given when the CMS nucleus was built, before installation */
 V.ipl=function(){ /* CMS comes up: A and S accessed, the settings as they start, and the profile waits for the first line */
-  V.stopAll();
-  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;V.execs=[];V.pend=[];V.level=0;V.abended=false;V.attn=false;V.owe=false;V.held=false;V.ht=false;
+  V.stopAll(); /* attn, owe and held too */
+  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;clearRun();V.abended=false;V.ht=false;
   V.acc={};V.syn={};V.synStd=true;
   V.opt={blip:false,rdymsg:'LMSG',impex:true,impcp:true,abbrev:true,protect:true};
   if(V.devs['191'])V.access('191','A',null,true);
@@ -30,9 +30,10 @@ V.stopAll=function(){ /* CMS ends (LOGOFF, DISCONN, IPL, a wait state, SHUTDOWN)
   var side=V.side&&V.side.live();
   if(side)V.side.stop();
   V.side=null;release();
-  if(side||V.attn||V.held){(V.execs||[]).forEach(function(S){S.stop=true});V.execs=[];V.pend=[];V.level=0;V.busy=false} /* the lines left in V.pend are that EXEC's, not CP's to come */
+  if(side||V.attn||V.held){(V.execs||[]).forEach(function(S){S.stop=true});clearRun();V.busy=false} /* the lines left in V.pend are that EXEC's, not CP's to come */
   V.attn=false;V.owe=false;V.held=false;V.next=null;
 };
+function clearRun(){V.execs=[];V.pend=[];V.level=0} /* no EXEC running, and none of their lines still to type */
 function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.4;V.tcpu+=t*.5;return [v,t]} /* most commands take a hundredth of a second, or less */
 function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
 V.rcs=rcs;
@@ -49,7 +50,7 @@ V.input=function(raw){
   var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
   V.asking=false;
   if(V.attn&&V.state!=='cms')V.attn=false;
-  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.pend=[];V.abended=false;V.busy=false;V.owe=false;V.held=false;V.next=null} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
+  if(!(V.edRead&&V.state==='cms')&&!V.attn){clearRun();V.abended=false;V.busy=false;V.owe=false;V.held=false;V.next=null} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -67,14 +68,14 @@ V.input=function(raw){
      editor's read is still to come; any other line is the editor's. When the edit ends, the EXECs that ran it carry on */
   if(ed){
     var r=V.edRead,L=V.lineEdit(raw),w=L.length===1?V.immediate(up(L[0])):''; /* the whole line (DMSCIT), not its logical lines */
-    if(w==='HX'){V.edRead=null;V.abend();V.execs=[];V.pend=[];V.level=0;P.queue(function(){V.ready(0)});return}
+    if(w==='HX'){V.edRead=null;V.abend();clearRun();P.queue(function(){V.ready(0)});return}
     if(w)return;
     V.stack.push(L.join(LE));var l1=V.pop(); /* after what was stacked already (DMSCIT); its first logical line, the rest stacked in front (DMSCRD) */
     P.queue(function(){r(l1)});
     P.queue(function(){
       if(V.edRead||V.state!=='cms'||V.cpMode)return;
       if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
-      P.queue(function(){if(V.state==='cms'&&!V.cpMode&&V.stack.length)cmsLine(V.pop(),true)});
+      P.queue(function(){if(V.state==='cms'&&!V.cpMode)stackNext()});
     });
     return;
   }
@@ -106,8 +107,9 @@ P.onInterrupt=function(trap){
   release();
   var bang=V.term&&!V.term.attn?{says:'',same:true}:'!'; /* ATTN OFF: DMKCNS's CNSEXNO sends idles only, no new line, so the read goes on in the same line */
   if(trap&&V.asking==='prog'){V.typed=!!P.typed();V.asking=false;return bang} /* a program's read: see V.progRead */
-  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&!V.attn)putBack(); /* a stacked line whose command had not started yet: still in the stack */
-  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&(V.execs.length||V.busy||V.stack.length||V.attn&&V.owe)){
+  var cms=!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking; /* CMS itself, not at a read */
+  if(cms&&!V.attn)putBack(); /* a stacked line whose command had not started yet: still in the stack */
+  if(cms&&(V.execs.length||V.busy||V.stack.length||V.attn&&V.owe)){
     if(!V.attn&&(V.execs.length||V.busy))V.owe=true; /* a command cut short owes its ready message; with the attention's read already up, this one only puts the read up again (CP's unit exception, DMSCIT reissuing it), and what runs beside it goes on */
     V.attn=true;
     P.queue(V.goOn,true); /* once the read is up */
@@ -129,8 +131,9 @@ function release(){if(V.attnWait){var r=V.attnWait;V.attnWait=null;r()}} /* what
 function goOn(){V.carryOn();P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()})}
 function cmsNext(){
   if(V.owe){V.owe=false;V.ready(V.rc||0)}
-  if(V.stack.length)cmsLine(V.pop(),true);
+  stackNext();
 }
+function stackNext(){if(V.stack.length)cmsLine(V.pop(),true)} /* CMS reads the console stack's next line, if it holds one */
 /* the line CMS has just taken from the console stack, while its command has not started: stopped there (#CP, or an
    attention cutting the ready message short), CMS has not read it yet, so it goes back in front of the stack */
 function putBack(){if(V.next!=null){V.stack.unshift(V.next);V.next=null}}
@@ -168,7 +171,7 @@ function attention(raw){
   var w=L.length===1?V.immediate(up(L[0])):'',hx=w==='HX'; /* DMSCIT looks at the whole line, exactly two characters: X#HX and 'HX ' are stacked, not HX */
   V.attn=false;V.held=false;
   if(!w)V.stack.push(L.join(LE));
-  if(hx){V.owe=false;V.abend();V.execs=[];V.pend=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
+  if(hx){V.owe=false;V.abend();clearRun();if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
   release();
   if(on)P.queue(function(){return h.end()});else V.carryOn();
   P.queue(function(){if(V.state==='cms'&&!V.cpMode&&!V.attn)cmsNext()}); /* what the stack still holds, the line typed last */
@@ -182,7 +185,7 @@ function cmsLine(l,st){ /* st: l came from the console stack */
   V.rc=0;V.next=null;
   if(!l.trim()&&!V.first){ /* a null line: CMS says it is there, and reads on */
     P.typeLine('CMS');
-    if(V.stack.length)P.queue(function(){if(V.stack.length)cmsLine(V.pop(),true)});
+    if(V.stack.length)P.queue(stackNext);
     return;
   }
   if(V.first){
@@ -196,7 +199,7 @@ function cmsLine(l,st){ /* st: l came from the console stack */
     V.busy=false;V.ht=false; /* HT holds to the end of the command, ready message or not (DMSINT, RESTYP) */
     if(V.state!=='cms'||V.cpMode)return;
     if(!quiet)V.ready(V.rc);
-    if(V.stack.length)P.queue(function(){if(V.stack.length)cmsLine(V.pop(),true)}); /* what an EXEC left in the console stack: CMS reads it as its next commands, once the ready message is typed */
+    if(V.stack.length)P.queue(stackNext); /* what an EXEC left in the console stack: CMS reads it as its next commands, once the ready message is typed */
   });
 }
 
@@ -818,9 +821,10 @@ P.setup(function(){
   ['help','mail','about','source','sound','fill','effects','connect'].forEach(function(k){
     if(!P.has(P.cmds,k))return;
     TERM[k]=P.cmds[k];
-    P.cmds[k]=function(a,raw,w,typed){V.input(typeof typed==='string'?typed:raw)}; /* with its blanks, as the fallback's */
+    P.cmds[k]=function(a,raw,w,typed){V.input(asTyped(raw,typed))}; /* with its blanks, as the fallback's */
   });
-  P.fallback=function(word,raw,args,typed){P.status(0);V.input(typeof typed==='string'?typed:raw);return true}; /* typed: the line with its blanks, where the engine gives it */
+  P.fallback=function(word,raw,args,typed){P.status(0);V.input(asTyped(raw,typed));return true};
+  function asTyped(raw,typed){return typeof typed==='string'?typed:raw} /* typed: the line with its blanks, where the engine gives it */
   P.blank=function(){V.input('')}; /* an empty line: CMS answers it, and the first one after IPL runs the profile */
   /* HT: what is typed from here to the ready message is not, but for error messages (Command and Macro Reference, HT).
      While a CMS command runs (V.cap) its lines go through V.pend, a line at a time, as an EXEC's do (exec.js) */

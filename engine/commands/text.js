@@ -100,8 +100,9 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
      nothing and stops at the first match, which makes the status 0 whatever went wrong */
   var v7=!gnu&&!P.profile.csh,sys5=!gnu&&P.profile.csh&&!P.profile.perror,S=/s/.test(fl);
   var quiet=gnu?/q/.test(fl):S&&!sys5,hush=S&&(gnu||sys5),F=rest.slice(1),many=F.length>1&&!((gnu||P.profile.perror)&&/h/.test(fl)),total=0,bad=false;
+  var all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl),cnt=/c/.test(fl); /* all: each line's exec runs to its null, which leaves lastIndex at 0 for the next */
   function scan(L,name){
-    var hits=[],n=0,all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl),pre=name!==undefined&&many?name+':':'';
+    var hits=[],n=0,pre=name!==undefined&&many?name+':':'';
     for(var i=0;i<L.length;i++){
       var l=L[i];
       if(re.test(l)===v)continue;
@@ -113,23 +114,22 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
       for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
     }
     total+=n;
-    if(!quiet){if(/c/.test(fl))P.typeLine(pre+n);else P.say(hits)}
+    if(!quiet){if(cnt)P.typeLine(pre+n);else P.say(hits)}
     return n;
   }
   if(!F.length){P.input([],function(L){P.status(scan(L)?0:1)});return}
   for(var k=0;k<F.length;k++){
-    var x=F[k],nd=P.find(P.fold(x));
-    if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([P.fold(x)],function(){});bad=true;if(v7)break;continue}
+    var x=F[k],fx=P.fold(x),nd=P.find(fx);
+    if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([fx],function(){});bad=true;if(v7)break;continue}
     if(scan(P.text(nd),x)&&quiet&&gnu)break;
   }
   P.queue(function(){P.status(bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
-  var fl=flags(a),F=operands(a),o=F[0],want=[!fl||/l/.test(fl),!fl||/w/.test(fl),!fl||/c/.test(fl)];
   function counts(L){ /* newlines, words and bytes: a last line with no newline is no line */
     var words=0,chars=0,x=L.open?1:0;
     L.forEach(function(l){var t=l.trim();if(t)words+=t.split(/\s+/).length;chars+=l.length+1});
-    return [L.length-x,words,chars-x].filter(function(n,i){return want[i]});
+    return {l:L.length-x,w:words,c:chars-x};
   }
   if(!P.profile.bash){ /* wc.c of V7, 4.3BSD and System V: a row for each file it could open, in the order of the option's letters, and a
                           total after more than one name. The options: V7 and System V take only the first word, 4.3BSD each in turn,
@@ -139,15 +139,13 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       if(bsd&&!/^[lwc]/.test(A[0].slice(1))){P.typeLine('Usage: wc [-lwc] [files]','err');P.status(1);return}
       wd=A.shift().slice(1);if(!bsd)break;
     }
-    want=[1,1,1];
     var col=function(k,n){return bsd?' '+String(n).padStart(7):String(n).padStart(7)+(v7&&k==='w'?' ':'')};
     var put=function(c,name){var o='';for(var i=0;i<wd.length;i++){var k=wd.charAt(i);if(c[k]!==undefined)o+=col(k,c[k])}P.typeLine(o+(name!==undefined?' '+name:''))};
-    var tally=function(L){var x=counts(L);return {l:x[0],w:x[1],c:x[2]}};
-    if(!A.length){P.input([],function(L){put(tally(L))});return}
+    if(!A.length){P.input([],function(L){put(counts(L))});return}
     A.forEach(function(x){P.queue(function(){
       var n=P.find(x),c;
       if(!n||n.prot){P.input([x],function(){});return} /* it says it cannot open it, and goes on with the next */
-      if(n.type==='d'){P.input([x],function(){});c={l:0,w:0,c:0}}else c=tally(P.text(n));
+      if(n.type==='d'){P.input([x],function(){});c={l:0,w:0,c:0}}else c=counts(P.text(n));
       put(c,x);T.l+=c.l;T.w+=c.w;T.c+=c.c;
     })});
     if(A.length>1)P.queue(function(){put(T,'total')});
@@ -155,6 +153,8 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
   }
   /* GNU wc: a row for each file, and a total for more than one. The width (compute_number_width) is 1 for one count of one file,
      else that of the regular files' total size, and at least 7 when one is not a regular file (a directory, a pipe, the terminal) */
+  var fl=flags(a),F=operands(a),want=[!fl||/l/.test(fl),!fl||/w/.test(fl),!fl||/c/.test(fl)];
+  function picked(L){var c=counts(L);return [c.l,c.w,c.c].filter(function(n,i){return want[i]})} /* the counts asked for, in that order */
   var one=want.filter(Boolean).length===1,S=P.stdin(),width=1,total=[0,0,0].slice(0,want.filter(Boolean).length),bad=false;
   if(!(one&&F.length<2)){
     var size=0,min=1;
@@ -164,12 +164,12 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
   }
   function row(c,name){P.typeLine(c.map(function(n,i){return (i?' ':'')+String(n).padStart(width)}).join('')+(name!==undefined?' '+name:''))}
   function add(c){c.forEach(function(n,i){total[i]+=n})}
-  if(!F.length){P.input([],function(L){var c=counts(L);row(c)});return}
+  if(!F.length){P.input([],function(L){row(picked(L))});return}
   F.forEach(function(x){P.queue(function(){
     var n=P.find(x);
     if(!n||n.prot){P.typeLine('wc: '+x+': '+(!n?'No such file or directory':'Permission denied'),'err');bad=true;return}
     if(n.type==='d'){row(total.map(function(){return 0}),x);P.typeLine('wc: '+x+': Is a directory','err');bad=true;return} /* it counts what it read, nothing, then says why it stopped */
-    var c=counts(P.text(n));add(c);row(c,x);
+    var c=picked(P.text(n));add(c);row(c,x);
   })});
   P.queue(function(){if(F.length>1)row(total,'total');P.status(bad?1:0)});
 });
