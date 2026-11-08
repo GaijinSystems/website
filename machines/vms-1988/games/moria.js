@@ -44,7 +44,7 @@
    Differences from the source: the files are records in this browser's storage (moria/files) in place of RMS files in
    the image's directory, and the first run's installation (HOURS.DAT, MORIA.DAT, the MASTER file and the scores, which
    the source makes and then stops) is done before anyone plays. The terminal is a VT100. The $ shell escape comes back
-   at once. HELP is this port's own reading of MORIAHLP.HLB (see the end of the file). The pauses the source makes
+   at once. HELP finds no MORIAHLP.HLB (see $help below). The pauses the source makes
    before each read, which its readme says to remove for VMS 4.0 and later, are removed. Out-of-range CASE selectors and
    array indexes are not trapped (the source was built with checking off). Reals are single precision, as VAX F_floating.
 */
