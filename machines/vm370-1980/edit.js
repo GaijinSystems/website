@@ -62,13 +62,15 @@ function fix(E,t){ /* a line as the file will hold it: the case, the truncation 
   if(t.length>E.trunc){out('TRUNCATED');t=t.slice(0,E.trunc);out(t)}
   return t;
 }
-/* attention (^C) at the editor's read: the edit carries on, as on Release 6, where only QUIT or FILE ends it.
-   ^C while it types stops the typing, and the next line typed is still the editor's: V.edRead keeps its read for that */
-function attn(l,again){if(l===P.INT){again();return true}return false}
-function read(then){var r=function(l){if(V.edRead===r)V.edRead=null;then(l)};V.edRead=r;V.read(r,true)}
+/* the editor reads through CMS (WAITRD), with no attention exit of its own (DMSEDI), so an attention at its read is as at
+   any CMS program's (V.progRead): a line half typed is cancelled and the read is up again; at an empty read it is CMS's
+   attention read, where HX ends the edit (the file as it was on disk; CMS) and HT and RT stop and resume the typing, and
+   any other line is the editor's. P.INT comes only for HX. ^C while it types stops the typing, and the next line typed
+   is still the editor's: V.edRead keeps its read for that */
+function read(then){var r=function(l){if(V.edRead===r)V.edRead=null;then(l)};V.edRead=r;V.progRead(r)}
 function loop(E){
   read(function(l){
-    if(l===null||attn(l,function(){loop(E)}))return;
+    if(l===null||l===P.INT)return;
     var r=sub(E,l);
     if(r==='input'){input(E);return}
     if(r==='end')return;
@@ -79,7 +81,7 @@ function input(E){
   if(E.verify)out('INPUT:');
   (function more(){
     read(function(l){
-      if(l===null||attn(l,more))return;
+      if(l===null||l===P.INT)return;
       if(l===''){if(E.verify)out('EDIT:');loop(E);return}
       ins(E,fix(E,l));
       more();
@@ -310,7 +312,7 @@ function save(E,auto){
 /* CMS SUBSET: a few CMS commands from inside the editor, then RETURN goes back to it */
 function subset(E){
   read(function(l){
-    if(l===null||attn(l,function(){subset(E)}))return;
+    if(l===null||l===P.INT)return;
     var w=up(l.trim()).split(/\s+/)[0]||'';
     if(w==='RETURN'){out('EDIT:');loop(E);return}
     if(w){

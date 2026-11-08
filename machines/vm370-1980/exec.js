@@ -12,8 +12,9 @@ var up=V.up;
    as on Release 6, where after the attention the program resumes execution (CMS User's Guide, GC20-1819, Virtual Machine
    Interruptions: the program resumes execution) */
 V.pend=[];
-function next(){var f=V.pend.shift();if(f)f()}
+function next(){var f=V.pend.shift();if(!f)return;V.inPend=true;try{f()}finally{V.inPend=false}}
 function emit(f){V.pend.push(f);P.queue(next)}
+V.emit=emit;
 V.flush=function(){for(var n=V.pend.length;n>0;n--)P.queue(next)}; /* the lines an attention left untyped */
 function out(s){emit(function(){P.typeLine(s)})}
 function err(s){emit(function(){V.em(s,'err')})}
@@ -87,10 +88,11 @@ V.resume=function(){
   });
   return true;
 };
-/* after an attention to a running EXEC, the line typed not HX: every EXEC carries on where it was, the innermost first; a
-   command it was running when the attention came is over */
+/* after an attention to a running command or EXEC, the line typed not HX: what it had still to type is typed, and every
+   EXEC carries on where it was, the innermost first */
 V.carryOn=function(){
-  V.rc=0;V.flush();
+  if(V.execs.length)V.rc=0; /* a command at the terminal keeps its own */
+  V.flush();
   V.execs.slice().reverse().forEach(function(S){
     P.queue(function(){if(S.waiting)after(S);run(S)});
     P.queue(function(){done(S)});

@@ -538,13 +538,13 @@ function refit(){ /* rows already printed re-fit on rotate/resize; not while a f
   var c=cols();for(var i=0;i<gs.length;i++)squeeze(gs[i],c);
 }
 window.addEventListener('resize',refit);
-var MODE='shell'; /* shell | login | password (password input is not echoed) */
+var MODE='shell',JOIN=null; /* shell | login | password (password input is not echoed). JOIN: the line the next prompt goes on in (interrupt) */
 function showPrompt(p,mode){
   MODE=mode||'shell';
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
-  var d=document.createElement('div');d.className='line';
+  var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';JOIN=null; /* after the text cut short, when nothing came between */
   if(MODE!=='read')HIDE=false;
-  bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
+  BUFAT=0;bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
   d.appendChild(document.createTextNode(UP(p==null?(RP?PROFILE.rootPrompt:promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
@@ -761,7 +761,7 @@ function input(names,done){ /* the lines a command works on: named files, else i
     done(L);
     return;
   }
-  if(STDIN){done(STDIN);return}
+  if(STDIN){done(STDIN.splice(0));return} /* it reads the rest: a read after it, or the next round of a read loop, finds nothing */
   var got=[];
   queue(function(){
     return (function more(){return readLine().then(function(l){if(l===null)return;got.push(l);return more()})})();
@@ -1101,7 +1101,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   ctime:ctime,short:short,now:now,p2:p2,tz:tz,row:row,manPage:manPage,fill:PROFILE.fill,
   clear:function(){queue(function(){afterglow(term.scrollTop,.55,900,true);out.textContent='';log.textContent=''})},
   logout:function(){ /* log out: clear the glass, replay the self-test, wait at login: */
-    dropRoot();endJobs();
+    dropRoot();endJobs();KEPT.length=0; /* the ( ) or pipe stage it came from does not put the old variables back */
     LOGOUT=true;PH.aliases=PROFILE.aliases.slice(); /* session aliases die with the shell, and so do its variables and history */
     Object.keys(ENV).forEach(function(k){delete ENV[k]});Object.assign(ENV,ENV0);
     Object.keys(CSHV).forEach(function(k){delete CSHV[k]});hist=[];hi=0;
@@ -1373,14 +1373,14 @@ function runSub(text){ /* in a step: ( list ), with its own directory, variables
   var tree;
   try{tree=parseTree([text])}catch(e){typeLine(e===MORE?syntaxError('end'):e.message,'err');return}
   var back=keep(),was=SUBSH,loop=LOOP,shell=SHID,ld=LOOPD,g=GEN,job=ASIDE&&ASIDE.job;
-  SUB++;SUBSH=SUB;SHID=++SHIDS;LOOPD=0;STATUS=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs */
+  SUB++;SUBSH=SUB;SHID=++SHIDS;LOOPD=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs. Its $? is the shell's, as a fork's is */
   runBlock(tree);
   queue(function(){var st=STATUS;SUB--;SUBSH=was;SHID=shell;LOOP=loop;LOOPD=ld;back();if(job||g===GEN)STATUS=st},true);
 }
 function runPipeline(stages){
   var pipe=null;
   stages.forEach(function(st,i){
-    var last=i===stages.length-1,sink=null,keepSink,keepIn,keepErr,errs=null,epipe=null,ok=true,own=false,prefix=null;
+    var last=i===stages.length-1,sink=null,keepSink,keepIn,keepErr,errs=null,epipe=null,ok=true,own=false,prefix=null,back=null,loop=null;
     queue(function(){
       keepSink=SINK;keepIn=STDIN;keepErr=ERRSINK;
       if(st.in!==null){
@@ -1400,10 +1400,11 @@ function runPipeline(stages){
         if(toGlass)SINK=ERRSINK!==GLASS?ERRSINK:null; /* wherever errors go now: sh x 2>e, with echo y >&2 in x */
         else if(sink)SINK=sink;
       }
+      if(sink&&!last&&st.out===null&&!st.closed)sink.cap=pipeCap(stages[i+1].words); /* what the next stage reads */
       if(st.e2o&&st.e2oFirst&&st.out!==null)ERRSINK=last?keepSink||GLASS:epipe=[]; /* 2>&1 >f: errors where the output was before >f */
       else if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
       if(pipe)STDIN=pipe;
-      if(stages.length>1){SUB++;own=true} /* a stage of a pipeline is its own process */
+      if(stages.length>1){SUB++;own=true;loop=LOOP;if(!(PROFILE.csh&&last))back=keep()} /* a stage of a pipeline is its own process: a loop, read, cd or x=1 in it changes only that. csh runs the last one in the shell itself when it is one of its own commands (sh.sem.c forks a builtin only when it is piped out) */
       PIDNOW=null;
       if(JOB&&JOB.pids&&JOB.pids.length===stages.length){PIDNOW=JOB.pids[i];if(last)JOB.pids=null} /* ps & shows itself with the id the notice gave */
       if(st.sub!==undefined){runSub(st.sub);return}
@@ -1419,7 +1420,8 @@ function runPipeline(stages){
       runOne(unguard(cut(st.raw0,0)),st.words.slice(k),cut(st.src,1));
     });
     queue(function(){
-      if(own)SUB--;
+      if(own){SUB--;if(back)back()}
+      if(sink&&sink.broke&&LOOP==='exit')LOOP=loop; /* SIGPIPE ended that process only */
       if(prefix)Object.keys(prefix).forEach(function(n){if(prefix[n]===undefined)delete ENV[n];else ENV[n]=prefix[n]});
       if(!ok)return;
       if(st.out!==null&&sink&&!st.glass)writeFile(st.out,sink,true);
@@ -1531,7 +1533,10 @@ function jobWords(c){ /* a command as the job table shows it: ( list ) spaced ou
   var k=markNode(c);
   if(k)return compText(k.node,'').join('\n')+c.slice(k.len); /* a loop as bash prints it, then | cat */
   var m=/^\(([\s\S]*)\)$/.exec(c);
-  return m?'( '+splitCmds(m[1]).map(oneLine).filter(Boolean).join('; ')+' )':c;
+  return m?'( '+splitCmds(m[1]).map(oneLine).filter(Boolean).map(subWords).join('; ')+' )':c;
+}
+function subWords(t){ /* a command of a ( list ): its own ( ) spaced out too, as the printers do all the way down */
+  return andOr(t).map(function(p){return (p.op?p.op+' ':'')+pipeRaw(p.text).map(function(x){return jobWords(oneLine(x))}).join(' | ')}).join(' ');
 }
 function loginShell(){return procTable().filter(function(p){return p.mine&&/(^|[\/-])(ba|c)?sh$/.test(p.cmd)})[0]} /* the login shell's row in ps */
 function shellName(){var r=loginShell();return r?r.cmd:PROFILE.bash?'-bash':PROFILE.csh?'-csh':'-sh'} /* a forked shell: ps shows it as the login shell */
@@ -1589,7 +1594,8 @@ function tstp(){ /* ^Z: the foreground job stops, and the shell takes the termin
   if(!control())return false;
   if(bufNode&&!READ&&!KEYS)return true; /* at the prompt: nothing */
   var job=FGJOB,pr=FGP,h=TTYH;
-  if(!job&&(!pr||pr.over||pr.job||NOSTOP.test(procOf(pr).word)))return true;
+  if(!job&&(!pr||pr.over||pr.job))return true;
+  if(!job&&NOSTOP.test(procOf(pr).word)){if(PROFILE.bash)zEcho();return true} /* the shell sets it aside; the tty still echoes it */
   if(!job)job=procJob(pr);
   if(job.over)return true;
   atCursor('^Z');
@@ -1722,6 +1728,7 @@ function signal(job,n,group){ /* send signal n to the job; group: to its process
     if(renote)job.noted=false; /* bash hears of it again, and says so */
     return;
   }
+  if(renote&&job.state==='Stopped')job.restop=true; /* kill_pid clears J_NOTIFIED: before the prompt bash says again that it is stopped, and that it ended before the next */
   killJob(job,n);
 }
 function polite(d){var h=ST.home;return d===h?'~':d.indexOf(h+'/')===0?'~'+d.slice(h.length):d} /* bash's polite_directory_format, csh's dtildepr */
@@ -1751,15 +1758,17 @@ function rowsOf(job,how){ /* how: '' as jobs and the notices print it, 'l' with 
 function due(j){return j.owner===0&&!j.noted&&j.born!==RUNS} /* the shell finds out at the prompt after the one its line was typed at, as the child's exit comes after the prompt is out */
 function notesDue(){return control()&&TABLE.some(due)}
 function jobNotes(){ /* before a prompt: what has become of the jobs since the last one. bash in job order, csh newest first */
-  var L=TABLE.filter(due),dir=ST.cwd,moved=false;
+  var L=TABLE.filter(due),dir=ST.cwd,moved=false,gone=[];
   if(PROFILE.csh)L.reverse();
   L.forEach(function(j){
+    if(j.restop){var s=j.state;j.restop=false;j.state='Stopped';typeLine('');jobRows(j,'').forEach(function(r){typeLine(r)});j.state=s;return} /* killed while stopped: still Stopped, as far as bash has heard */
     j.noted=true;
     if(PROFILE.bash&&j.state==='Stopped')typeLine(''); /* notify_of_job_status: a newline first */
     jobRows(j,'').forEach(function(r){typeLine(r)});
     if(PROFILE.bash&&j.state!=='Stopped'&&j.wd!==dir)moved=true;
-    if(j.state!=='Stopped')drop(j);
+    if(j.state!=='Stopped'){if(PROFILE.csh)drop(j);else gone.push(j)} /* csh's pnote flushes each as it goes; bash's cleanup_dead_jobs comes after them all, so the marks it prints are the ones from before */
   });
+  gone.forEach(drop);
   if(moved)typeLine('(wd now: '+polite(dir)+')');
 }
 function v7Notes(){ /* V7 sh's await: each child a signal ended, as it is reaped: its id and sysmsg[] (and a bare newline for INT) */
@@ -1933,8 +1942,8 @@ function procTable(){ /* the processes ps lists besides the jobs: {pid,mine,cmd}
 function shellPid(){var r=loginShell();return r?r.pid:23} /* $$: the login shell ps shows */
 function shellSignal(n,group){ /* kill $$, or kill 0 (its process group: with no job control, the jobs too). What the shell does not set aside ends it */
   if(group&&!control())liveJobs().forEach(function(j){if(j.owner===0)signal(j,n)});
-  var x=(SIG[n]||{}).name,kept=control()?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(QUIT|INT)$/; /* interactive: bash and csh set TERM aside, V7 sh only QUIT (and catches INT) */
-  if(kept.test(x||'')||sigDo(n)!=='end'||SUB||SCRIPTS||SHID||ASIDE)return; /* a child's own shell is another process */
+  var x=(SIG[n]||{}).name,kept=control()?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(TERM|QUIT|INT)$/; /* interactive: bash and csh set TERM aside; V7 sh sets TERM and QUIT aside and catches INT */
+  if(kept.test(x||'')||sigDo(n)!=='end'||SCRIPTS||ASIDE||group&&(SUB||SHID))return; /* a script's own shell is another process. $$ in ( ), a pipe or a `command` is still the shell's; their kill 0 is their own group */
   PH.logout();
 }
 function stoppedWarn(){ /* exit and logout with stopped jobs: once, unless the line before said it (or was jobs) */
@@ -2137,10 +2146,16 @@ function runBlock(B){
 }
 function afterLoop(){var was=LOOP;if(was!=='exit'&&was!=='stop')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at */
 function over(was){return was==='break'||was==='exit'||was==='stop'}
+var PIPEMAX=65536; /* the lines a pipe takes from a loop before the loop's process is ended (memory stays bounded); a pipe to head or read takes what it reads */
+function pipeCap(w){var m;return w[0]==='head'?(m=/^-(\d+)$/.exec(w[1]||''))?+m[1]||1:10:w[0]==='read'?1:PIPEMAX} /* head -5 | read: they stop reading and go, and the next write gets SIGPIPE */
+function pipeFull(){ /* a loop writing to a pipe that has all its reader takes: the loop's process dies of SIGPIPE (bash: status 141) */
+  if(!SINK||!SINK.cap||SINK.length<SINK.cap)return false;
+  SINK.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true;
+}
 function round(body,again){ /* a while loop's body, then again() unless it ended in break or exit */
   runBlock(body);
   var stop;
-  queue(function(){var was=afterLoop();stop=over(was);if(!stop)return sleep(0)});
+  queue(function(){var was=afterLoop();stop=over(was)||pipeFull();if(!stop)return sleep(0)});
   queue(function(){if(!stop&&!LOOP)again()});
 }
 var NODES=[],NODEID=new Map(),MARK='\uE031',MARKP=new RegExp('^'+MARK),MARKN=new RegExp('^'+MARK+'(\\d+)'); /* a loop with a pipe or redirection after it: the pipeline's stage MARK n runs NODES[n]; NODEID: each node's n */
@@ -2198,7 +2213,7 @@ function loopStmt(st){
       (function next(i){
         if(i>=W.length)return;
         queue(function(){ENV[st.v]=W[i];runBlock(st.body)});
-        queue(function(){if(!over(afterLoop()))next(i+1)});
+        queue(function(){if(!over(afterLoop())&&!pipeFull())next(i+1)});
       })(0);
     });
     return;
@@ -2459,7 +2474,12 @@ function login(name){
 }
 
 /* ---------- input ---------- */
-function renderBuf(){if(bufNode){bufNode.data=MODE==='password'||HIDE?'':UP(buf);scrollBottom()}}
+var BUFAT=0; /* how much of buf is shown before a ^Z the tty echoed (zEcho); bufNode shows the rest */
+function renderBuf(){if(bufNode){BUFAT=Math.min(BUFAT,buf.length);bufNode.data=MODE==='password'||HIDE?'':UP(buf.slice(BUFAT));scrollBottom()}}
+function zEcho(){ /* ^Z at a read the shell does: the tty echoes it where the typing is, and the line goes on */
+  if(!bufNode||!bufNode.parentNode){atCursor('^Z');return}
+  bufNode.parentNode.insertBefore(document.createTextNode((MODE==='password'||HIDE?'':UP(buf.slice(BUFAT)))+'^Z'),bufNode);BUFAT=buf.length;renderBuf();
+}
 function setBuf(v){
   buf=v.replace(/[\r\n]/g,'').slice(0,255);
   if(kb.value!==buf)kb.value=buf;
@@ -2578,6 +2598,7 @@ function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in
 function atCursor(s){var at=cursor.parentNode;if(at)at.insertBefore(document.createTextNode(s),cursor)} /* text just before the cursor, where it is */
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var q=PH.onInterrupt&&!(bufNode&&!READ&&MODE!=='shell')?PH.onInterrupt(!!(READ&&TRAP)):null; /* a machine's own QUIT (Multics): what it shows instead of ^C; true when a program takes the ^C itself */
+  if(q&&typeof q==='object'){if(q.same&&bufNode)JOIN=cursor.parentNode;q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one (VM/370's TERMINAL ATTN OFF) */
   atCursor(q==null?'^C':q);
   HOLD=false; /* and, as the tty did, undo a ^S: nothing waits for a ^Q that will not come */
   if(READ&&TRAP){finishRead(INT);return}
