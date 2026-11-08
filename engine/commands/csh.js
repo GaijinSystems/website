@@ -57,7 +57,16 @@ builtin(['set'],function(){
   if(!t){listVars();return}
   try{
     while((m=/^([A-Za-z_]\w*)\s*(?:=\s*("[^"]*"|'[^']*'|\([^)]*\)|(?:\\.|\S)*))?\s*/.exec(t))&&m[0]){
-      P.shvars[m[1]]=m[2]&&m[2].charAt(0)==='('?value(m[2].slice(1,-1)).trim().replace(/\s+/g,' '):value(m[2]||''); /* ( 1 2 3 ): its words */
+      delete P.shwords[m[1]];
+      if(m[2]&&m[2].charAt(0)==='('){ /* ( 1 2 3 ): its words. A quoted word stays one; the rest split at blanks and match file names */
+        var L=[];
+        (m[2].slice(1,-1).match(/(?:"[^"]*"|'[^']*'|\\.|[^\s"'\\])+/g)||[]).forEach(function(x){
+          if(/["'\\]/.test(x)){L.push(value(x));return}
+          value(x).split(/\s+/).filter(Boolean).forEach(function(y){L=L.concat(P.glob(y))}); /* no match: the parser has said so */
+        });
+        P.shvars[m[1]]=L.join(' ');P.shwords[m[1]]={s:P.shvars[m[1]],w:L};
+      }
+      else P.shvars[m[1]]=value(m[2]||'');
       t=t.slice(m[0].length);
     }
   }catch(e){said(e);return}
