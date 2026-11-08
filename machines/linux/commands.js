@@ -11,7 +11,7 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
     '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'},
   loads:loads
 };
-var BOOT=null,OLD=null,SEQ=0,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
+var BOOT=null,OLD=null,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
 P.setup(function(){
   BOOT=new Date(P.st.login.getTime()-52e3); /* the machine came up as the terminal did */
   function ps1(){
@@ -577,7 +577,7 @@ function procs(){ /* user, pid, ppid, vsz, rss, tty, stat, start, time, command 
   return R;
 }
 function comm(c){return c.replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1')} /* the command's name, as ps and top show it */
-function self(c){var n=700+(SEQ++)*3;return [P.st.user,n,662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
+function self(c){return [P.st.user,P.pidNow()||P.newPid(),662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
 cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]',[
   'lists processes. with no options, those on your terminal. ps aux lists everyone\'s, with the user, cpu, memory and start time of each; ps -ef the same in the System V style.'],function(a,raw,w){
   var f=a.join(' '),bsd=a.length&&a[0].charAt(0)!=='-',x=bsd?a[0]:'',every=/a.*x|x.*a/.test(x)||/(^|\s)-\w*[eA]/.test(f),mine=self('ps '+a.join(' ')),R=procs().concat([mine]);
@@ -748,7 +748,8 @@ cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journa
 /* packages: apt as anyone but root. Each is [name, version, description, installed size in kB if known, 'auto' if installed as a dependency] */
 var PKGS=[['apt','3.0.4','commandline package manager'],['base-files','13.8+deb13u7','Debian base system miscellaneous files'],['bash','5.2.37-2+b10','GNU Bourne Again SHell'],
   ['coreutils','9.7-3','GNU core utilities'],['cowsay','3.03+dfsg2-8','configurable talking cow'],['cmatrix','2.0-6','simulates the display from "The Matrix"'],['cron','3.0pl1-197','process scheduling daemon'],
-  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files'],
+  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files',316],
+  ['libao-common','1.2.2+20180113-1.2','Cross Platform Audio Output Library (Common files)',23,'auto'],['libao4','1.2.2+20180113-1.2','Cross Platform Audio Output Library',150,'auto'],['libflac14','1.5.0+ds-2','Free Lossless Audio Codec - runtime C library',479,'auto'],['libmodplug1','1:0.8.9.0-3+b2','shared libraries for mod music based on ModPlug',373,'auto'],['libmp3lame0','3.100-6+b3','MP3 encoding library',548,'auto'],['libmpg123-0t64','1.32.10-1+deb13u1','MPEG layer 1/2/3 audio decoder (shared library)',397,'auto'],['libogg0','1.3.5-3+b2','Ogg bitstream library',62,'auto'],['libopus0','1.5.2-2','Opus codec runtime library',3494,'auto'],['libsamplerate0','0.2.2-4+b2','Audio sample rate conversion library',1494,'auto'],['libsndfile1','1.2.2-2+deb13u1','Library for reading/writing audio files',595,'auto'],['libvorbis0a','1.3.7-3','decoder library for Vorbis General Audio Compression Codec',208,'auto'],['libvorbisenc2','1.3.7-3','encoder library for Vorbis General Audio Compression Codec',698,'auto'],
   ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],['librecode3','3.7.15-1','Shared library on which recode is based',1359,'auto'],
   ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['nethack-common','3.6.7-1+b2','dungeon crawl game - common files',2323,'auto'],['nethack-console','3.6.7-1+b2','dungeon crawl game - text-based interface',2821],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information'],
   ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake'],
@@ -825,7 +826,7 @@ cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['i
   err('dpkg: error: need an action option');err('');err("Type dpkg --help for help about installing and deinstalling packages [*];");err("Use 'apt' or 'aptitude' for user-friendly package management;");err('Type dpkg -Dhelp for a list of dpkg debug flag values;');err('Type dpkg --force-help for a list of forcing options;');err('Type dpkg-deb --help for help about manipulating *.deb files;');err('');err("Options marked [*] produce a lot of output - pipe it through 'less' or 'more' !");P.status(2);
 });
 
-var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes|fortunes-min)$/; /* packages that are the same on every architecture */
+var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes|fortunes-min|libao-common)$/; /* packages that are the same on every architecture */
 /* fastfetch: trixie's system summary (neofetch is no longer packaged). The logo is drawn for this terminal */
 var SWIRL=['        .-""""""-.','      .\'  .--.   \'.','     /   /    \\    \\','    |   |   ()|    |','    |   |    .\'   /','     \\   \'--\'   .\'','      \'.      .\'','        \'-.  \'','           \'-.','              \'.'];
 cmd('fastfetch','/usr/bin','A fast and feature-rich system information tool similar to neofetch','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){

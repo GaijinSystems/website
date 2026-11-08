@@ -16,7 +16,7 @@ function err(s){if(!(V.nomsg&&/^DMS...002E/.test(s)))V.em(s,'err')}
 /* ---------- the session: IPL, the first line, the ready message ---------- */
 V.cmsVersion='CMS VERSION 6.0 - 10/19/79 14.12'; /* the id given when the CMS nucleus was built, before installation */
 V.ipl=function(){ /* CMS comes up: A and S accessed, the settings as they start, and the profile waits for the first line */
-  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;V.execs=[];V.level=0;V.abended=false;
+  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;V.execs=[];V.level=0;V.abended=false;V.attn=false;V.ht=false;
   V.acc={};V.syn={};V.synStd=true;
   V.opt={blip:false,rdymsg:'LMSG',impex:true,impcp:true,abbrev:true,protect:true};
   if(V.devs['191'])V.access('191','A',null,true);
@@ -29,6 +29,7 @@ function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.
 function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
 V.rcs=rcs;
 V.ready=function(rc){
+  V.ht=false; /* HT holds only until the ready message */
   if(V.abended){V.abended=false;P.typeLine('CMS');return} /* after an abend or HX: CMS, and no ready message */
   var c=cost(),n=P.now();
   if(V.opt.rdymsg==='SMSG'){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
@@ -38,7 +39,9 @@ V.ready=function(rc){
 /* ---------- a typed line ---------- */
 V.input=function(raw){
   var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
-  if(!(V.edRead&&V.state==='cms')){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it */
+  V.asking=false;
+  if(V.attn&&V.state!=='cms')V.attn=false;
+  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -50,6 +53,7 @@ V.input=function(raw){
     });
     return;
   }
+  if(V.attn&&!V.cpMode){attention(raw);return}
   if(ed){ /* the editor's, after a ^C stopped its typing; when the edit ends, the EXECs that ran it carry on (HX here is the editor's: ?EDIT: HX, as Release 6 answered) */
     var r=V.edRead,l0=V.lineEdit(raw,true)[0];
     P.queue(function(){r(l0)});
@@ -62,8 +66,52 @@ V.input=function(raw){
   }
   V.lineEdit(raw).forEach(function(l){P.queue(function(){logical(l)})});
 };
-/* attention (^C): what is running stops, and what it left in the console stack goes too, so none of it runs later as commands */
-P.onInterrupt=function(){V.stack=[];return null};
+/* attention (^C): what is running stops, and what it left in the console stack goes too, so none of it runs later as commands.
+   But an EXEC running (not the editor's, not at a read) takes the attention as CMS does, a virtual machine interruption:
+   the terminal takes a line, and with HX it ends; with anything else it carries on (CMS User's Guide, GC20-1819,
+   Section 2: Virtual Machine Interruptions; Command and Macro Reference, GC20-1818: Immediate Commands). While that line
+   is read the EXEC goes on, typing above it, as Release 6 does under Hercules; a read of its own waits for the line */
+P.onInterrupt=function(trap){
+  release();
+  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&V.execs.length){
+    V.attn=true;
+    P.queue(function(){if(V.attn&&V.execs.length&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
+    return null;
+  }
+  V.asking=false;
+  if(!V.attn)V.stack=[];
+  return null;
+};
+/* the line typed after an attention to a running EXEC. HX ends every EXEC, and CMS answers CMS; HT stops the typing until
+   the ready message or RT; HO, SO, RO, TS, TE and HB are Immediate commands too, with nothing here to do; anything else,
+   a null line too, is stacked for CMS to read when the EXEC is done (or for its &READ), and the EXEC carries on.
+   #CP lines are CP's and leave the attention's read as it was */
+function release(){if(V.attnWait){var r=V.attnWait;V.attnWait=null;r()}} /* what waited for the attention's line goes on */
+V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: k when that line is in */
+  if(!V.attn||!P.asideNow())return false;
+  P.queue(function(){return new Promise(function(r){V.attnWait=r})});
+  P.queue(k);
+  return true;
+};
+function attention(raw){
+  var L=V.lineEdit(raw),hx=false,h=V.side,on=!!(h&&h.live());
+  V.attn=false;
+  L.forEach(function(l){
+    if(hx)return;
+    var w=up(l.trim());
+    if(w==='HX')hx=true;
+    else if(w==='HT')V.ht=true;
+    else if(w==='RT')V.ht=false;
+    else if(!/^(HO|SO|RO|TS|TE|HB)$/.test(w))V.stack.push(l);
+  });
+  if(hx){V.abend();V.execs=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
+  if(on){release();P.queue(function(){return h.end()})}else V.carryOn();
+  P.queue(function(){
+    if(V.state!=='cms'||V.cpMode||V.attn)return;
+    V.ready(V.rc||0);
+    if(V.stack.length)cmsLine(V.stack.shift());
+  });
+}
 function logical(l){
   if(V.state==='online'){V.online(l);return}
   if(V.state!=='cms'||V.cpMode){V.cp(l,'cp');return}
@@ -704,6 +752,10 @@ P.setup(function(){
   });
   P.fallback=function(word,raw){P.status(0);V.input(raw);return true};
   P.blank=function(){V.input('')}; /* an empty line: CMS answers it, and the first one after IPL runs the profile */
+  /* HT: what is typed from here to the ready message is not, but for error messages (Command and Macro Reference, HT) */
+  var tl=P.typeLine,sy=P.say;
+  P.typeLine=function(t,cls){if(V.ht&&cls!=='err')return;return tl.apply(this,arguments)};
+  P.say=function(L){return sy.call(this,V.ht?L.filter(function(l){return P.lineOf(l)[1]==='err'}):L)};
   /* the visitor's first connection: LOGON GUEST, typed for them, then CMS and the profile */
   V.state='online';
   var n=P.now();

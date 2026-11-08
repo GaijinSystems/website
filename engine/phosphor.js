@@ -324,21 +324,35 @@ var badge=$('.badge');if(badge)badge.textContent=PROFILE.badge;
 /* Output runs through one queue, in order. A step's own queue() calls run inside that step, before
    the next step, so a stage of a pipeline finishes all its output before the next stage starts.
    Ctrl-C bumps GEN: steps queued before it are skipped, unless they must always run (prompts). */
-var GEN=0,inner=null,wakers=[];
+var GEN=0,inner=null,wakers=[],ASIDE=null; /* ASIDE: the aside() a step belongs to, or null for the one queue */
 function sleep(ms){return new Promise(function(r){
   var done=function(){clearTimeout(t);wakers.splice(wakers.indexOf(done),1);r()},t=setTimeout(done,ms);
   wakers.push(done);
 })}
 function queue(fn,always){
-  var g=GEN,oops=function(e){console.error(e)},step=function(){
-    if(g!==GEN&&!always)return;
-    var sc={p:null},saved=inner,ret;
-    inner=sc;
-    try{ret=fn()}finally{inner=saved}
+  var g=GEN,side=ASIDE,oops=function(e){console.error(e)},step=function(){
+    if(g!==GEN&&!always||side&&side.stopped)return;
+    var sc={p:null},saved=inner,was=ASIDE,ret;
+    inner=sc;ASIDE=side;
+    try{ret=fn()}finally{inner=saved;ASIDE=was}
     return Promise.resolve(ret).then(function(){return sc.p});
   };
   if(inner){inner.p=(inner.p||Promise.resolve()).then(step).catch(oops);return inner.p}
+  if(side){side.p=side.p.then(step).catch(oops);return side.p}
   chain=chain.then(step).catch(oops);return chain;
+}
+/* A queue of its own beside the one queue, for a machine whose program goes on while the terminal reads (VM/370's
+   EXEC after an attention): what it types goes in above the line being typed in, which stays as it is; with no read
+   up it types as usual. ^C stops it as it stops everything; stop() stops it, the line it is typing finishes;
+   end() is a promise of when it is done; live() says it has not stopped or finished */
+function aside(fn){
+  var h={p:Promise.resolve(),stopped:false,gen:GEN,over:false,
+    stop:function(){h.stopped=true;return h.p},end:function(){return h.p},
+    live:function(){return !h.stopped&&!h.over&&h.gen===GEN}};
+  var was=ASIDE,saved=inner;ASIDE=h;inner=null;
+  try{queue(fn)}finally{ASIDE=was;inner=saved}
+  h.p.then(function(){h.over=true});
+  return h;
 }
 function pause(ms){return queue(function(){return sleep(ms)})}
 
@@ -408,15 +422,16 @@ function typeLine(text,cls,cb,opt){
       if(cb)cb();res();return;
     }
     text=UP(text);
-    var d=document.createElement('div'),host=d;
+    var d=document.createElement('div'),host=d,above=ASIDE&&bufNode?bufNode.parentNode:null; /* an aside's line goes in above the one being typed in */
     d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
     /* indent: left margin for the whole line; hang: extra margin for wrapped continuation lines only */
     if(opt.indent||opt.hang){d.style.paddingLeft=((opt.indent||0)+(opt.hang||0))+'ch';if(opt.hang)d.style.textIndent=(-opt.hang)+'ch'}
     if(opt.href){host=document.createElement('a');host.href=opt.href;
       if(!/^mailto:/i.test(opt.href)){host.target='_blank';host.rel='noopener'}d.appendChild(host)}
     var pre=opt.pre?UP(opt.pre):'',t=document.createTextNode(pre);host.appendChild(t);
-    d.appendChild(cursor);out.appendChild(d);trim(out,240);
-    var at=host===d?cursor:null; /* new text goes before the cursor; a link has no cursor inside it */
+    if(above)out.insertBefore(d,above);else{d.appendChild(cursor);out.appendChild(d)}
+    trim(out,240);
+    var at=host===d&&!above?cursor:null; /* new text goes before the cursor; a link has no cursor inside it, nor a line typed above */
     var sp=opt.speed||1,i=0;
     function step(){
       if(gen!==GEN){res();return}
@@ -1025,11 +1040,11 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
   piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
-  status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){LOOP=what},inScript:function(){return SCRIPTS>0},
+  status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){if(!SUB)LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,child:child,keep:keep,exec:execLine,
-  subshell:function(){return SUB>0},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
+  subshell:function(){return SUB>0},forked:forked,pidNow:function(){var p=PIDNOW;PIDNOW=null;return p},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,unquote:unquote,has:has,lineOf:lineOf,
-  say:say,typeLine:typeLine,pause:pause,queue:queue,sleep:sleep,click:click,load:load,
+  say:say,typeLine:typeLine,pause:pause,queue:queue,aside:aside,asideNow:function(){return !!ASIDE},sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
   find:find,named:named,norm:norm,put:put,home:home,pathOf:pathOf,body:body,fsize:fsize,longRow:longRow,
   root:ROOT,fileDate:FD,systemDate:SD,
@@ -1066,7 +1081,7 @@ function expand(seg){ /* each command of a pipeline, or after && or ||: longest 
     var c=seg.charAt(i),two=seg.substr(i,2);
     if(c==='\\'){i++;continue}
     if(c==='`'&&(j=seg.indexOf('`',i+1))>=0){i=j;continue}
-    if((c==="'"||c==='"')&&opens(seg,i)&&(j=c==='"'?closeDq(seg,i):seg.indexOf(c,i+1))>=0){i=j;continue}
+    if((c==="'"||c==='"')&&(j=c==='"'?closeDq(seg,i):seg.indexOf(c,i+1))>=0){i=j;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(seg.charAt(i-1))))break;
     if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
     else if(!depth&&(c==='|'||two==='&&')){
@@ -1113,11 +1128,12 @@ function runOne(s,words,src){
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 var ARGS=[]; /* $0 $1 ... of the script that is running */
-var VAR=PROFILE.csh?'\\$(\\?\\w+|#\\w+|\\w+\\[\\d*-?\\d*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)',VAR_AT=new RegExp('^'+VAR),VAR_ALL=new RegExp(VAR,'g'); /* csh also has $?name: is it set */
+var VAR=PROFILE.csh?'\\$(\\?\\w+|#\\w+|\\w+\\[[^\\]\\s]*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}|\\?|\\$|#|\\*|!)',VAR_AT=new RegExp('^'+VAR),VAR_ALL=new RegExp(VAR,'g'); /* csh also has $?name: is it set */
 function varsIn(t){return t.replace(VAR_ALL,function(m,k){return envOf(k)})}
 function envOf(k){
   if(k.charAt(0)==='{')return envOf(k.slice(1,-1)); /* ${name} is $name */
   if(k==='?')return String(STATUS);
+  if(k==='!')return LASTBG; /* sh: the last process started with & */
   if(k.length>1&&k.charAt(0)==='?'){
     var keep=SCRIPTS;SCRIPTS=0;
     try{envOf(k.slice(1));return '1'}catch(e){return '0'}finally{SCRIPTS=keep}
@@ -1125,12 +1141,8 @@ function envOf(k){
   if(k==='#')return String(Math.max(0,ARGS.length-1));
   if(k.charAt(0)==='#')return String((k==='#argv'?ARGS.slice(1).join(' ').split(/\s+/).filter(Boolean):wordsOf(k.slice(1))).length); /* csh: $#name, how many words */
   if(k==='*')return ARGS.slice(1).join(' ');
-  var sub=/^(\w+)\[(\d*)(-?)(\d*)\]$/.exec(k); /* csh: $z[2], the second word; $z[1-2], $z[2-], $z[-2] */
-  if(sub){
-    var L=wordsOf(sub[1]),lo=sub[2]?+sub[2]:1,hi=sub[4]?+sub[4]:sub[3]?L.length:lo;
-    if(!sub[2]&&!sub[4]||lo<1||hi>L.length)throw {undefinedVar:k,msg:'Subscript out of range.'};
-    return L.slice(lo-1,hi).join(' ');
-  }
+  var sub=/^(\w+)\[([^\]]*)\]$/.exec(k); /* csh: $z[2], the second word; $z[1-2], $z[2-], $z[-2], $z[-] and $z[*] all of them */
+  if(sub)return range(wordsOf(sub[1]),sub[2].indexOf('$')<0?sub[2]:varsIn(sub[2]),k).join(' ');
   if(/^\d+$/.test(k))return ARGS[+k]||'';
   if(k==='$')return '23';
   if(k==='HOME')return ST.home;
@@ -1143,6 +1155,28 @@ function envOf(k){
     if(!SCRIPTS)throw {undefinedVar:k}; /* sh scripts still get the empty string */
   }
   return '';
+}
+function range(L,np,k){ /* the words of L that [np] picks, as 4.3BSD's sh.dol.c has it: [0] is none, [5-] past the end none too */
+  var lwb=1,upb=L.length,m;
+  function oob(){throw {undefinedVar:k,msg:'Subscript out of range.'}}
+  function syntax(){throw {undefinedVar:k,msg:'Variable syntax.'}}
+  if(!np)syntax();
+  if((m=/^\d+/.exec(np))){
+    var i=+m[0];np=np.slice(m[0].length);
+    if(i>upb&&!/^[-*]/.test(np))oob();
+    lwb=i;
+    if(!np){upb=lwb;np='*'}
+  }
+  if(np.charAt(0)==='*')np=np.slice(1);
+  else if(np.charAt(0)!=='-')syntax();
+  else{
+    var j=upb;np=np.slice(1);
+    if((m=/^\d+/.exec(np))){j=+m[0];np=np.slice(m[0].length);if(j>upb)oob()}
+    upb=j<lwb?lwb-1:j;
+  }
+  if(!lwb){if(upb)oob();upb=-1}
+  if(np)syntax();
+  return upb<lwb?[]:L.slice(lwb-1,upb);
 }
 function wordsOf(k){var v=envOf(k),l=CSHW[k];return l&&l.s===v?l.w:v.split(/\s+/).filter(Boolean)} /* csh: set z = ( "a b" c ) keeps its words */
 function glob(w){ /* a word with * ? [ ] becomes the names it matches, sorted; no match leaves it as it is */
@@ -1198,6 +1232,10 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function endStage(tok){
     endWord();
     if(redir&&!PROFILE.dos)throw {syntax:tok,redir:true}; /* echo a > : a redirection with no name */
+    if(PROFILE.csh&&!st.words.length&&(st.in!==null||st.out!==null)){
+      if(!/\S/.test(st.src))throw {syntax:tok}; /* > f, or echo a &> f: a redirection with no command (4.3BSD's syn3) */
+      st.in=st.out=null; /* $empty > f: no command once the words are made, and csh does nothing at all */
+    }
     st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass)stages.push(st);st=fresh();
   }
   function blank(){return w===null&&!/\S/.test(st.src)&&st.in===null&&st.out===null&&st.err===null&&!st.glass&&!st.e2o&&!st.closed&&!st.errClosed&&!st.mk.length} /* nothing written for this command */
@@ -1243,7 +1281,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       if(!redir)add(s.charAt(i+1));
       i+=2;continue;
     }
-    if((ch==="'"||ch==='"')&&(w===null||/^\uE010*$|=\uE010*$/.test(w)||quoted&&/['"]/.test(s.charAt(i-1)))&&(close=s.indexOf(ch,i+1))>=0){ /* 'it''s': one quote straight after another */
+    if((ch==="'"||ch==='"')&&(close=s.indexOf(ch,i+1))>=0){ /* a quote anywhere in a word: a"&"b is a&b */
       var inside=s.slice(i+1,close),given=inside;
       if(ch==='"')inside=varsIn(inside);
       w=(w||'')+inside;quoted=true;
@@ -1292,6 +1330,8 @@ function runPipeline(stages){
       else if(st.e2o||st.both)ERRSINK=SINK||GLASS;else if(errs)ERRSINK=errs;
       if(pipe)STDIN=pipe;
       if(stages.length>1){SUB++;own=true} /* a stage of a pipeline is its own process */
+      PIDNOW=null;
+      if(JOB&&JOB.pids&&JOB.pids.length===stages.length){PIDNOW=JOB.pids[i];if(last)JOB.pids=null} /* ps & shows itself with the id the notice gave */
       var A=/^([A-Za-z_]\w*)=([\s\S]*)$/,k=0;
       while((!k||!PROFILE.csh&&!PROFILE.dos)&&k<st.words.length&&A.test(st.words[k]))k++; /* csh and DOS: only a lone x=1 */
       if(k&&k===st.words.length){st.words.forEach(function(x){var m=x.match(A);ENV[m[1]]=m[2]});STATUS=0;return} /* x=1 y=2 */
@@ -1312,11 +1352,8 @@ function runPipeline(stages){
     },true);
   });
 }
-function opens(s,i){return !i||/[\s=;|&<>'"]/.test(s.charAt(i-1))} /* a quote only opens at the start of a word, after =, or straight after another quote */
-function backtick(s,dq,done){ /* the first `command` outside single quotes, with the parser's idea of a quote.
-                                 dq: starting inside "; done: what s carries straight on from, which decides a quote at its very start */
+function backtick(s,dq,done){ /* the first `command` outside single quotes. dq: starting inside "; done: what s carries straight on from, which decides a # at its very start */
   var a=-1,j,inDq=dq;
-  function open(i){return i?opens(s,i):!done||/[\s=;|&<>]$/.test(done.replace(/\uE010+$/,''))}
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i);
     if(c==='\\'){i++;continue}
@@ -1326,8 +1363,8 @@ function backtick(s,dq,done){ /* the first `command` outside single quotes, with
     }
     else if(a>=0)continue;
     else if(c==='#'&&!dq&&(i?/[\s;|&<>]/.test(s.charAt(i-1)):!done))return null; /* the rest is a comment */
-    else if(c==='"'&&(dq||open(i)))dq=!dq;
-    else if(c==="'"&&!dq&&open(i)&&(j=s.indexOf("'",i+1))>=0)i=j;
+    else if(c==='"')dq=!dq;
+    else if(c==="'"&&!dq&&(j=s.indexOf("'",i+1))>=0)i=j;
   }
   return null;
 }
@@ -1348,7 +1385,7 @@ function andOr(s){ /* [{op,text}], split at && and || outside quotes, `commands`
     var c=s.charAt(i),two=s.substr(i,2);
     if(c==='\\'){i++;continue}
     if(c==='`'&&(j=s.indexOf('`',i+1))>=0){i=j;continue}
-    if((c==="'"||c==='"')&&opens(s,i)&&(j=c==='"'?closeDq(s,i):s.indexOf(c,i+1))>=0){i=j;continue}
+    if((c==="'"||c==='"')&&(j=c==='"'?closeDq(s,i):s.indexOf(c,i+1))>=0){i=j;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))break;
     if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
     else if(!depth&&(two==='&&'||two==='||')){L.push({op:op,text:s.slice(start,i)});op=two;start=i+2;i++}
@@ -1358,9 +1395,26 @@ function andOr(s){ /* [{op,text}], split at && and || outside quotes, `commands`
 }
 function skipped(op){return op==='&&'?STATUS!==0:op==='||'&&STATUS===0} /* a && after a failure, a || after a success */
 function isBack(seg){var p=splitCmds(seg);return p.length===2&&!p[1].trim()} /* the & is the split's own, not one in a comment */
+var JOB=null,JOBS=0,LASTBG='',PIDNOW=null; /* JOB: the command now running in the background; JOBS: how many this line has started */
+function tell(n){ /* the job's notice, once, when it starts: bash [1] and its last process, csh [1] and each of them, V7 sh just the id.
+                     bash and sh say it only to someone typing; csh says it in a script too. n: its processes, when they are one pipeline */
+  var j=JOB;
+  if(!j||j.told||SUB!==j.level)return; /* not for a `command` inside it */
+  j.told=true;
+  var ids=[];for(var i=0;i<(n||1);i++)ids.push(PH.newPid());
+  j.pids=n?ids:null;LASTBG=String(ids[ids.length-1]);
+  if(!PROFILE.csh&&(SCRIPTS||j.sub))return;
+  typeLine(PROFILE.csh?'['+ ++JOBS+'] '+ids.join(' '):PROFILE.bash?'['+ ++JOBS+'] '+LASTBG:LASTBG);
+}
 function execSeg(seg){
-  if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)&&isBack(seg)){var back=null;queue(function(){back=keep()});execSeg(seg.replace(/&\s*$/,''));queue(function(){if(back)back();STATUS=0},true);return} /* echo a &: its own process, which nobody waits for */
+  if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)&&isBack(seg)){ /* echo a &: its own process, which nobody waits for. exit, break or cd in it end or change only that process */
+    var back=null,was;
+    queue(function(){back=keep();was=JOB;JOB={sub:SUB>0,level:SUB+1};SUB++;execSeg(seg.replace(/&\s*$/,''))});
+    queue(function(){if(!back)return;JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
+    return;
+  }
   var parts=PROFILE.dos||PROFILE.csh&&/^\s*if\s*\(/.test(seg)?null:andOr(seg),dead=false;
+  if(parts&&parts.length>1)queue(function(){tell()}); /* a && b &: one process for the lot */
   if(!parts||parts.length<2){queue(function(){substitute(seg,function(text){execText(text)})});return}
   parts.forEach(function(p){ /* cd /tmp && echo `pwd`: the pwd runs in /tmp */
     queue(function(){
@@ -1394,7 +1448,7 @@ function ifAfter(seg){ /* where && or || is followed by csh's if ( ), outside qu
     if(c==='\\'){i++;continue}
     if(q){if(c===q)q=null}
     else if(c==='#'&&(!i||/[\s;|&<>]/.test(seg.charAt(i-1))))return null;
-    else if((c==='"'||c==="'")&&opens(seg,i)&&seg.indexOf(c,i+1)>=0)q=c;
+    else if((c==='"'||c==="'")&&seg.indexOf(c,i+1)>=0)q=c;
     else if((two==='&&'||two==='||')&&/^\s*if\s*\(/.test(seg.slice(i+2)))return {at:i,op:two};
   }
   return null;
@@ -1415,11 +1469,12 @@ function bareOp(s){ /* a < > | or & outside quotes and ( ), which csh's lexer ta
 }
 function execText(seg,failed){ /* failed: told when the line could not be read, which ends the rest of it */
   queue(function(){
-    if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){if(!LOGOUT)runOne(seg.replace(/^\s*if\s*\(/,'if ('));return} /* its ( ) comes before any < or > */
-    if(PROFILE.csh&&/^\s*@\s*[A-Za-z_]/.test(seg)&&!bareOp(seg)){if(!LOGOUT)runOne(seg);return} /* @ x = 2 * 3: no wildcards, and ( 2 > 1 ) is no redirection */
+    if(PROFILE.csh&&/^\s*if\s*\(/.test(seg)){tell();if(!LOGOUT)runOne(seg.replace(/^\s*if\s*\(/,'if ('));return} /* its ( ) comes before any < or > */
+    if(PROFILE.csh&&/^\s*@\s*[A-Za-z_]/.test(seg)&&!bareOp(seg)){tell();if(!LOGOUT)runOne(seg);return} /* @ x = 2 * 3: no wildcards, and ( 2 > 1 ) is no redirection */
     var k=PROFILE.csh&&ifAfter(seg);
     if(k){
       if(!parsed(seg.slice(0,k.at))){if(failed)failed();return}
+      tell();
       execText(seg.slice(0,k.at));
       queue(function(){
         if(LOGOUT||skipped(k.op))return;
@@ -1429,6 +1484,7 @@ function execText(seg,failed){ /* failed: told when the line could not be read, 
     }
     var L=parsed(seg);
     if(!L){if(failed)failed();return}
+    tell(L.length===1?L[0].stages.length:0);
     L.forEach(function(item){
       queue(function(){
         if(LOGOUT||LOOP||skipped(item.op))return;
@@ -1478,6 +1534,10 @@ function parseTree(lines){
         expect('do');
         var body=block(['done']);expect('done');
         out.push({k:'for',v:m[1],words:m[2]===undefined?'$*':m[2],body:body});
+      }
+      else if(PROFILE.csh&&/^while\b/.test(t)){ /* csh: while ( expr ) ... end */
+        var b4=block(['end']);expect('end');
+        out.push({k:'cwhile',cond:t.replace(/^while/,''),body:b4});
       }
       else if(w==='while'||w==='until'){
         S.splice(i,0,t.replace(/^\S+\s*/,''));
@@ -1545,6 +1605,18 @@ function runStmt(st){
     })();
     return;
   }
+  if(st.k==='cwhile'){ /* the expression is worked out afresh each time round, $variables and all */
+    (function again(){
+      PH.cshWhile(st.cond,function(yes){
+        if(!yes)return;
+        runBlock(st.body);
+        var stop;
+        queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
+        queue(function(){if(!stop&&!LOOP&&!LOGOUT)again()});
+      });
+    })();
+    return;
+  }
   if(st.k==='if'){
     runBlock(st.cond);
     queue(function(){if(LOOP)return;if(STATUS===0)runBlock(st.then);else if(st.els)runBlock(st.els);});
@@ -1587,7 +1659,7 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
 }
 var KEPT=[]; /* child shells not yet undone: a ^C can end their program before it calls back() */
 function keep(){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes */
-  var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV),wds=Object.assign(Object.create(null),CSHW);
+  var cwd=ST.cwd,env=Object.assign({},ENV),vars=Object.assign({},CSHV),wds=Object.assign(Object.create(null),CSHW),al=PH.aliases;
   KEPT.push(back);
   return back;
   function back(){
@@ -1596,10 +1668,17 @@ function keep(){ /* a program's child shell starts here: what the shell does to 
     Object.keys(ENV).forEach(function(k){if(!has(env,k))delete ENV[k]});Object.assign(ENV,env);
     Object.keys(CSHV).forEach(function(k){if(!has(vars,k))delete CSHV[k]});Object.assign(CSHV,vars);
     Object.keys(CSHW).forEach(function(k){if(!(k in wds))delete CSHW[k]});Object.assign(CSHW,wds);
+    PH.aliases=al;
   }
 }
+function forked(cmd,then){ /* csh's { command }: run as its own process, then(its status) */
+  var back=null,st;
+  queue(function(){back=keep();SUB++;STATUS=0;execLine(cmd)});
+  queue(function(){if(!back)return;SUB--;st=STATUS;back()},true);
+  queue(function(){then(st)});
+}
 function child(lines){var back=keep(),st=STATUS;runScript(lines);queue(function(){back();STATUS=st},true)} /* one command, as a child process: its status is not the program's */
-var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^foreach$/;
+var COMPOUND_SH=/^(for|while|until|if|case|fi|done|then|do|else|elif|esac)$/,COMPOUND_CSH=/^(foreach|while(\(.*)?)$/;
 function compound(line){
   if(PROFILE.dos)return false;
   return statements([line]).some(function(t){return (PROFILE.csh?COMPOUND_CSH:COMPOUND_SH).test(firstWord(t))});
@@ -1618,12 +1697,12 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   }
   runBlock(tree);
 }
-function openQuote(s){ /* the quote a line leaves open, or '': where the parser would take it as a quote (opens), or csh's if takes it after ( */
+function openQuote(s){ /* the quote a line leaves open, or '': a quote opens anywhere in a word, as it does in every one of these shells */
   for(var i=0,j;i<s.length;i++){
     var c=s.charAt(i);
     if(c==='\\'){i++;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))return '';
-    if(c==='`'||(c==="'"||c==='"')&&(opens(s,i)||s.charAt(i-1)==='(')){
+    if(c==='`'||c==="'"||c==='"'){
       j=c==='"'&&!PROFILE.csh?closeDq(s,i):s.indexOf(c,i+1);
       if(j<0)return c;
       i=j;
@@ -1639,7 +1718,7 @@ function closeDq(s,i){ /* the " that closes the one at i: a `command` inside it 
   }
   return -1;
 }
-function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start of a word or after =, so don't ; won't is two commands.
+function splitCmds(s){ /* on ; outside quotes.
                           And on a lone & outside ( ), after a command: it runs, and nothing waits for it. L.semi: bash's & ; */
   var L=[],start=0,ch,j,depth=0;
   for(var i=0;i<s.length;i++){
@@ -1654,7 +1733,7 @@ function splitCmds(s){ /* on ; outside quotes. A quote only opens at the start o
     else if(ch==='\\')i++;
     else if(ch==='#'&&!PROFILE.dos&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))break; /* a comment: no ; in it counts */
     else if(ch==='`'&&(j=s.indexOf('`',i+1))>=0)i=j;
-    else if((ch==="'"||ch==='"')&&opens(s,i)&&(j=ch==='"'?closeDq(s,i):s.indexOf(ch,i+1))>=0)i=j;
+    else if((ch==="'"||ch==='"')&&(j=ch==='"'?closeDq(s,i):s.indexOf(ch,i+1))>=0)i=j;
   }
   L.push(s.slice(start));
   return L;
@@ -1717,6 +1796,7 @@ function nextLine(then){ /* the rest of the command on a > line: then(it, or nul
 }
 function run(raw){
   LOOP=null; /* a break typed at the prompt has no loop to end */
+  JOB=null;JOBS=0; /* the jobs of the line before have finished */
   if(PROFILE.bash)raw=dollarParen(raw);
   SUB=0;
   if(!raw.trim()&&PH.blank){queue(function(){PH.blank()});nextPrompt();return} /* a machine that answers an empty line (VM/370's CMS and CP) */
@@ -1731,7 +1811,7 @@ function run(raw){
   if(oq){ /* sh and bash: the quoted text goes on on the next line */
     nextLine(function(l){
       if(l!==null)run(raw+'\n'+l);
-      else if(PROFILE.bash){typeLine("bash: unexpected EOF while looking for matching `"+oq+"'",'err');queue(function(){STATUS=2});nextPrompt()}
+      else if(PROFILE.bash){typeLine("bash: unexpected EOF while looking for matching `"+oq+"'",'err');queue(function(){STATUS=2});run('exit')} /* bash 5.2 says only that, and the end of input ends the shell, as ^D does at the prompt */
       else run(raw+'\n'+oq); /* V7: the end of input ends the quoted word, and the line runs */
     });
     return;
