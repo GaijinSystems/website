@@ -55,6 +55,7 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
       if(hit.length){P.typeLine(P.profile.csh?hit[0].to:aliasRow(hit[0]));return} /* csh: alias name prints just what it stands for */
       if(rest.indexOf(' ')<0){if(!P.profile.csh)P.typeLine('alias: '+P.fold(rest)+': not found','err');return} /* and nothing for one it doesn't know */
       nm=P.fold(rest.split(/\s+/)[0]);to=P.unquote(rest.replace(/^\S+\s+/,'')); /* csh style: alias name value */
+      if(P.profile.csh)to=to.replace(/\\!/g,'!'); /* csh's lexer keeps \! from history substitution, and drops the \: the alias holds !* */
     }
     if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
     var from=nm.split(/\s+/);
@@ -78,6 +79,20 @@ function bashAlias(W){ /* bash 5.2's alias builtin: each word is name=value, whi
   });
 }
 
+P.command({names:['unalias'],noHelpFlag:true,enabled:function(p){return p.bash}, /* bash 5.2's unalias [-a] name ...; csh's is in csh.js */
+  run:function(a,raw,words){
+    var W=words.slice(1),bad=false,u='unalias: usage: unalias [-a] name [name ...]';
+    if(W[0]==='-a'){P.aliases=[];return}
+    if(W[0]==='--')W=W.slice(1);
+    else if(/^-./.test(W[0]||'')){P.typeLine('bash: unalias: '+W[0].slice(0,2)+': invalid option','err');P.typeLine(u,'err');P.queue(function(){P.status(2)});return}
+    if(!W.length){P.typeLine(u,'err');P.queue(function(){P.status(2)});return}
+    W.forEach(function(x){
+      var n=P.aliases.length;P.aliases=P.aliases.filter(function(y){return y.from.join(' ')!==x});
+      if(P.aliases.length===n){P.typeLine('bash: unalias: '+x+': not found','err');bad=true}
+    });
+    if(bad)P.queue(function(){P.status(1)});
+  }});
+
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
     'prints its arguments, separated by spaces, and ends the line. -n leaves the line open: what comes next goes on in it.']},
@@ -95,6 +110,7 @@ P.command({names:['exit','logout'],help:'log out',
     if(P.subExit(a))return; /* ( ... exit 3 ): the subshell ends there, with that status */
     if(P.subshell())return; /* a stage of a pipeline is its own process, and only that process exits */
     if(P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* exit in a script ends the script */
+    if(P.bourne.leave(a[0]===undefined?P.lastStatus():parseInt(a[0],10)||0))return; /* 4.3BSD's sh at the terminal: back to csh */
     if(P.unsu())return; /* out of su, back to who you were */
     if(P.stoppedWarn())return; /* There are stopped jobs. */
     P.logout();

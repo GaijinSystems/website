@@ -125,9 +125,9 @@ P.onInterrupt=function(trap){
   return bang;
 };
 /* the line typed after an attention to a running command or EXEC. HX ends it and every EXEC, and CMS answers CMS; HT
-   stops the typing until the ready message or RT; HO, SO, RO, TS, TE and HB are Immediate commands too, with nothing
-   here to do; anything else, a null line too, is stacked for CMS to read when the command is done (or for its read),
-   and it carries on. #CP with a command is CP's and leaves the attention's read as it was; #CP alone stops the virtual
+   stops the typing until the ready message or RT; HO, SO, RO and HB are Immediate commands too (TS and TE came after
+   Release 6), with nothing here to do; anything else, a null line too, is stacked for CMS to read when the command is
+   done (or for its read), and it carries on. #CP with a command is CP's and leaves the attention's read as it was; #CP alone stops the virtual
    machine where it is, and BEGIN lets it go on, the read up again (DMKVCN: the read ends with unit exception, and
    DMSCIT reissues it) */
 var dscW=[];
@@ -168,6 +168,18 @@ V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: 
   P.queue(k);
   return true;
 };
+/* A read while disconnected waits for the terminal: CP leaves it pending, and logs the virtual machine off if no LOGON
+   comes within 15 minutes (GC20-1820, DISCONN, Usage Note 1). One made in the one queue (the editor's) goes beside it, as
+   CMS does after DISCONN, so the terminal stays CP's at VM/370 ONLINE; after any work already going on there. When what
+   made the read is done, CMS gives the ready message it owes and reads the console stack, as after an attention */
+V.waitDsc=function(k){
+  var was=V.side&&V.side.live()?V.side:null;
+  V.side=P.aside(function(){
+    P.queue(function(){return was&&was.end()});
+    P.queue(k);
+    P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()});
+  });
+};
 /* The line end in a line typed: CP passes it on as X'15' (DMKQCN), and DMSCRD, reading the line, takes what comes
    before the first one and stacks the rest, as one line, in front of the console stack through DMSCAT (LIFO), so its
    next read splits that again. DMSCAT takes a line of just HT or RT as that Immediate command and does not stack it:
@@ -178,7 +190,7 @@ V.cat=function(l,lifo){if(/^(HT|RT)$/i.test(l))V.immediate(up(l));else if(lifo)V
 V.crd=function(l){var i=l.indexOf(LE);if(i<0)return l;V.cat(l.slice(i+1),true);return l.slice(0,i)};
 V.pop=function(){return V.crd(V.stack.shift())}; /* the console stack's first line, as CMS reads it */
 V.immediate=function(w){ /* an Immediate command (w in capitals): HX, HT and RT, and the ones with nothing here to do; HT and RT stop and resume the typing */
-  if(!/^(HX|HT|RT|HO|SO|RO|TS|TE|HB)$/.test(w))return '';
+  if(!/^(HX|HT|RT|HO|SO|RO|HB)$/.test(w))return ''; /* Release 6's seven (GC20-1818, Immediate Commands); TS and TE came later */
   if(w==='HT')V.ht=true;
   if(w==='RT')V.ht=false;
   return w;
@@ -214,7 +226,7 @@ function cmsLine(l,st){ /* st: l came from the console stack */
   if(l.trim()){if(st)V.next=l;P.queue(function(){V.next=null;V.busy=true;V.rc=V.command(l,{typed:true});if(V.rc===-3&&V.unknown)quiet=true;V.unknown=false})}
   P.queue(function(){
     V.busy=false;V.ht=false; /* HT holds to the end of the command, ready message or not (DMSINT, RESTYP) */
-    if(V.dsc){V.dark();return} /* DISCONN: CMS goes on without the terminal */
+    if(V.dsc){if(V.side&&V.side.live())V.owe=true;V.dark();return} /* DISCONN: CMS goes on without the terminal; what goes on there gives the command's ready message when it ends */
     if(V.state!=='cms'||V.cpMode||V.first)return; /* V.first: CMS IPLed by the command, and waiting for its first line */
     if(!quiet)V.ready(V.rc);
     if(V.stack.length)P.queue(stackNext); /* what an EXEC left in the console stack: CMS reads it as its next commands, once the ready message is typed */

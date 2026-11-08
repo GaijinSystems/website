@@ -504,6 +504,9 @@ CP.IPL=function(a){
   if(k){V.halted();return 0}
   err('DMKCFG030E SYSTEM '+w+' DOES NOT EXIST');return 30;
 };
+/* HOLD keeps a 2701/2702/2703 line enabled, so a dial-up caller need not dial again (DMKUSO; GC20-1820, DISCONN); only a
+   switched line is ever dropped (DMKRGA), and this terminal's is not: with or without HOLD it shows VM/370 ONLINE, as plain
+   DISCONN does on Release 6 under Hercules */
 CP.DISCONN=function(a){
   if(a[0]&&V.lookup([['HOLD',1]],a[0])!=='HOLD')return bad('USO',3,'INVALID OPTION - '+a[0]);
   V.disconn();return 0;
@@ -627,7 +630,7 @@ function tty(f){return function(){var was=V.tty;V.tty=true;try{return f.apply(th
 /* ---------- a line as CP's line editing reads it ---------- */
 V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an attention does not end (V.progRead) */
   if(V.hold(function(){V.ask(then,trap,hidden,prog)}))return;
-  if(V.dsc&&!V.tty){then(null);return} /* a read with no terminal, by what went on after DISCONN in line with the terminal's own: it gets nothing */
+  if(V.dsc&&!V.tty){V.waitDsc(function(){if(prog)V.read(then,trap,prog);else V.ask(then,trap,hidden,prog)});return} /* a read with no terminal, by what went on after DISCONN in line with the terminal's own (the editor's): it waits for the reconnection, beside VM/370 ONLINE, as one beside a read does; a program's then reads the console stack first */
   P.queue(function(){V.asking=prog?'prog':true}); /* the read is up: an attention now is the read's, not a running program's */
   P.ask('',function(l){
     V.asking=false;

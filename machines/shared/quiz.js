@@ -1,6 +1,11 @@
-/* PHOSPHOR-9 terminal: machine "v7-1979", quiz. Ported to JavaScript for this terminal from V7's
-   usr/src/games/quiz.c and its usr/games/quiz.k files, which are here unchanged. Some of the data files quote
-   poems and the like, which belong to their authors. The source is under this notice:
+/* PHOSPHOR-9 terminal: the game quiz, on V7 and 4.3BSD. Ported to JavaScript for this terminal from V7's
+   usr/src/games/quiz.c and 4.3BSD's games/quiz/quiz.c (4.2 85/01/09), and their quiz.k files, which are here unchanged.
+   4.3BSD's source carries no notice, only "quiz.c 4.2 85/01/09"; it is 98% the V7 program. Where they differ: 4.3BSD
+   keeps the files in /usr/games/lib/quiz.k and its index has no /usr/rhm/german line; with nothing answered, the
+   score's division by zero is taken for 0 on V7's PDP-11 and dumps core on 4.3BSD's VAX; and 4.3BSD's seed is an int
+   it never fills, stack garbage on a VAX, so both use the low half of the clock, V7's intent. It keeps line[] as the C
+   does, but a long entry here does not run over into the variables after it.
+   Some of the data files quote poems and the like, which belong to their authors. The V7 source is under this notice:
 
 Copyright(C) Caldera International Inc. 2001-2002. All rights reserved.
 
@@ -31,8 +36,9 @@ POSSIBILITY OF SUCH DAMAGE.
  */
 (function(P){
 'use strict';
-var K=null,INDEX="/usr/games/quiz.k/state:state:cap{ital}:abbr{ev{iation}}:flower\n/usr/games/quiz.k/america:America{n}:cap{ital}\n/usr/games/quiz.k/europe:Europe{an}:cap{ital}\n/usr/games/quiz.k/africa:Africa{n}:cap{ital}\n/usr/games/quiz.k/pres:pres{ident}:term:succ{essor}\n/usr/games/quiz.k/sov:sov{ereign}:cen{t{ury}}:succ{essor}\n/usr/games/quiz.k/seq-easy:easy{-}{seq{uence}}:next:name\n/usr/games/quiz.k/seq-hard:hard{-}{seq{uence}}:next:name\n/usr/games/quiz.k/posneg:pos{itive}:neg{ative}\n/usr/games/quiz.k/bard:Shakespeare{{-}line{s}}|line{s}:next:work:char{acter}\n/usr/games/quiz.k/murders:victim:killer\n/usr/games/quiz.k/collectives:ind{ividuals}:coll{ective}\n/usr/games/quiz.k/trek:star:trek\n/usr/games/quiz.k/babies:baby:adult\n/usr/games/quiz.k/poetry:poem{-}line:next:poem:author\n/usr/games/quiz.k/midearth:M[iddle{-}Earth|E]:cap{ital}\n/usr/games/quiz.k/inca:inca:succ{essor}\n/usr/games/quiz.k/morse:clear|alpha{bet{ic}}:morse\n/usr/games/quiz.k/sexes:male:female\n/usr/games/quiz.k/greek:greek:english\n/usr/rhm/german:english:german\n/usr/games/quiz.k/latin:latin:english\n/usr/games/quiz.k/locomotive:locomotive:name\n/usr/games/quiz.k/ucc:section:ucc\n/usr/games/quiz.k/chinese:year:next\n/usr/games/quiz.k/elements:symbol:number:weight:element\n/usr/games/quiz.k/province:province:cap{ital}\n/usr/games/quiz.k/asia:Asia{n}:cap{ital}\n/usr/games/quiz.k/arith:arith{metic}:ans{wer}\n/usr/games/quiz.k/areas:area{-code}:state{-region}:city\n/usr/games/quiz.k/ed:function:ed-command\n"; /* the quiz.k files are in quizk.js; the index is this system's */
-var PATH='/usr/games/quiz.k/',NF=10,NL=300,NC=200,SL=100,NA=10,EXIT={};
+var V7=P.machine==='v7',PATH=V7?'/usr/games/quiz.k/':'/usr/games/lib/quiz.k/'; /* the quiz.k files are in quizk.js; the index is each system's */
+var K=null,INDEX=['state:state:cap{ital}:abbr{ev{iation}}:flower','america:America{n}:cap{ital}','europe:Europe{an}:cap{ital}','africa:Africa{n}:cap{ital}','pres:pres{ident}:term:succ{essor}','sov:sov{ereign}:cen{t{ury}}:succ{essor}','seq-easy:easy{-}{seq{uence}}:next:name','seq-hard:hard{-}{seq{uence}}:next:name','posneg:pos{itive}:neg{ative}','bard:Shakespeare{{-}line{s}}|line{s}:next:work:char{acter}','murders:victim:killer','collectives:ind{ividuals}:coll{ective}','trek:star:trek','babies:baby:adult','poetry:poem{-}line:next:poem:author','midearth:M[iddle{-}Earth|E]:cap{ital}','inca:inca:succ{essor}','morse:clear|alpha{bet{ic}}:morse','sexes:male:female','greek:greek:english',V7?'/usr/rhm/german:english:german':null,'latin:latin:english','locomotive:locomotive:name','ucc:section:ucc','chinese:year:next','elements:symbol:number:weight:element','province:province:cap{ital}','asia:Asia{n}:cap{ital}','arith:arith{metic}:ans{wer}','areas:area{-code}:state{-region}:city','ed:function:ed-command'].filter(function(l){return l!==null}).map(function(l){return l.charAt(0)==='/'?l:PATH+l}).join('\n')+'\n';
+var NF=10,NL=300,NC=200,SL=100,NA=10,EXIT={};
 function zero(n){var a=[];while(n--)a.push(0);return a}
 /* what the glass shows of a line with overstrikes in it, and without the control characters it doesn't show */
 function glass(s){
@@ -227,7 +233,12 @@ P.command({names:['quiz'],run:function(a,raw,words){
   function done(){
     pr('\nRights '+rights+', wrongs '+wrongs+', ');
     if(guesses)pr('extra guesses '+guesses+', ');
-    /* with nothing answered the C divides by zero, which a PDP-11 takes for 0 */
+    if(rights+wrongs===0&&!V7){ /* the C divides by zero here: a VAX traps it, a PDP-11 takes it for 0 */
+      if(o)P.say([glass(o)]);
+      o='';
+      P.typeLine('Floating exception (core dumped)','err');
+      throw EXIT;
+    }
     pr('score '+(rights+wrongs?Math.trunc(100*rights/(rights+wrongs)):0)+'%\n');
     throw EXIT;
   }
@@ -280,7 +291,7 @@ P.command({names:['quiz'],run:function(a,raw,words){
   }
   function* main(){
     var argv=words.slice(1),info=PATH+'index',i,j,x,z,count;
-    /* inc = (int)tm&077774|01 */
+    /* inc = (int)tm&077774|01 (4.3BSD reads time() into a two-int array and uses the second, which on a VAX it never fills) */
     inc=(Math.floor(Date.now()/1000)&0o77774)|1;
     while(argv.length&&argv[0].charAt(0)==='-'){
       if(argv[0].charAt(1)==='i'){
