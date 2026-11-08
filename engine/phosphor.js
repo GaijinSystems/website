@@ -1208,7 +1208,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(two==='&&'||two==='||'){endList(two);i+=2;continue}
     if(ch==='|'){
       if(blank())throw {syntax:'|'}; /* | echo: no command before it */
-      if((PROFILE.csh||PROFILE.bash)&&s.charAt(i+1)==='&'){st.both=true;i++} /* |&: the errors go down the pipe too */
+      if((PROFILE.csh||PROFILE.bash)&&two==='|&'){st.both=true;i++} /* |&: the errors go down the pipe too */
       endStage('|');piped=true;i++;continue;
     }
     if(ch==='&'){i++;continue} /* no background here: it just runs */
@@ -1673,6 +1673,11 @@ if(PROFILE.bash)CMDS[SUM]=function(a,raw,words){ /* bash's arithmetic: whole num
   try{var v=t.length?sum():0;if(i<t.length)bad('syntax error in expression');typeLine(String(v))}
   catch(x){typeLine(x.message,'err')}
 };
+function nextLine(then){ /* the rest of the command on a > line: then(it, or null at ^D). ^C: bash just gives a new prompt */
+  var g=GEN,l;
+  queue(function(){return readLine('> ').then(function(x){l=x})});
+  queue(function(){if(g!==GEN)nextPrompt();else then(l)},true);
+}
 function run(raw){
   LOOP=null; /* a break typed at the prompt has no loop to end */
   if(PROFILE.bash)raw=dollarParen(raw);
@@ -1686,20 +1691,15 @@ function run(raw){
   var oq=openQuote(raw);
   if(oq&&PROFILE.csh){typeLine('Unmatched '+oq+'.','err');nextPrompt();return} /* csh reads no further line for it */
   if(oq){ /* sh and bash: the quoted text goes on on the next line */
-    var g0=GEN,l0;
-    queue(function(){return readLine('> ').then(function(x){l0=x})});
-    queue(function(){
-      if(g0!==GEN)nextPrompt();
-      else if(l0!==null)run(raw+'\n'+l0);
+    nextLine(function(l){
+      if(l!==null)run(raw+'\n'+l);
       else if(PROFILE.bash){typeLine("bash: unexpected EOF while looking for matching `"+oq+"'",'err');queue(function(){STATUS=2});nextPrompt()}
       else run(raw+'\n'+oq); /* V7: the end of input ends the quoted word, and the line runs */
-    },true);
+    });
     return;
   }
   if(!PROFILE.csh&&/(\||&&)\s*$/.test(raw.replace(/\\[\s\S]/g,'x').replace(/'[^']*'|"(?:[^"\\]|\\.)*"|`[^`]*`/g,'q').replace(/(^|\s)#.*$/,''))){ /* echo x | : the rest is on the next line */
-    var g=GEN,l;
-    queue(function(){return readLine('> ').then(function(x){l=x})});
-    queue(function(){if(g!==GEN)nextPrompt();else if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+' '+l)},true); /* ^C: bash just gives a new prompt */
+    nextLine(function(l){if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+' '+l)});
     return;
   }
   if(compound(raw)){

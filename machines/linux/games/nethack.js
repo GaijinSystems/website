@@ -6219,7 +6219,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
   if($running){P.typeLine('nethack: already running','err');return}
   if(typeof DecompressionStream==='undefined'){P.typeLine('nethack: cannot execute','err');return}
   P.program(function(S,done){
-    var T=$vt(80,24),C=null,over=false,ox=0,oy=0;
+    var T=$vt(80,24),C=null,over=false,oy=0;
     var st=P.st,user=st.user,root=user==='root'||user===P.profile.rootName;
     $running=true;
     var sig=null;
@@ -6228,9 +6228,8 @@ P.command({names:['nethack'],run:function(a,raw,words){
       if(C&&$E.dirty){$E.dirty=false;var g=$keptSig($FS);if(g!==sig&&!$keepFiles($FS))lost=true;sig=g} /* a save restored is gone at once, as on disk */
       var r=Math.min(S.rows,24),c=Math.min(S.cols,80);
       if(T.y<oy)oy=T.y<r?0:T.y;else if(T.y>=oy+r)oy=T.y-r+1;
-      ox=T.x-c+5; /* as far left as keeps the cursor in view: a prompt or --More-- shows from its start when it fits */
-      oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
-      var x=S.pan(ox,80-c,T.x);
+      oy=Math.max(0,Math.min(oy,24-r));
+      var x=S.pan(Math.max(0,Math.min(T.x-c+5,80-c)),80-c,T.x); /* as far left as keeps the cursor in view: a prompt or --More-- shows from its start when it fits */
       S.drawGrid(T.scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),T.y-oy,T.x-x);
     }
     function hup(){if(C&&!over)C.hangup()}
