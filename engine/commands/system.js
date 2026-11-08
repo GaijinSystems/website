@@ -16,6 +16,11 @@ P.command({names:['dmesg'],path:'/etc',
 
 /* == ps == rows: show pid tty time command. show is x (ps x), a (ps a) or - (always) */
 var PSN=0;
+P.newPid=function(){ /* each new process gets the next id after the machine's own: ps, and a command started with & */
+  var T=table();
+  if(!PSN)PSN=(T.length?T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0):995)+5; /* a machine with no == ps == rows has its own ps: well past it */
+  return PSN++;
+};
 function table(){
   return (P.profile.raw.ps||[]).map(function(l){return l.trim().split(/\s+/)})
     .filter(function(f){return f.length>=5&&/^[xa-]$/i.test(f[0])})
@@ -30,9 +35,8 @@ P.command({names:['ps'],path:'/bin',
     'it shows what other people are doing.']},
   run:function(a){
     var fl=a.join('').replace(/-/g,''),T=table(),R=[];
-    if(!PSN)PSN=T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0)+5; /* each ps gets the next id */
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
-    R.push([String(PSN++),P.profile.csh?'02':'0','0:00',('ps '+a.join(' ')).trim()]);
+    R.push([String(P.pidNow()||P.newPid()),P.profile.csh?'02':'0','0:00',('ps '+a.join(' ')).trim()]);
     function tt(p,i){return p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)} /* Berkeley's TT and STAT: this ps runs, the rest sleep, idle when they have no terminal */
     if(P.profile.csh&&/u/.test(fl)){ /* the long form, and everyone's name on it */
       P.say(['USER       PID %CPU %MEM   SZ  RSS TT STAT  TIME COMMAND'].concat(R.map(function(p,i){

@@ -17,6 +17,7 @@ V.globals=[1,1,1,1,1,1,1,1,1,1];
    STACK reading STACK back) lets the terminal breathe every few hundred lines, so ^C can stop it */
 var fromStack=0;
 V.read=function(then,trap){
+  if(V.hold(function(){V.read(then,trap)}))return;
   if(V.stack.length){var l=V.stack.shift();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
   fromStack=0;
   V.ask(then,trap);
@@ -59,6 +60,15 @@ V.resume=function(){
     P.queue(function(){done(S)});
   });
   return true;
+};
+/* after an attention to a running EXEC, the line typed not HX: every EXEC carries on where it was, the innermost first; a
+   command it was running when the attention came is over */
+V.carryOn=function(){
+  V.rc=0;
+  V.execs.slice().reverse().forEach(function(S){
+    P.queue(function(){if(S.waiting)after(S);run(S)});
+    P.queue(function(){done(S)});
+  });
 };
 function setArgs(S,args){
   S.args=args.slice(0,30).map(function(a){return a==='%'?'':a});

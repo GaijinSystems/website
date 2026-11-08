@@ -12220,14 +12220,13 @@ function $robots(){
 P.command({names:['conquest'],noHelpFlag:true,run:function(a,raw,words){
   var last=null,fault=null;
   P.program(function(S,done){
-    var G,over=false,timer=null,tick=null,waiting=null,deadline=0,ox=0,oy=0;
+    var G,over=false,timer=null,tick=null,waiting=null,deadline=0,oy=0;
     function show(){
       if(over)return;
       var r=Math.min(S.rows,24),c=Math.min(S.cols,80),cy=Math.min($cy,23),cx=Math.min($cx,79);
       if(cy<oy)oy=cy<r?0:cy;else if(cy>=oy+r)oy=cy-r+1;
-      if(cx<ox)ox=cx<c-4?0:cx-4;else if(cx>=ox+c)ox=Math.min(80-c,cx-c+5);
-      oy=Math.max(0,Math.min(oy,24-r));ox=Math.max(0,Math.min(ox,80-c));
-      var x=S.pan(ox,80-c,cx);
+      oy=Math.max(0,Math.min(oy,24-r));
+      var x=S.pan(Math.max(0,Math.min(cx-c+5,80-c)),80-c,cx); /* as far left as keeps the cursor in view: a prompt shows from its start when it fits */
       S.drawGrid($scr.slice(oy,oy+r).map(function(R){return R.slice(x,x+c)}),cy-oy,cx-x);
     }
     $show=show;
