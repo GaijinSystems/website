@@ -252,7 +252,7 @@ cmd('DELETE','(FILES)','file',function(a){
       var d=folder(abs);if(!d)return;
       gens(matches(S,d),S).forEach(function(e){
         hit=true;
-        if(e.node.prot||!mine(abs)||e.node.type==='d'){err(' '+show(e)+' ?Delete access required');return}
+        if(e.node.prot||!mine(abs)||e.node.type==='d'||!P.mayAlter(e.node)){err(' '+show(e)+' ?Delete access required');return} /* the site's and the system's files are not the guest's */
         e.node.del=true;P.typeLine(' '+show(e)+' [OK]');
       });
     });
@@ -305,7 +305,7 @@ cmd('RENAME','(EXISTING FILE)','file',function(a){
   var T=parse(a[1]),d=folder(T.dirs[0]);
   if(!T.name&&T.ext!==null){err('?Filename was not specified - "'+up(a[1])+'"');return}
   if(r.e.node.type==='d'){err('?Directory access privileges required - "'+up(a[0])+'"');return}
-  if(!d||r.e.node.prot||!mine(r.abs)||!mine(T.dirs[0])){err('?Rename access required - "'+show(r.e)+'"');return}
+  if(!d||r.e.node.prot||!mine(r.abs)||!mine(T.dirs[0])||!P.mayAlter(r.e.node)){err('?Rename access required - "'+show(r.e)+'"');return}
   var name=!T.name||T.name==='*'?r.e.name:T.name,ext=T.ext===null||T.ext==='*'?r.e.ext:T.ext,g=nextGen(d,name,ext),k=name+'.'+ext+'.'+g,n=r.e.node; /* as COPY: <DIR> alone keeps the old name */
   delete r.dir.kids[r.e.key];n.name=k;n.parent=d;d.kids[k]=n;
   P.typeLine(' '+show(r.e)+' => '+up(k)+' [OK]');

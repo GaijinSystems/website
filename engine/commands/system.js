@@ -152,6 +152,19 @@ P.command({names:['effects'],terminal:true,help:'tube effects: auto, full or lit
     ]);
   }});
 
+/* teletype: a Teletype Model 33 instead of the glass, where the site offers it ("teletype: yes") and the machine had one (V7) */
+P.command({names:['teletype'],terminal:true,help:'print on a teletype: on or off',
+  enabled:function(p){return !!p.teletype},
+  man:{what:'use a teletype model 33 instead of the screen',syn:'teletype [ on | off ]',desc:[
+    'on prints everything on a teletype model 33, as the machine\'s console was in 1979: ten characters a second, capitals only, with its clatter and its bell. off goes back to the screen.',
+    '',
+    'with no argument, says which is in use. this browser remembers which you chose.']},
+  run:function(a){
+    var m=(a[0]||'').toLowerCase();
+    if(m==='on'||m==='off'){P.teletypeMode(m==='on');P.typeLine('teletype '+m+'.');return}
+    P.say(['teletype '+(P.teletypeMode()?'on':'off'),['usage: teletype on|off','dim']]);
+  }});
+
 /* connect: the terminal stays, the machine changes. A fresh page load is a true cold start. */
 P.command({names:['connect'],terminal:true,help:'plug into another machine',
   enabled:function(){return P.allowed.length>1},

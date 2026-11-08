@@ -129,7 +129,7 @@ function del(pat){
   if(!E.length){P.typeLine('File not found');return}
   E.forEach(function(k){
     var n=R.dir.kids[k];
-    if(n.bin||n.prot)P.typeLine('Access denied - '+k.toUpperCase());
+    if(n.bin||n.prot||!P.mayAlter(n))P.typeLine('Access denied - '+k.toUpperCase()); /* a read-only file: ATTRIB -R first */
     else delete R.dir.kids[k];
   });
 }
@@ -314,12 +314,17 @@ cmd(['tree'],null,function(){
   P.say(L);
 });
 cmd(['label'],null,function(){P.say(['Volume in drive C is FROBOZZ','','Volume label (11 characters, ENTER for none)? '])});
-cmd(['attrib'],null,function(a,raw,w){
-  var N=names(args(w)),R=resolve(N[0]||'*.*');
+cmd(['attrib'],null,function(a,raw,w){ /* ATTRIB +R -R +A -A name: anyone may make a file read-only or writable again */
+  var W=args(w),set=W.filter(function(x){return /^[+-][ra]$/i.test(x)}),N=names(W.filter(function(x){return set.indexOf(x)<0})),R=resolve(N[0]||'*.*');
+  if(W.some(function(x){return /^[+-]/.test(x)&&set.indexOf(x)<0})){P.typeLine('Invalid parameter');return}
   if(!R.dir){P.typeLine('Path not found');return}
   var E=files(R);
   if(!E.length){P.typeLine('File not found');return}
-  P.say(E.map(function(k){return '  A  '+dosPath((R.at==='/'?'':R.at)+'/'+k)}));
+  if(set.length){
+    E.forEach(function(k){var n=R.dir.kids[k];set.forEach(function(x){if(/r/i.test(x)){if(x.charAt(0)==='+')n.ro=true;else delete n.ro}})});
+    return;
+  }
+  P.say(E.map(function(k){return '  A  '+(R.dir.kids[k].ro?'R':' ')+'  '+dosPath((R.at==='/'?'':R.at)+'/'+k)}));
 });
 cmd(['edlin'],null,function(a,raw,w){
   var name=names(args(w))[0];
@@ -327,6 +332,7 @@ cmd(['edlin'],null,function(a,raw,w){
   var n=P.find(name,true),B=[],at=1,done=false;
   if(n&&n.type==='d'){P.typeLine('Invalid drive or file name');return}
   if(n&&n.prot){P.typeLine('Access denied');return}
+  if(n&&!P.mayAlter(n)){P.typeLine('File is READ-ONLY');return} /* EDLIN will not open one it could not write back */
   if(n){B=P.text(n);P.typeLine('End of input file')}else P.typeLine('New file');
   function list(a0,b0){
     var o=[];
