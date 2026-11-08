@@ -44,7 +44,7 @@ function listOf(k){var x=P.shwords[k];return x&&x.s===P.shvars[k]?x.w:null} /* t
 function store(k,L){P.shvars[k]=L.join(' ');P.shwords[k]={s:P.shvars[k],w:L}}
 function restore(o,was){Object.keys(o).forEach(function(k){delete o[k]});Object.assign(o,was)}
 function listVars(){ /* set, or @, on its own */
-  var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
+  var V=Object.assign(Object.create(null),{argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user});
   Object.keys(P.shvars).forEach(function(k){var x=listOf(k);V[k]=x&&x.length!==1?'('+x.join(' ')+')':P.shvars[k]}); /* a list of other than one word in ( ) */
   P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
 }
@@ -191,15 +191,14 @@ var NEED={};
 function inner(L,brace){return function(at,end){return brace(at,L.R.slice(at,end).join(' '))}} /* cexp's brace: the words as written */
 function braces(work,done,reset){ /* work(brace) works something out; a { command } in it is run first, as its own process, and the
                                      whole worked out again with its status: each runs once, in order, and one skipped by && or || never */
-  var ran={},any=false;
+  var ran={},any=false,st0=P.lastStatus(); /* $status as it was before: csh expands the variables once */
   (function again(){
     var need=null,r;
     try{r=work(function(at,cmd){if(P.has(ran,at))return ran[at];need={at:at,cmd:cmd};throw NEED})}
     catch(e){if(e!==NEED){done(e,null,any);return}}
     if(!need){done(null,r,any);return}
-    if(reset)reset();
     any=true;
-    P.forked(need.cmd,function(st){ran[need.at]=st;again()});
+    P.forked(need.cmd,function(st){ran[need.at]=st;P.status(st0);if(reset)reset();again()});
   })();
 }
 function test(t,as,then){ /* then(true or false) for the expression in t, or nothing once an error has been said */
