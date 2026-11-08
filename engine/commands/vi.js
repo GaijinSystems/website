@@ -31,15 +31,18 @@ function Vi(name,S){
     if(!uline||uline.r!==r)uline={r:r,t:L[r]};
   }
   function info(){return '"'+(file||'No file')+'"'+(dirty?' [Modified]':'')+' line '+(r+1)+' of '+L.length+' --'+Math.floor(100*(r+1)/L.length)+'%--'}
-  function fileInfo(f){return '"'+f+'" '+L.length+' line'+(L.length===1?'':'s')+', '+L.reduce(function(a,t){return a+t.length+1},0)+' characters'}
+  function fileInfo(f,cut,wrote){ /* ex's iostats: what it read or wrote. cut: a last line with no newline, which it ends with one. vim (Linux) counts bytes */
+    var n=L.reduce(function(a,t){return a+t.length+1},0)-(cut?1:0),u=P.profile.bash?' byte':' character';
+    return '"'+f+'"'+(cut?' [Incomplete last line]':'')+' '+L.length+' line'+(L.length===1?'':'s')+', '+n+u+(n===1?'':'s')+(wrote&&P.profile.bash?' written':'');
+  }
   function load(f){
     var n=P.named(f);
     if(!n&&P.find(f,true))n={prot:true}; /* behind a locked folder: there, and not to be read */
     if(n&&n.type==='d'){msg='"'+f+'" Is a directory';return}
     if(n&&n.prot){msg='"'+f+'" Permission denied';return}
     if(!n){L=[''];r=c=top=0;dirty=false;file=f;msg='"'+f+'" [New file]';return}
-    L=P.text(n);if(!L.length)L=[''];
-    r=c=top=0;dirty=false;file=f;msg=fileInfo(f);
+    L=P.text(n);var cut=L.open;L=L.length?L.slice():['']; /* the copy has no open end: every line it writes ends with a newline */
+    r=c=top=0;dirty=false;file=f;msg=fileInfo(f,cut);
     undo=null;uline=null;marks={};
   }
   function write(f){
@@ -48,7 +51,7 @@ function Vi(name,S){
     if(!P.writeFile(to,L,false)){msg='"'+to+'" Permission denied';return false}
     if(!file)file=to;
     if(to===file)dirty=false;
-    msg=fileInfo(to);
+    msg=fileInfo(to,false,true);
     return true;
   }
   function quit(){S.close();done()}

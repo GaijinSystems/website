@@ -524,6 +524,7 @@ CP.FORCE=function(a){
 };
 CP.SHUTDOWN=function(){V.shutdown();return 0};
 V.halted=function(psw){ /* the virtual machine stopped, and CP has the terminal */
+  V.stopAll();
   P.typeLine('DMKDSP450W CP ENTERED; DISABLED WAIT PSW \'00020000 '+(psw||'00000000')+'\'');
   V.state='cp';V.cpMode=true;V.acc=null;
   P.typeLine('CP');
@@ -554,6 +555,7 @@ V.logonAs=function(user,at){ /* a logon accepted: the machine, the letter in the
   P.say(V.logonLines(V.logon));
 };
 V.logoff=function(dsc,forced){
+  V.stopAll();
   var n=P.now();
   P.typeLine(V.usage(n));
   P.typeLine((dsc?'DISCONNECT AT ':'LOGOFF AT ')+V.stamp(n));
@@ -563,7 +565,7 @@ V.logoff=function(dsc,forced){
   P.queue(function(){P.typeLine('');P.typeLine('VM/370 ONLINE')});
 };
 V.shutdown=function(){
-  V.ending();
+  V.stopAll();V.ending();
   P.powerOff(['DMKCKP960I SYSTEM WARM START DATA SAVED','DMKCKP961W SYSTEM SHUTDOWN COMPLETE']);
 };
 

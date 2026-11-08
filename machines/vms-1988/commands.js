@@ -285,6 +285,7 @@ verb('run',2,function(a){
   err('%DCL-W-ACTIMAGE, error activating image '+fullSpec(r.S),FNF);
 });
 
+P.symbols=true; /* NAME = value and NAME :== value define a symbol, whatever NAME is: the engine takes them without a word */
 /* a command: a verb from the table, @file, or a question for the operator */
 P.fallback=function(word,raw){
   var W=raw.trim().split(/\s+/);
