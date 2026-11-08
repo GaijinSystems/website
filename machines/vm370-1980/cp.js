@@ -601,7 +601,7 @@ V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an a
     V.asking=false;
     if(l===null||l===P.INT){then(l);return}
     var L=V.lineEdit(l,!prog);
-    if(prog)V.stack=L.slice(1).concat(V.stack); /* a program's read takes the first logical line; the rest are stacked (DMSCRD) */
+    if(prog){then(V.crd(L.join(V.LE)),L.length>1);return} /* a program's read takes the first logical line; the rest are stacked (DMSCRD) */
     then(L[0]);
   },trap,hidden);
 };

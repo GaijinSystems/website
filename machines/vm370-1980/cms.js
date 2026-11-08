@@ -58,24 +58,24 @@ V.input=function(raw){
      ends the edit and every EXEC around it (CMS, no ready message), HT and RT stop and resume the typing, and the
      editor's read is still to come; any other line is the editor's. When the edit ends, the EXECs that ran it carry on */
   if(ed){
-    var r=V.edRead,l0=V.lineEdit(raw,true)[0],w=V.immediate(up(l0.trim()));
+    var r=V.edRead,L=V.lineEdit(raw),w=L.length===1?V.immediate(up(L[0].trim())):''; /* the whole line (DMSCIT), not its logical lines */
     if(w==='HX'){V.edRead=null;V.abend();V.execs=[];V.pend=[];V.level=0;P.queue(function(){V.ready(0)});return}
     if(w)return;
-    V.stack.push(l0);var l1=V.stack.shift(); /* after what was stacked already (DMSCIT) */
+    V.stack.push(L.join(LE));var l1=V.pop(); /* after what was stacked already (DMSCIT); its first logical line, the rest stacked in front (DMSCRD) */
     P.queue(function(){r(l1)});
     P.queue(function(){
       if(V.edRead||V.state!=='cms'||V.cpMode)return;
       if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
-      P.queue(function(){if(V.state==='cms'&&!V.cpMode&&V.stack.length)cmsLine(V.stack.shift())});
+      P.queue(function(){if(V.state==='cms'&&!V.cpMode&&V.stack.length)cmsLine(V.pop())});
     });
     return;
   }
   var L=V.lineEdit(raw);
   /* CMS reads the first logical line and stacks the rest in front of the console stack, LIFO, for its next reads
-     (DMSCRD, by DMSCAT): an attention while the first runs leaves them there */
+     (DMSCRD, through DMSCAT): an attention while the first runs leaves them there */
   if(V.state==='cms'&&!V.cpMode){
-    V.stack=L.slice(1).concat(V.stack);
-    P.queue(function(){logical(L[0])});
+    var l0=V.crd(L.join(LE));
+    P.queue(function(){logical(l0)});
     return;
   }
   L.forEach(function(l){P.queue(function(){logical(l)})});
@@ -85,8 +85,10 @@ V.input=function(raw){
    and any other line goes to the console stack, for the command's next read or for CMS once it is done; meanwhile the
    command carries on (CMS User's Guide, GC20-1819, Section 2: Virtual Machine Interruptions; Command and Macro
    Reference, GC20-1818: Immediate Commands). While that line is read what it types goes on above it, as Release 6 does
-   under Hercules; a read of its own waits for the line. What a command types goes through V.pend (exec.js), so the
-   attention loses none of it. Elsewhere (CP, the editor typing) what is running stops; in CP the console stack goes too */
+   under Hercules (with ATTN OFF below it, where the carriage stayed in the line cut short); a read of its own waits for
+   the line. What a command types goes through V.pend (exec.js), so the attention loses none of it. An attention while
+   the ready message types, with lines still stacked, is the same: the line typed goes after them. Elsewhere (CP, the
+   editor typing) what is running stops; CMS's console stack stays, as DMSCIT only adds to it */
 /* At every attention CP types an exclamation point where the carriage is and starts a new line, or nothing with TERMINAL
    ATTN OFF (DMKCNS: "restore, exclamation, idles, CR, idles", without the restore for a teletype); a line being typed
    in is cancelled, and the read is up again (DMSCIT reissues it) */
@@ -94,13 +96,13 @@ P.onInterrupt=function(trap){
   release();
   var bang=V.term&&!V.term.attn?{says:'',same:true}:'!'; /* ATTN OFF: DMKCNS's CNSEXNO sends idles only, no new line, so the read goes on in the same line */
   if(trap&&V.asking==='prog'){V.typed=!!P.typed();V.asking=false;return bang} /* a program's read: see V.progRead */
-  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&(V.execs.length||V.busy)){
-    V.attn=true;
+  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&(V.execs.length||V.busy||V.stack.length)){
+    V.attn=true;V.attnIdle=!(V.execs.length||V.busy); /* idle: the ready message typing, the console stack still to be read */
     P.queue(function(){if(V.attn&&(V.execs.length||V.pend.length)&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
     return bang;
   }
   V.asking=false;
-  if(!V.attn&&!V.edRead)V.stack=[]; /* the editor's attention is CMS's (V.input): its console stack stays */
+  if(!V.attn&&!V.edRead&&V.state!=='cms')V.stack=[]; /* DMSCIT only adds to CMS's console stack: an attention leaves it */
   if(!V.attn)V.pend=[];
   return bang;
 };
@@ -115,6 +117,15 @@ V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: 
   P.queue(k);
   return true;
 };
+/* The line end in a line typed: CP passes it on as X'15' (DMKQCN), and DMSCRD, reading the line, takes what comes
+   before the first one and stacks the rest, as one line, in front of the console stack through DMSCAT (LIFO), so its
+   next read splits that again. DMSCAT takes a line of just HT or RT as that Immediate command and does not stack it:
+   so TYPE BIG DATA#HT types nothing. A line stacked by an attention read (DMSCIT) goes on the end whole */
+var LE='\x15';
+V.LE=LE;
+V.cat=function(l,lifo){if(/^(HT|RT)$/i.test(l))V.immediate(up(l));else if(lifo)V.stack.unshift(l);else V.stack.push(l)};
+V.crd=function(l){var i=l.indexOf(LE);if(i<0)return l;V.cat(l.slice(i+1),true);return l.slice(0,i)};
+V.pop=function(){return V.crd(V.stack.shift())}; /* the console stack's first line, as CMS reads it */
 V.immediate=function(w){ /* an Immediate command (w in capitals): HX, HT and RT, and the ones with nothing here to do; HT and RT stop and resume the typing */
   if(!/^(HX|HT|RT|HO|SO|RO|TS|TE|HB)$/.test(w))return '';
   if(w==='HT')V.ht=true;
@@ -122,20 +133,16 @@ V.immediate=function(w){ /* an Immediate command (w in capitals): HX, HT and RT,
   return w;
 };
 function attention(raw){
-  var L=V.lineEdit(raw),hx=false,h=V.side,on=!!(h&&h.live());
-  V.attn=false;
-  L.forEach(function(l){
-    if(hx)return;
-    var w=V.immediate(up(l.trim()));
-    if(w==='HX')hx=true;
-    else if(!w)V.stack.push(l);
-  });
+  var L=V.lineEdit(raw),h=V.side,on=!!(h&&h.live()),idle=V.attnIdle;
+  var w=L.length===1?V.immediate(up(L[0].trim())):'',hx=w==='HX'; /* DMSCIT looks at the whole line: X#HX is stacked, not HX */
+  V.attn=false;V.attnIdle=false;
+  if(!w)V.stack.push(L.join(LE));
   if(hx){V.abend();V.execs=[];V.pend=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
   if(on){release();P.queue(function(){return h.end()})}else V.carryOn();
   P.queue(function(){
     if(V.state!=='cms'||V.cpMode||V.attn)return;
-    V.ready(V.rc||0);
-    if(V.stack.length)cmsLine(V.stack.shift());
+    if(!idle)V.ready(V.rc||0); /* idle: the ready message had come */
+    if(V.stack.length)cmsLine(V.pop());
   });
 }
 function logical(l){
@@ -147,7 +154,7 @@ function cmsLine(l){
   V.rc=0;
   if(!l.trim()&&!V.first){ /* a null line: CMS says it is there, and reads on */
     P.typeLine('CMS');
-    if(V.stack.length)P.queue(function(){cmsLine(V.stack.shift())});
+    if(V.stack.length)P.queue(function(){if(V.stack.length)cmsLine(V.pop())});
     return;
   }
   if(V.first){
@@ -161,7 +168,7 @@ function cmsLine(l){
     V.busy=false;
     if(V.state!=='cms'||V.cpMode)return;
     if(!quiet)V.ready(V.rc);
-    if(V.stack.length)cmsLine(V.stack.shift()); /* what an EXEC left in the console stack: CMS reads it as its next commands */
+    if(V.stack.length)P.queue(function(){if(V.stack.length)cmsLine(V.pop())}); /* what an EXEC left in the console stack: CMS reads it as its next commands, once the ready message is typed */
   });
 }
 

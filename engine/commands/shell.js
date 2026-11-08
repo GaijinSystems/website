@@ -80,8 +80,8 @@ function bashAlias(W){ /* bash 5.2's alias builtin: each word is name=value, whi
 
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
-    'prints its arguments, separated by spaces. -n would leave the line open; here every line ends.']},
-  run:function(a,raw,words){P.typeLine(words.slice(words[1]==='-n'?2:1).join(' '))}});
+    'prints its arguments, separated by spaces, and ends the line. -n leaves the line open: what comes next goes on in it.']},
+  run:function(a,raw,words){var n=words[1]==='-n';P.typeLine(words.slice(n?2:1).join(' '),null,null,n?{open:true}:null)}});
 
 P.command({names:['clear'],core:true,help:'clear the screen',
   man:{what:'clear the screen',syn:'clear',desc:[
