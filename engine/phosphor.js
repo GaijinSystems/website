@@ -187,7 +187,8 @@ var PROFILE=(function(){
     else if(k==='root password')P.rootPassword=v;
     else if(k==='backdoor')P.backdoor=v.toLowerCase();    /* a login name that needs no password, and is root */
     else if(k==='perror')P.perror=yes(v);                 /* name: reason, the way Berkeley's programs complain */
-    else if(k==='csh')P.csh=yes(v);                       /* !! and history, finger, w */
+    else if(k==='csh')P.csh=yes(v);
+    else if(k==='signals')P.signals=v.toLowerCase();       /* irix: IRIX's signal numbers, not 4.3BSD's */                       /* !! and history, finger, w */
     else if(k==='login')P.noLogin=!yes(v);                /* no login: it just boots */
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
@@ -324,28 +325,33 @@ var badge=$('.badge');if(badge)badge.textContent=PROFILE.badge;
 /* Output runs through one queue, in order. A step's own queue() calls run inside that step, before
    the next step, so a stage of a pipeline finishes all its output before the next stage starts.
    Ctrl-C bumps GEN: steps queued before it are skipped, unless they must always run (prompts). */
-var GEN=0,inner=null,wakers=[],ASIDE=null; /* ASIDE: the aside() a step belongs to, or null for the one queue */
-function wakeList(){return ASIDE&&ASIDE.job?ASIDE.job.wakers:wakers} /* a background job's waits are its own: ^C does not end them */
-function sleep(ms){return new Promise(function(r){
-  var W=wakeList(),done=function(){clearTimeout(t);W.splice(W.indexOf(done),1);r()},t=setTimeout(done,ms);
+var GEN=0,inner=null,wakers=[],ASIDE=null,FGP=null; /* ASIDE: the aside() a step belongs to, or null for the one queue. FGP: the foreground pipeline ^Z can stop (fgProc) */
+function wakeList(){return ASIDE&&ASIDE.job?ASIDE.job.wakers:inner&&inner.proc?inner.proc.wakers:wakers} /* a background job's waits are its own: ^C does not end them */
+function sleep(ms){var own=ASIDE&&ASIDE.job||inner&&inner.proc||null;return new Promise(function(r){
+  var W=wakeList(),done=function(){
+    clearTimeout(t);var i=W.indexOf(done);if(i>=0)W.splice(i,1);
+    var j=own&&(own.resume?own:own.job); /* its job, stopped: the time runs on, and the sleep ends once it goes on (nanosleep's restart) */
+    if(j&&j.state==='Stopped'&&!j.dead)stopWait(j).then(function(){r()});else r();
+  },t=setTimeout(done,ms);
   W.push(done);
 })}
 var TTY={}; /* thrown by what wants the terminal (a read, the full screen) in a background job: the job stops there */
 function queue(fn,always){
-  var g=GEN,side=ASIDE,job=side&&side.job,oops=function(e){console.error(e)},step=function(){
+  var g=GEN,side=ASIDE,pr=inner&&inner.proc||null,oops=function(e){console.error(e)},step=function(){
+    var job=side&&side.job||pr&&pr.job||null,sd=side||job&&job.side||null; /* pr: the foreground pipeline it is part of, which a ^Z makes a job (fgProc) */
     if(job?job.dead&&always!==2:g!==GEN&&!always||side&&side.stopped&&!always)return; /* a job goes on after ^C, until it is killed; then none of its steps run but a redirection's write */
     if(job&&job.state==='Stopped')return stopWait(job).then(step); /* kill -STOP: its next step waits for fg, bg or kill -CONT */
-    var sc={p:null};
+    var sc={p:null,proc:pr,race:null};
     function once(){ /* a job's step runs with the job's own directory, variables, output and status; once it stops for the terminal, again when it is resumed */
       var saved=inner,was=ASIDE,fg=null,ret;
-      inner=sc;ASIDE=side;
+      inner=sc;ASIDE=sd;
       if(job){fg=procGet();procPut(job.ctx)}
       try{ret=fn()}
       catch(e){if(e!==TTY||!job)throw e;ret=Promise.reject(e)}
       finally{inner=saved;ASIDE=was;if(fg){job.ctx=procGet();procPut(fg)}}
       return job?Promise.resolve(ret).catch(function(e){if(e!==TTY)throw e;return ttyStop(job).then(function(go){if(go)return once()})}):ret;
     }
-    return Promise.resolve(once()).then(function(){return sc.p});
+    return Promise.resolve(once()).then(function(){return sc.race?Promise.race([sc.p,sc.race]):sc.p}); /* race: a ^Z lets the shell go on */
   };
   if(inner){inner.p=(inner.p||Promise.resolve()).then(step).catch(oops);return inner.p}
   if(side){side.p=side.p.then(step).catch(oops);return side.p}
@@ -423,7 +429,7 @@ function plain(s){return String(s).replace(/\u0003([^\u0004]*)(\u0004|$)/g,'$1')
 function typeLine(text,cls,cb,opt){
   opt=opt||{};
   return queue(function(){return new Promise(function(res0){
-    var gen=GEN,burst=1,side=ASIDE,job=ASIDE&&ASIDE.job,res=res0; /* side: whose line this is, even when its turn comes later */
+    var gen=GEN,burst=1,side=ASIDE,job=ASIDE&&ASIDE.job,res=res0,own=inner&&inner.proc; /* side: whose line this is, even when its turn comes later; own: the foreground pipeline's */
     text=typeof text==='function'?text():text; /* a function = text worked out when its turn comes (ping) */
     if(cls==='err')STATUS=1;
     var to=cls!=='err'?SINK:ERRSINK!==GLASS?ERRSINK:null; /* a pipe or a file; errors still go to the glass, unless 2>file or 2>&1 */
@@ -432,7 +438,7 @@ function typeLine(text,cls,cb,opt){
       if(cb)cb();res();return;
     }
     if(glassBusy(job)){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
-    function gone(){return job?job.dead:gen!==GEN} /* killed, or ^C */
+    function gone(){return job?job.dead:own&&own.job?own.job.dead:gen!==GEN} /* killed, or ^C */
     function go(){
     GL.n++;if(job)GL.bg++;
     res=function(){GL.n--;if(job)GL.bg--;glassNext();res0()};
@@ -483,6 +489,7 @@ function typeLine(text,cls,cb,opt){
       if(BAUD&&burst>1){burst--;step();return} /* a real line speed: no need to scroll for what nobody will see */
       scrollBottom();
       if(ch!==' ')click(.194);
+      if(own&&own.job){step();return} /* ^Z came in the middle of it: what was already sent comes out */
       if(BAUD){ /* ten bits a character, drawn a few at a time */
         burst=Math.max(1,Math.round(BAUD/500));
         setTimeout(step,burst*10000/BAUD);
@@ -552,22 +559,34 @@ function readKey(p,trap){ /* one keypress, no return needed. Call it from inside
                             ^C stops the command, unless trap: then the program gets it as C-c */
   ttyWant('key'); /* a key from /dev/null: none ever comes */
   return new Promise(function(res){
-    showPrompt(p==null?'':p,'read');
-    KEYS=function(k){
+    var h=hold(),got=function(k){
       if(k.length!==1&&k!=='Enter'&&k!=='C-c')return;
-      KEYS=null;
+      KEYS=null;letGo(h);
       if(k==='C-c'&&!trap){leavePrompt();interrupt();res(k);return}
       if(k.length===1)atCursor(k);
       leavePrompt();
       res(k);
     };
+    h.show=function(){showPrompt(p==null?'':p,'read');KEYS=got};
+    h.hide=h.kill=function(){if(KEYS===got){KEYS=null;leavePrompt()}};
+    h.show();
   });
 }
+/* What has the terminal now, a read or a full screen: ^Z puts it aside with its job (hide) and fg gives it back (show); a kill ends it */
+var TTYH=null;
+function hold(){var h={owner:ASIDE&&ASIDE.job||inner&&inner.proc||FGJOB||FGP};TTYH=h;return h} /* whose it is: called from a step, or in a promise after one (input's reads), the foreground's */
+function letGo(h){if(TTYH===h)TTYH=null} /* done with the terminal */
+function owns(job,h){return !!h&&!!h.owner&&(h.owner===job||h.owner.job===job)}
 var HIDE=false,READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a line from the keyboard */
 function readLine(p,trap,hidden){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step.
                               trap: the program deals with ^C itself, and gets INT */
   if(ttyWant('input'))return Promise.resolve(null); /* a background job's /dev/null */
-  return new Promise(function(res){READ=res;TRAP=!!trap;HIDE=!!hidden;showPrompt(p==null?'':p,'read')});
+  return new Promise(function(res){
+    var h=hold(),got=function(v){letGo(h);res(v)};
+    h.show=function(){READ=got;TRAP=!!trap;HIDE=!!hidden;showPrompt(p==null?'':p,'read')};
+    h.hide=h.kill=function(){if(READ===got){READ=null;leavePrompt()}};
+    h.show();
+  });
 }
 function ask(p,then,trap,hidden){ /* readLine, then carry on with what was typed */
   var l;
@@ -586,7 +605,10 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
   });
   /* content wider than the glass: a sideways drag pans the view, and the next key or a resize goes back to following the cursor */
   var U=-1,cw=8,view={at:0,max:0},next=null,drag=null,glide=0;
-  KEYS=function(k){if(U>=0){follow();again()}keys(k)};
+  var mine=function(k){if(U>=0){follow();again()}keys(k)},h=hold(),shut=false;KEYS=mine;
+  h.hide=function(){h.off=true;if(KEYS===mine)KEYS=null;el.remove();edge.forEach(function(d){d.hidden=true});out.style.display='';term.scrollTop=term.scrollHeight}; /* off the glass, kept as it is */
+  h.show=function(){h.off=false;term.appendChild(el);out.style.display='none';term.classList.remove('idle');KEYS=mine;size();again()};
+  h.kill=function(){S.close()};h.out=true;
   redraw=redraw||onResize;
   var said='',T=[],S={
     rows:24,cols:80,
@@ -642,10 +664,11 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
     },
     onThrow:null,
     close:function(){
+      if(shut)return;shut=true;letGo(h);
       while(T.length)S.cancel(T[0]);
-      KEYS=null;follow();window.removeEventListener('resize',size);
+      if(KEYS===mine)KEYS=null;follow();window.removeEventListener('resize',size);
       if(window.visualViewport)visualViewport.removeEventListener('resize',size);
-      el.remove();edge.forEach(function(d){d.remove()});out.style.display='';refit();
+      el.remove();edge.forEach(function(d){d.remove()});if(!h.off)out.style.display='';refit();
       term.scrollTop=term.scrollHeight;
     }
   };
@@ -1067,7 +1090,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,writeFile:writeFile,
   status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){if(!SUB)LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},env:ENV,runScript:runScript,child:child,keep:keep,exec:execLine,
-  subshell:function(){return SUB>0},forked:forked,pidNow:function(){var p=PIDNOW;PIDNOW=null;return p},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
+  subshell:function(){return SUB>0},subExit:function(a){if(!SUBSH||SUB!==SUBSH)return false;STATUS=a[0]===undefined?PREV:parseInt(a[0],10)||0;LOOP='exit';return true}, /* exit in ( ): that process ends */forked:forked,pidNow:function(){var p=PIDNOW;PIDNOW=null;return p},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,jobCmd:jobCmd,jobs:psJobs,stoppedWarn:stoppedWarn,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,aside:aside,asideNow:function(){return !!ASIDE},sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
@@ -1168,7 +1191,7 @@ function envOf(k){
   var sub=/^(\w+)\[([^\]]*)\]$/.exec(k); /* csh: $z[2], the second word; $z[1-2], $z[2-], $z[-2], $z[-] and $z[*] all of them */
   if(sub)return range(wordsOf(sub[1]),varsIn(sub[2]),k).join(' ');
   if(/^\d+$/.test(k))return ARGS[+k]||'';
-  if(k==='$')return '23';
+  if(k==='$')return String(shellPid());
   if(k==='HOME')return ST.home;
   if(k==='USER'||k==='LOGNAME')return ST.user;
   if(has(ENV,k))return ENV[k];
@@ -1235,7 +1258,7 @@ function guard(t,spaces){
 }
 function unguard(t){return t.replace(/\uE010/g,'').replace(/[\uE000-\uE00B]/g,function(c){return META.charAt(c.charCodeAt(0)-0xE000)})}
 function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,raw,in,out,app}]}] */
-  var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0,piped=false;
+  var list=[],stages=[],op=null,w=null,quoted=false,fromVar=false,redir=null,i=0,piped=false,at=0; /* at: where this stage's text starts */
   function fresh(){return {words:[],ends:[],raw:'',src:'',in:null,out:null,app:false,err:null,glass:false,mk:[]}}
   var st=fresh();
   function add(r,c){st.raw+=r;st.src+=c===undefined?r:c} /* raw has the values of variables, src the names */
@@ -1256,11 +1279,13 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   function endStage(tok){
     endWord();
     if(redir&&!PROFILE.dos)throw {syntax:tok,redir:true}; /* echo a > : a redirection with no name */
-    if(PROFILE.csh&&!st.words.length&&(st.in!==null||st.out!==null)){
+    if(PROFILE.csh&&!st.words.length&&st.sub===undefined&&(st.in!==null||st.out!==null)){
       if(!/\S/.test(st.src))throw {syntax:tok}; /* > f, or echo a &> f: a redirection with no command (4.3BSD's syn3) */
       st.in=st.out=null; /* $empty > f: no command once the words are made, and csh does nothing at all */
     }
-    st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass)stages.push(st);st=fresh();
+    if(st.sub!==undefined&&st.words.length)throw {syntax:st.words[0]}; /* (a) b */
+    st.text=s.slice(at,i).replace(/^\s*(\|&?|&&|\|\||&)?\s*/,'').trim();at=i; /* as typed, for the job table */
+    st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass||st.sub!==undefined)stages.push(st);st=fresh();
   }
   function blank(){return w===null&&!/\S/.test(st.src)&&st.in===null&&st.out===null&&st.err===null&&!st.glass&&!st.e2o&&!st.closed&&!st.errClosed&&!st.mk.length} /* nothing written for this command */
   function endList(nextOp){endStage(nextOp||'newline');if(stages.length)list.push({op:op,stages:stages});stages=[];op=nextOp;piped=false}
@@ -1275,6 +1300,11 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       continue;
     }
     if(ch==='#'&&w===null)break;
+    if(ch==='('&&!PROFILE.noUnix&&blank()&&st.sub===undefined){ /* ( list ): a subshell, run as its own process (runSub); what is inside is read when it runs */
+      var e=parenEnd(s,i);
+      if(e<0)throw {syntax:'end'};
+      st.sub=s.slice(i+1,e);add(s.slice(i,e+1));i=e+1;continue;
+    }
     if(two==='&&'||two==='||'){endList(two);i+=2;continue}
     if(ch==='|'){
       if(blank())throw {syntax:'|'}; /* | echo: no command before it */
@@ -1327,6 +1357,24 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
   endList(null);
   return list;
 }
+function parenEnd(s,i){ /* the ) that closes the ( at i, outside quotes */
+  for(var d=0,j=i,k;j<s.length;j++){
+    var c=s.charAt(j);
+    if(c==='\\'){j++;continue}
+    if((k=quoteEnd(s,j))>=0){j=k;continue}
+    if(c==='(')d++;else if(c===')'&&!--d)return j;
+  }
+  return -1;
+}
+function runSub(text){ /* in a step: ( list ), with its own directory, variables and aliases; its status is its last command's, or what its exit gave */
+  if(SUB>=32){noFork();return}
+  var tree;
+  try{tree=parseTree([text])}catch(e){typeLine(e===MORE?syntaxError('end'):e.message,'err');return}
+  var back=keep(),was=SUBSH,loop=LOOP,shell=SHID,ld=LOOPD,g=GEN,job=ASIDE&&ASIDE.job;
+  SUB++;SUBSH=SUB;SHID=++SHIDS;LOOPD=0;STATUS=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs */
+  runBlock(tree);
+  queue(function(){var st=STATUS;SUB--;SUBSH=was;SHID=shell;LOOP=loop;LOOPD=ld;back();if(job||g===GEN)STATUS=st},true);
+}
 function runPipeline(stages){
   var pipe=null;
   stages.forEach(function(st,i){
@@ -1356,6 +1404,9 @@ function runPipeline(stages){
       if(stages.length>1){SUB++;own=true} /* a stage of a pipeline is its own process */
       PIDNOW=null;
       if(JOB&&JOB.pids&&JOB.pids.length===stages.length){PIDNOW=JOB.pids[i];if(last)JOB.pids=null} /* ps & shows itself with the id the notice gave */
+      if(st.sub!==undefined){runSub(st.sub);return}
+      var nm=new RegExp('^'+MARK+'(\\d+)$').exec(st.words[0]||'');
+      if(nm){if(STDIN)STDIN=STDIN.slice();runStmt(Object.assign({},NODES[+nm[1]],{tail:null,head:null}));return} /* its reads take the lines in turn */
       var A=/^([A-Za-z_]\w*)=([\s\S]*)$/,k=0;
       while((!k||!PROFILE.csh&&!PROFILE.dos)&&k<st.words.length&&A.test(st.words[k]))k++; /* csh and DOS: only a lone x=1 */
       if(k&&k===st.words.length){st.words.forEach(function(x){var m=x.match(A);ENV[m[1]]=m[2]});STATUS=0;return} /* x=1 y=2 */
@@ -1440,52 +1491,120 @@ function notice(num,ids){return PROFILE.csh?'['+num+'] '+ids.join(' '):(PROFILE.
 var TABLE=[],JOBMAX=16,SHIDS=0,SHID=0,FGJOB=null,CUR={c:null,p:null},V7NOTE=[],WARNED=-9,RUNS=0; /* SHID: the shell a command runs in (0: the login shell) */
 function procGet(){
   return {SINK:SINK,STDIN:STDIN,ERRSINK:ERRSINK,STATUS:STATUS,PREV:PREV,SUB:SUB,SCRIPTS:SCRIPTS,LOOP:LOOP,JOB:JOB,JOBS:JOBS,PIDNOW:PIDNOW,ARGS:ARGS,
-    CURRENT:CURRENT,SOURCE:SOURCE,KEPT:KEPT,SHID:SHID,env:Object.assign({},ENV),vars:Object.assign(Object.create(null),CSHV),wds:Object.assign(Object.create(null),CSHW),cwd:ST.cwd,al:PH.aliases};
+    CURRENT:CURRENT,SOURCE:SOURCE,KEPT:KEPT,SHID:SHID,SUBSH:SUBSH,LOOPD:LOOPD,env:Object.assign({},ENV),vars:Object.assign(Object.create(null),CSHV),wds:Object.assign(Object.create(null),CSHW),cwd:ST.cwd,al:PH.aliases};
 }
 function procPut(c){
   SINK=c.SINK;STDIN=c.STDIN;ERRSINK=c.ERRSINK;STATUS=c.STATUS;PREV=c.PREV;SUB=c.SUB;SCRIPTS=c.SCRIPTS;LOOP=c.LOOP;JOB=c.JOB;JOBS=c.JOBS;PIDNOW=c.PIDNOW;ARGS=c.ARGS;
-  CURRENT=c.CURRENT;SOURCE=c.SOURCE;KEPT=c.KEPT;SHID=c.SHID;refill(ENV,c.env);refill(CSHV,c.vars);refill(CSHW,c.wds);ST.cwd=c.cwd;PH.aliases=c.al;
+  CURRENT=c.CURRENT;SOURCE=c.SOURCE;KEPT=c.KEPT;SHID=c.SHID;SUBSH=c.SUBSH;LOOPD=c.LOOPD;refill(ENV,c.env);refill(CSHV,c.vars);refill(CSHW,c.wds);ST.cwd=c.cwd;PH.aliases=c.al;
 }
 function refill(o,from){for(var k in o)if(!Object.prototype.hasOwnProperty.call(from,k))delete o[k];Object.assign(o,from)}
 function pipeText(t){ /* the commands of a pipeline, split at its | (not ||), outside quotes and ( ) */
+  return pipeRaw(t).map(function(x){return x.trim().replace(/\s+/g,' ')});
+}
+function pipeRaw(t,keep){ /* the same, as typed; keep: each with the | after it */
   var L=[],start=0,depth=0,j;
   for(var i=0;i<t.length;i++){
     var c=t.charAt(i);
     if(c==='\\'){i++;continue}
     if((j=quoteEnd(t,i))>=0){i=j;continue}
     if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
-    else if(!depth&&c==='|'&&t.charAt(i+1)!=='|'&&t.charAt(i-1)!=='|'){L.push(t.slice(start,i));start=i+(t.charAt(i+1)==='&'?2:1)}
+    else if(!depth&&c==='|'&&t.charAt(i+1)!=='|'&&t.charAt(i-1)!=='|'){var e=i+(t.charAt(i+1)==='&'?2:1);L.push(t.slice(start,keep?e:i));start=e}
   }
   L.push(t.slice(start));
-  return L.map(function(x){return x.trim().replace(/\s+/g,' ')});
+  return L;
 }
 function liveJobs(){return TABLE.filter(function(j){return !j.over})}
 function mine(){return TABLE.filter(function(j){return j.owner===SHID}).sort(function(a,b){return a.num-b.num})} /* this shell's jobs */
 function control(){return PROFILE.bash||PROFILE.csh} /* job control: jobs, fg, bg, %n, and a job that wants the terminal stops */
-function startJob(text){ /* in a step of the shell: text & */
-  if(liveJobs().length>=JOBMAX){noFork();return} /* the fork fails, as it does past the process limit */
-  var cmds=pipeText(text),one=andOr(text).length<2,ids=newPids(one?cmds.length:1);
+function newJob(cmds,ids,o){ /* a job's entry in the table */
   var job={num:TABLE.reduce(function(m,j){return j.owner===SHID&&!j.kept?Math.max(m,j.num):m},0)+1,owner:SHID,
-    pids:ids,cmds:one?cmds:[text.trim().replace(/\s+/g,' ')],state:'Running',code:0,sig:0,wd:ST.cwd,start:now(),wakers:[],resume:[],noted:true,born:RUNS,parent:ASIDE&&ASIDE.job||null,
-    control:!!control()&&!SCRIPTS&&!SHID};
+    pids:ids,cmds:cmds,state:'Running',code:0,sig:0,wd:ST.cwd,start:now(),wakers:[],resume:[],noted:true,born:RUNS,parent:ASIDE&&ASIDE.job||null,
+    control:!!control()&&!SCRIPTS&&!SHID,ps:o&&o.ps||null,pend:[]};
   job.text=job.cmds.join(' | ');
   job.done=new Promise(function(r){job.fin=r});
+  return job;
+}
+function jobWords(c){ /* a command as the job table shows it: ( list ) spaced out, as bash's and csh's printers do */
+  var k=new RegExp('^'+MARK+'(\\d+)').exec(c);
+  if(k)return compText(Object.assign({},NODES[+k[1]],{tail:null,head:null}),'').join('\n')+c.slice(k[0].length); /* a loop as bash prints it, then | cat */
+  var m=/^\(([\s\S]*)\)$/.exec(c);
+  return m?'( '+splitCmds(m[1]).map(function(x){return x.trim().replace(/\s+/g,' ')}).filter(Boolean).join('; ')+' )':c;
+}
+function shellName(){var r=procTable().filter(function(p){return p.mine&&/(^|[\/-])(ba|c)?sh$/.test(p.cmd)})[0];return r?r.cmd:PROFILE.bash?'-bash':PROFILE.csh?'-csh':'-sh'} /* a forked shell: ps shows it as the login shell */
+function startJob(text,o){ /* in a step of the shell: text &. o.run: what it runs instead of text, o.shown: what the table shows (a loop) */
+  o=o||{};
+  if(liveJobs().length>=JOBMAX){noFork();return} /* the fork fails, as it does past the process limit */
+  var cmds=o.shown?[o.shown]:pipeText(text).map(jobWords),one=!!o.shown||andOr(text).length<2,ids=newPids(one?cmds.length:1);
+  var job=newJob(one?cmds:[text.trim().replace(/\s+/g,' ')],ids,{ps:o.shown?[shellName()]:cmds.map(function(c){return /^\(/.test(c)?shellName():c})});
   LASTBG=String(ids[ids.length-1]);
-  if(PROFILE.csh||!SCRIPTS)typeLine(notice(job.num,ids)); /* bash and sh say it only to someone typing; csh in a script too */
+  if(PROFILE.csh||!SCRIPTS&&!(PROFILE.bash&&SUBSH))typeLine(notice(job.num,ids)); /* bash and sh say it only to someone typing; csh in a script too */
   var c=procGet();
   c.SUB=1;c.JOB={sub:false,level:1,told:true,pids:one?ids.slice():null};c.KEPT=[];c.LOOP=null;c.PIDNOW=null;c.SHID=++SHIDS;
   if(!job.control&&!c.STDIN)c.STDIN=[]; /* no job control: it reads /dev/null */
   job.ctx=c;
   TABLE.push(job);
   if(job.owner===0)current(job,'new');
-  job.side=aside(function(){execSeg(text)},job);
+  job.side=aside(o.run||function(){execSeg(text)},job);
   job.side.p.then(function(){ended(job)});
   STATUS=0;
+}
+/* ^Z. A pipeline typed at the shell's own level runs in the one queue as ever; ^Z makes it a stopped job there and then: its steps
+   from then on are the job's (queue looks up pr.job), with the state it had, and the shell goes on with the state it had when the
+   pipeline started. bash goes on with the rest of the line (status 148) but leaves any loop; csh's pjwait drops the rest of the line */
+function fgProc(item,run){ /* in a step: item {stages} or {text}, run() runs it */
+  var lone=item.stages&&item.stages.length===1&&new RegExp('^'+MARK).test(item.stages[0].words[0]||''); /* a loop only redirected runs in the shell: its own pipelines are the ones ^Z stops */
+  if(!control()||ASIDE||SUB||SCRIPTS||lone||inner&&inner.proc){run();return}
+  var pr={job:null,wakers:[],item:item,over:false};
+  queue(function(){
+    FGP=pr;inner.proc=pr;pr.sc=inner;pr.snap=procGet();pr.kept=KEPT.length;
+    inner.race=new Promise(function(r){pr.detach=r});
+    run();
+  });
+  queue(function(){if(FGP===pr)FGP=null;pr.over=true;if(pr.job)suspended(pr.job)},true);
+}
+var NOSTOP=/^(read|wait|fg|bg|%.*|source|\.|exit|logout)$/; /* the shell's own commands: the shell sets ^Z aside */
+function procJob(pr){ /* the foreground pipeline pr as a job, now */
+  var it=pr.item,cmds=it.stages?it.stages.map(function(st){return jobWords(st.text.trim().replace(/\s+/g,' '))}):[it.text.trim().replace(/\s+/g,' ')];
+  var c=procGet();c.KEPT=KEPT.slice();c.SUB++;c.SHID=++SHIDS;c.JOB=null;
+  KEPT.length=pr.kept;procPut(pr.snap); /* the shell as it was */
+  var job=newJob(cmds,newPids(cmds.length),{ps:cmds.map(function(c){return /^\(/.test(c)?shellName():c})});
+  job.control=true;job.wakers=pr.wakers;job.side={job:job,p:Promise.resolve(),stopped:false};
+  job.ctx=c;
+  TABLE.push(job);pr.job=job;
+  Promise.resolve(pr.sc.p).then(function(){ended(job)});
+  return job;
+}
+function tstp(){ /* ^Z: the foreground job stops, and the shell takes the terminal back */
+  if(!control())return false;
+  if(bufNode&&!READ&&!KEYS)return true; /* at the prompt: nothing */
+  var job=FGJOB,pr=FGP,h=TTYH;
+  if(!job&&(!pr||pr.over||pr.job||NOSTOP.test(pr.item.stages?pr.item.stages.length>1?'':pr.item.stages[0].words[0]||'':firstWord(pr.item.text.trim()))))return true;
+  if(!job)job=procJob(pr);
+  if(job.over)return true;
+  atCursor('^Z');
+  if(FGJOB===job)FGJOB=null;
+  job.fg=false;job.state='Stopped';job.sig=SIG.TSTP;job.noted=true;job.code=128+SIG.TSTP;
+  current(job,PROFILE.bash?'fg':'stop');
+  if(owns(job,h)){job.tty=h;letGo(h);h.hide()}
+  if(job.release)job.release();
+  if(pr&&pr.job===job)pr.detach();
+  return true;
+}
+function suspended(job){ /* in a step of the shell, after the ^Z: bash's [1]+ Stopped, csh's Stopped */
+  var k=SINK;SINK=null; /* on the glass, whatever the loop it was in writes to */
+  if(PROFILE.csh){GEN++;typeLine(why(job)+wdNote(job,' '));queue(function(){SINK=k;STATUS=1});return} /* pjwait's pprint(AREASON|SHELLDIR), then pintr1's error() */
+  jobRows(job,'').forEach(function(r){typeLine(r)});
+  queue(function(){SINK=k});
+  STATUS=128+SIG.TSTP;
+  if(LOOPD)LOOP='stop'; /* out of every loop it is in */
 }
 function ended(job){ /* it has run to its end, or a signal ended it */
   if(job.over)return;
   job.over=true;
   if(!job.dead){job.state='Done';job.code=job.ctx.STATUS}
+  if(job.tty){job.tty.kill();job.tty=null} /* a screen put aside by ^Z goes with it */
+  if(owns(job,TTYH)){var h=TTYH;letGo(h);h.kill()} /* and so does the one it has now: the shell has the terminal back */
+  if(job.release)job.release();
   job.wakers.slice().forEach(function(w){w()});
   resumeJob(job,false);
   var fg=job===FGJOB;
@@ -1504,7 +1623,14 @@ function drop(job){ /* out of the table: told, waited for, or ended in the foreg
   TABLE.splice(i,1);
   if(job.owner===0)current(job,'drop');
 }
-function resumeJob(job,go){if(go)job.state='Running';job.resume.splice(0).forEach(function(r){r(go)})} /* fg, bg, SIGCONT; go false: it was killed */
+function resumeJob(job,go){ /* fg, bg, SIGCONT; go false: it was killed */
+  if(go&&job.over)return; /* csh's bg %1 on one that has ended: nothing to start */
+  if(go&&job.pend.length){killJob(job,Math.min.apply(null,job.pend));return} /* a signal it got while stopped: the lowest comes first */
+  if(go&&job.tty&&!job.fg){stopJob(job,SIG[job.tty.out?'TTOU':'TTIN']);return} /* in the background, a screen or a read it was at stops it again */
+  if(go)job.state='Running';
+  job.resume.splice(0).forEach(function(r){r(go)});
+}
+function killJob(job,n){job.dead=true;job.sig=n;job.state='Killed';job.code=128+n;ended(job)}
 function stopWait(job){return new Promise(function(r){job.resume.push(r)})}
 function stopJob(job,sig){ /* SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU: its next step waits */
   job.state='Stopped';job.sig=sig;job.noted=false;
@@ -1553,25 +1679,39 @@ function current(job,what){ /* the + and - jobs: bash's set_current_job and rese
   if(k)set(k);else CUR.c=CUR.p=null;
 }
 /* the signals: number, name, what a job it ended or stopped says. bash's are Linux's (glibc's strsignal), csh's 4.3BSD's (its mesg[]),
-   V7's its own sysmsg[], which has nothing for INT and PIPE */
-var SIGNALS=PROFILE.bash?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/breakpoint trap|6 ABRT Aborted|7 BUS Bus error|8 FPE Floating point exception|9 KILL Killed|10 USR1 User defined signal 1|11 SEGV Segmentation fault|12 USR2 User defined signal 2|13 PIPE Broken pipe|14 ALRM Alarm clock|15 TERM Terminated|16 STKFLT Stack fault|17 CHLD Child exited|18 CONT Continued|19 STOP Stopped (signal)|20 TSTP Stopped|21 TTIN Stopped (tty input)|22 TTOU Stopped (tty output)|23 URG Urgent I/O condition|24 XCPU CPU time limit exceeded|25 XFSZ File size limit exceeded|26 VTALRM Virtual timer expired|27 PROF Profiling timer expired|28 WINCH Window changed|29 IO I/O possible|30 PWR Power failure|31 SYS Bad system call'
+   IRIX's its own numbering (signal.h, the MIPS ABI's) with Berkeley's words, V7's its own sysmsg[], which has nothing for INT and PIPE */
+var SIGNALS=PROFILE.signals==='irix'?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/BPT trap|6 ABRT Abort|7 EMT EMT trap|8 FPE Floating exception|9 KILL Killed|10 BUS Bus error|11 SEGV Segmentation fault|12 SYS Bad system call|13 PIPE Broken pipe|14 ALRM Alarm clock|15 TERM Terminated|16 USR1 User defined signal 1|17 USR2 User defined signal 2|18 CHLD Child exited|19 PWR Power failure|20 WINCH Window size changed|21 URG Urgent I/O condition|22 POLL I/O possible|23 STOP Stopped (signal)|24 TSTP Stopped|25 CONT Continued|26 TTIN Stopped (tty input)|27 TTOU Stopped (tty output)|28 VTALRM Virtual timer expired|29 PROF Profiling timer expired|30 XCPU Cputime limit exceeded|31 XFSZ Filesize limit exceeded'
+  :PROFILE.bash?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/breakpoint trap|6 ABRT Aborted|7 BUS Bus error|8 FPE Floating point exception|9 KILL Killed|10 USR1 User defined signal 1|11 SEGV Segmentation fault|12 USR2 User defined signal 2|13 PIPE Broken pipe|14 ALRM Alarm clock|15 TERM Terminated|16 STKFLT Stack fault|17 CHLD Child exited|18 CONT Continued|19 STOP Stopped (signal)|20 TSTP Stopped|21 TTIN Stopped (tty input)|22 TTOU Stopped (tty output)|23 URG Urgent I/O condition|24 XCPU CPU time limit exceeded|25 XFSZ File size limit exceeded|26 VTALRM Virtual timer expired|27 PROF Profiling timer expired|28 WINCH Window changed|29 IO I/O possible|30 PWR Power failure|31 SYS Bad system call'
   :PROFILE.csh?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/BPT trap|6 IOT IOT trap|7 EMT EMT trap|8 FPE Floating exception|9 KILL Killed|10 BUS Bus error|11 SEGV Segmentation fault|12 SYS Bad system call|13 PIPE Broken pipe|14 ALRM Alarm clock|15 TERM Terminated|16 URG Urgent I/O condition|17 STOP Stopped (signal)|18 TSTP Stopped|19 CONT Continued|20 CHLD Child exited|21 TTIN Stopped (tty input)|22 TTOU Stopped (tty output)|23 IO I/O possible|24 XCPU Cputime limit exceeded|25 XFSZ Filesize limit exceeded|26 VTALRM Virtual timer expired|27 PROF Profiling timer expired|28 WINCH Window size changed|29 - Signal 29|30 USR1 User defined signal 1|31 USR2 User defined signal 2'
   :'1 HUP Hangup|2 INT |3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/BPT trap|6 IOT IOT trap|7 EMT EMT trap|8 FPE Floating exception|9 KILL Killed|10 BUS Bus error|11 SEGV Memory fault|12 SYS Bad system call|13 PIPE |14 ALRM Alarm call|15 TERM Terminated';
 var SIG={};SIGNALS.split('|').forEach(function(x){var m=x.match(/^(\d+) (\S+) ?(.*)$/);SIG[m[1]]={name:m[2],says:m[3]};if(m[2]!=='-')SIG[m[2]]=+m[1]});
+if(PROFILE.signals==='irix'){SIG.IOT=6;SIG.CLD=18;SIG.IO=22} /* the other names signal.h gives them */
+if(PROFILE.bash)for(var RT=34;RT<=64;RT++){ /* glibc's real-time signals, SIGRTMIN (34) to SIGRTMAX (64), named as bash's kill -l names them */
+  var rn=RT===34?'RTMIN':RT===64?'RTMAX':RT<50?'RTMIN+'+(RT-34):'RTMAX-'+(64-RT);
+  SIG[RT]={name:rn,says:'Real-time signal '+(RT-34)};SIG[rn]=RT;
+}
 function sigDo(n){ /* what it does to a job that has not set it aside: stop, cont, none or end */
   var x=(SIG[n]||{}).name;
-  return /^(STOP|TSTP|TTIN|TTOU)$/.test(x)?'stop':x==='CONT'?'cont':/^(CHLD|URG|WINCH)$/.test(x)||x==='IO'&&!PROFILE.bash||!n?'none':'end';
+  return /^(STOP|TSTP|TTIN|TTOU)$/.test(x)?'stop':x==='CONT'?'cont':/^(CHLD|URG|WINCH)$/.test(x)||x==='IO'&&!PROFILE.bash||x==='PWR'&&PROFILE.signals==='irix'||!n?'none':'end';
 }
-function cored(n){return !PROFILE.bash&&/^(QUIT|ILL|TRAP|IOT|EMT|FPE|BUS|SEGV|SYS)$/.test((SIG[n]||{}).name)} /* Debian keeps no core (ulimit -c 0); 4.3BSD and V7 do */
+function cored(n){return !PROFILE.bash&&/^(QUIT|ILL|TRAP|IOT|ABRT|EMT|FPE|BUS|SEGV|SYS)$/.test((SIG[n]||{}).name)} /* Debian keeps no core (ulimit -c 0); 4.3BSD, IRIX and V7 do */
 function signal(job,n,group){ /* send signal n to the job; group: to its process group, as kill %n and the tty do, which takes in the jobs started inside it */
   if(group)TABLE.filter(function(j){for(var p=j.parent;p;p=p.parent)if(p===job)return !j.control;return false}).forEach(function(j){signal(j,n)}); /* without job control of their own, they are in its group */
   var d=sigDo(n);
   if(job.over||d==='none')return;
   if((n===2||n===3)&&!job.control)return; /* started without job control: & set INT and QUIT aside */
   if(d==='cont'){if(job.state==='Stopped')resumeJob(job,true);return}
-  if(d==='stop'){if(control()&&job.state!=='Stopped')stopJob(job,n);return}
-  job.dead=true;job.sig=n;job.state='Killed';job.code=128+n;
-  ended(job);
+  if(d==='stop'){
+    if(control()&&job.state!=='Stopped')stopJob(job,n);
+    else if(PROFILE.bash&&group&&job.owner===0)job.noted=false; /* stopped again: bash hears of it, and says so before the prompt */
+    return;
+  }
+  if(job.state==='Stopped'&&n!==SIG.KILL&&!((n===SIG.TERM||n===SIG.HUP)&&(group||PROFILE.csh))){ /* it waits for a SIGCONT: kill %n and csh's kill send one after TERM and HUP */
+    if(job.pend.indexOf(n)<0)job.pend.push(n);
+    if(PROFILE.bash&&group&&job.owner===0)job.noted=false; /* bash hears of it again, and says so */
+    return;
+  }
+  killJob(job,n);
 }
 function polite(d){var h=ST.home;return d===h?'~':d.indexOf(h+'/')===0?'~'+d.slice(h.length):d} /* bash's polite_directory_format, csh's dtildepr */
 function why(job){ /* what the job's status says: bash's printable_job_status, csh's pprint reasons. null: csh says nothing for INT */
@@ -1582,7 +1722,8 @@ function why(job){ /* what the job's status says: bash's printable_job_status, c
 function markOf(job){return job===CUR.c?'+':job===CUR.p?'-':' '}
 function cshPre(job){return '['+job.num+']'+(job.num<10?' ':'')+' '+markOf(job)+' '} /* csh's [n] and its mark */
 function wdNote(job,sep){return job.wd!==ST.cwd?sep+'(wd: '+polite(job.wd)+')':''} /* where it was started, when that is not here */
-function jobRows(job,how){ /* how: '' as jobs and the notices print it, 'l' with the ids, 'p' only the id */
+function jobRows(job,how){return [].concat.apply([],rowsOf(job,how).map(function(r){return r.split('\n')}))} /* a loop's text has lines of its own */
+function rowsOf(job,how){ /* how: '' as jobs and the notices print it, 'l' with the ids, 'p' only the id */
   var mark=markOf(job),w=why(job),R=[],core=job.state==='Killed'&&cored(job.sig)?' (core dumped)':'';
   if(how==='p')return [String(job.pids[0])];
   if(PROFILE.csh){
@@ -1625,22 +1766,29 @@ function findJob(w,who){ /* a job spec: %n %+ %% %- %name %?text (bash's fg, bg 
   if(!hits.length)return no(PROFILE.csh?(q?'No job matches pattern':'No such job'):w+': no such job');
   return {job:hits[0]};
 }
-function fgJob(job){ /* in a step: the job has the terminal until it ends; ^C kills it */
-  typeLine(job.text+wdNote(job,PROFILE.csh?' ':'\t'));
+function fgJob(job){ /* in a step: the job has the terminal until it ends or ^Z stops it; ^C kills it */
+  (job.text+wdNote(job,PROFILE.csh?' ':'\t')).split('\n').forEach(function(l){typeLine(l)});
   queue(function(){
     if(job.over)return;
     FGJOB=job;job.fg=true;job.noted=true;
     if(PROFILE.bash)current(job,'fg');
+    if(job.tty){var h=job.tty;job.tty=null;TTYH=h;h.show()} /* the screen or the read it was at, back as it was */
     resumeJob(job,true);
-    return job.done;
+    return new Promise(function(r){job.release=r;job.done.then(r)});
   });
-  queue(function(){if(FGJOB===job)FGJOB=null;drop(job);STATUS=job.code},true);
+  queue(function(){
+    job.release=null;if(FGJOB===job)FGJOB=null;
+    if(!job.over&&job.state==='Stopped'){suspended(job);return} /* ^Z again */
+    var m=job.state==='Killed'&&job.sig!==SIG.INT&&job.sig!==SIG.PIPE?why(job):null; /* killed in the foreground: bash and csh say by what (not for INT and PIPE), as for any command */
+    if(m)typeLine(m.trim()+(cored(job.sig)?' (core dumped)':''));
+    drop(job);STATUS=job.code;
+  },true);
 }
 function bgJob(job){ /* bg: a stopped job goes on in the background (and stops again if it still wants the terminal) */
   if(PROFILE.bash&&job.state==='Running'){typeLine('bash: bg: job '+job.num+' already in background','err');queue(function(){STATUS=0});return}
   if(PROFILE.csh)current(job,'end');
   var mark=markOf(job);
-  typeLine((PROFILE.csh?cshPre(job):'['+job.num+']'+(mark===' '?' ':mark+' '))+job.text+' &');
+  ((PROFILE.csh?cshPre(job):'['+job.num+']'+(mark===' '?' ':mark+' '))+job.text+' &').split('\n').forEach(function(l){typeLine(l)});
   resumeJob(job,true);
 }
 function waitJobs(L){ /* in a step: until each has ended; ^C stops the waiting, not the jobs */
@@ -1677,7 +1825,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     if(noCtl())return;
     if(name==='%'){ /* %n is fg, as csh's dofg1 and bash have it */
       var r0=findJob(raw.trim().split(/\s+/)[0],csh?'%job':'fg');
-      if(r0.err)err(r0.err);else fgJob(r0.job);
+      if(r0.err)err(r0.err);else if(bash&&r0.job.over)err('bash: fg: job has terminated');else fgJob(r0.job);
       return;
     }
     var specs=W.length?W:[undefined];
@@ -1686,6 +1834,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
       queue(function(){
         var r=findJob(w,name);
         if(r.err){err(r.err);return}
+        if(bash&&r.job.over){err('bash: '+name+': job has terminated');return} /* start_job: its Done comes before the next prompt */
         if(name==='fg')fgJob(r.job);else bgJob(r.job);
       });
     });
@@ -1703,15 +1852,17 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     });
     else got=mine().filter(function(j){return j.state!=='Stopped'}); /* stopped jobs are not waited for (bash; csh's dowait loops only while one runs) */
     var J=got.filter(Boolean);
-    queue(function(){return waitJobs(J)});
+    var v7w=!bash&&!csh,g=GEN,ran=false;
+    queue(function(){ran=true;return waitJobs(J)});
     queue(function(){
-      if(!J.every(function(j){return j.over})){STATUS=130;return} /* ^C */
+      if(!ran)return; /* ^C before it began */
+      if(!J.every(function(j){return j.over})){if(v7w&&g!==GEN)STATUS=0;else STATUS=130;return} /* ^C. V7's await: wait(2) fails with EINTR, the -1 its post(-1) waits for, and exitval is 0 */
       if(!control())v7Notes();
       J.forEach(function(j){j.noted=true;drop(j)});
       if(bash&&all)mine().forEach(function(j){if(j.over){j.noted=true;drop(j)}}); /* mark_dead_jobs_as_notified */
       var last=got[got.length-1];
       STATUS=all?(bash||csh?0:(J.filter(function(j){return j.code})[0]||{code:0}).code):last?last.code:127; /* V7: the first that failed */
-    });
+    },v7w);
     return;
   }
   /* kill */
@@ -1724,7 +1875,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     var row='',col=0;
     for(var q2=1;q2<=64;q2++){
       if(q2===32||q2===33)continue;
-      row+=String(q2).padStart(2)+') SIG'+(q2<32?SIG[q2].name:q2===34?'RTMIN':q2===64?'RTMAX':q2<50?'RTMIN+'+(q2-34):'RTMAX-'+(64-q2));
+      row+=String(q2).padStart(2)+') SIG'+SIG[q2].name;
       if(++col<5)row+='\t';else{typeLine(row);row='';col=0}
     }
     if(col)typeLine(row);
@@ -1737,7 +1888,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
       if(bash&&(o1==='-s'||o1==='-n')){W.shift();spec=W[0];if(spec===undefined){err('bash: kill: '+o1+': option requires an argument');return}}
       var up=bash?spec.toUpperCase().replace(/^SIG/,''):spec;
       n=/^\d+$/.test(spec)?+spec:SIG[up];
-      if(n===undefined||n>31||typeof n!=='number'){err(bash?'bash: kill: '+spec+': invalid signal specification':/^\d/.test(spec)?'kill: Bad signal number.':spec+': Unknown signal; kill -l lists signals.');return}
+      if(typeof n!=='number'||n&&!SIG[n]){err(bash?'bash: kill: '+spec+': invalid signal specification':/^\d/.test(spec)?'kill: Bad signal number.':spec+': Unknown signal; kill -l lists signals.');return}
     }
     W.shift();
   }
@@ -1745,14 +1896,34 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
   var any=false,bad=false;
   for(var k=0;k<W.length;k++){
     var w=W[k];
-    if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}signal(r.job,n,true);any=true;continue}
+    if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}
+      if(csh&&sigDo(n)==='stop'&&r.job.state!=='Running'){typeLine(w+': Already stopped');bad=true;continue} /* pkill */
+      signal(r.job,n,true);any=true;continue}
     if(!/^-?\d+$/.test(w)){if(v7){err('usage: kill [ -signo ] pid ...');queue(function(){STATUS=2});return}err(bash?'bash: kill: '+w+': arguments must be process or job IDs':'kill: Arguments should be jobs or process id\'s.');if(csh)return;bad=true;continue}
     var hit=liveJobs().filter(function(j){return j.pids.indexOf(+w)>=0})[0];
     if(v7&&(n>15||n<0)){err(w+': Invalid argument');bad=true;continue}
-    if(!hit){err(bash?'bash: kill: ('+w+') - No such process':w+': No such process');bad=true;continue}
-    signal(hit,n);any=true;
+    if(!hit){
+      var pid=+w,p=pid===0?{pid:0,mine:true,cmd:''}:procTable().filter(function(x){return x.pid===pid})[0];
+      if(!p){err(bash?'bash: kill: ('+w+') - No such process':w+': No such process');bad=true;continue}
+      if(!p.mine&&ST.user!==PROFILE.rootName){err(bash?'bash: kill: ('+w+') - Operation not permitted':w+': Not owner');bad=true;continue} /* EPERM: someone else's; root may */
+      if(n&&(!pid||pid===shellPid()))shellSignal(n,!pid);
+      any=true;continue;
+    }
+    if(n)signal(hit,n);any=true;
   }
   if(!csh&&!v7&&!any||bad)queue(function(){STATUS=1});
+}
+function procTable(){ /* the processes ps lists besides the jobs: {pid,mine,cmd}; a machine with a ps of its own gives its (PH.procs) */
+  if(PH.procs)return PH.procs();
+  return (PROFILE.raw.ps||[]).map(function(l){return l.trim().split(/\s+/)}).filter(function(f){return f.length>=5&&/^[xa-]$/i.test(f[0])})
+    .map(function(f){return {pid:+f[1],mine:f[0]==='-',cmd:f.slice(4).join(' ')}}); /* - is the visitor's own row */
+}
+function shellPid(){var r=procTable().filter(function(p){return p.mine&&/(^|[\/-])(ba|c)?sh$/.test(p.cmd)})[0];return r?r.pid:23} /* $$: the login shell ps shows */
+function shellSignal(n,group){ /* kill $$, or kill 0 (its process group: with no job control, the jobs too). What the shell does not set aside ends it */
+  if(group&&!control())liveJobs().forEach(function(j){if(j.owner===0)signal(j,n)});
+  var x=(SIG[n]||{}).name,kept=PROFILE.bash?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:PROFILE.csh?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(QUIT|INT)$/; /* interactive: bash and csh set TERM aside, V7 sh only QUIT (and catches INT) */
+  if(kept.test(x||'')||sigDo(n)!=='end'||SUB||SCRIPTS||SHID||ASIDE)return; /* a child's own shell is another process */
+  PH.logout();
 }
 function stoppedWarn(){ /* exit and logout with stopped jobs: once, unless the line before said it (or was jobs) */
   if(!control()||SUB||SCRIPTS||SHID)return false;
@@ -1762,7 +1933,7 @@ function stoppedWarn(){ /* exit and logout with stopped jobs: once, unless the l
 }
 function psJobs(){ /* each process of each job still going: for ps */
   var R=[];
-  liveJobs().forEach(function(j){j.pids.forEach(function(p,i){R.push({pid:p,cmd:j.cmds[i]||j.text,stopped:j.state==='Stopped',start:j.start})})});
+  liveJobs().forEach(function(j){j.pids.forEach(function(p,i){R.push({pid:p,cmd:j.ps&&j.ps[i]||j.cmds[i]||j.text,stopped:j.state==='Stopped',start:j.start})})});
   return R;
 }
 function endJobs(){TABLE.slice().forEach(function(j){j.dead=true;j.state='Killed';j.sig=1;ended(j)});TABLE=[];CUR={c:null,p:null};V7NOTE=[];FGJOB=null} /* logout: the session's jobs go with it */
@@ -1852,13 +2023,13 @@ function execText(seg,failed){ /* failed: told when the line could not be read, 
     L.forEach(function(item){
       queue(function(){
         if(LOGOUT||LOOP||skipped(item.op))return;
-        runPipeline(item.stages);
+        fgProc(item,function(){runPipeline(item.stages)});
       });
     });
   });
 }
 /* for, while, until, if, case (and csh's foreach): read into a tree, then run with the queue */
-var MORE={},LOOP=null,SCRIPTS=0,SUB=0; /* SUB: inside a pipeline stage or `command`, each its own process */
+var MORE={},LOOP=null,SCRIPTS=0,SUB=0,SUBSH=0,LOOPD=0; /* SUB: inside a pipeline stage or `command`, each its own process; SUBSH: the SUB of the ( ) it is in; LOOPD: how many loops deep */
 function statements(lines){
   var S=[];
   lines.forEach(function(l){
@@ -1869,35 +2040,47 @@ function statements(lines){
   });
   return S;
 }
-function firstWord(t){return (t||'').split(/\s+/)[0]}
+function firstWord(t){return (t||'').split(/[\s|<>&]/)[0]} /* done|cat and fi>f end at their keyword */
 function parseTree(lines){
   var S=statements(lines),i=0;
-  function expect(w){if(i>=S.length)throw MORE;if(firstWord(S[i])!==w)throw new Error('syntax error');i++}
+  function expect(w){if(i>=S.length)throw MORE;if(firstWord(S[i])!==w)throw new Error('syntax error');return S[i++]}
+  function amp(n,end){ /* done &, fi | cat, esac > f: the whole of it in the background, in a pipe or redirected (csh's end takes neither) */
+    if(PROFILE.csh)return n;
+    var t=end.replace(/^[^\s|<>&]+/,'');
+    if(/(^|[^&])&\s*$/.test(t)){n.bg=true;t=t.replace(/&\s*$/,'')}
+    if(t.trim())n.tail=t.trim();
+    return n;
+  }
   function ifNode(){
     var n={k:'if',cond:block(['then'])};
     expect('then');
     n.then=block(['elif','else','fi']);
     var w=firstWord(S[i]);
-    if(w==='elif'){S[i]=S[i].replace(/^elif\s*/,'');n.els=[ifNode()];return n}
+    if(w==='elif'){S[i]=S[i].replace(/^elif\s*/,'');var x=ifNode();n.els=[x];n.bg=x.bg;n.tail=x.tail;x.bg=false;x.tail=null;return n}
     if(w==='else'){i++;n.els=block(['fi'])}
-    expect('fi');
-    return n;
+    return amp(n,expect('fi'));
   }
   function block(stops){
-    var out=[];
+    var out=[],pend=null;
     for(;;){
+      if(pend&&out.length>pend.n){out[pend.n].head=pend.h;pend=null} /* echo q | while read x: what comes before it in the pipe */
       if(i>=S.length){if(stops)throw MORE;return out}
       var t=S[i],w=firstWord(t),m;
       if(stops&&stops.indexOf(w)>=0)return out;
       if(/^(fi|done|then|do|else|elif|esac)$/.test(w))throw new Error("syntax error: `"+w+"' unexpected");
       i++;
       if(!t)continue;
+      if(!PROFILE.csh&&!pend){
+        var P2=pipeRaw(t,true),h=0;
+        for(var q=1;q<P2.length&&!h;q++)if(/^(for|while|until|if|case)$/.test(firstWord(P2[q].trim())))h=q;
+        if(h){pend={n:out.length,h:P2.slice(0,h).join('').trim()};S.splice(i,0,P2.slice(h).join('').trim());continue}
+      }
       if(w==='for'){
         m=t.match(/^for\s+(\w+)(?:\s+in\s*([\s\S]*))?$/);
         if(!m)throw new Error('syntax error');
         expect('do');
-        var body=block(['done']);expect('done');
-        out.push({k:'for',v:m[1],words:m[2]===undefined?'$*':m[2],body:body});
+        var body=block(['done']);
+        out.push(amp({k:'for',v:m[1],words:m[2]===undefined?'$*':m[2],body:body,all:m[2]===undefined},expect('done')));
       }
       else if(PROFILE.csh&&/^while\b/.test(t)){ /* csh: while ( expr ) ... end */
         var b4=block(['end']);expect('end');
@@ -1906,8 +2089,8 @@ function parseTree(lines){
       else if(w==='while'||w==='until'){
         S.splice(i,0,t.replace(/^\S+\s*/,''));
         var cond=block(['do']);expect('do');
-        var b2=block(['done']);expect('done');
-        out.push({k:w,cond:cond,body:b2});
+        var b2=block(['done']);
+        out.push(amp({k:w,cond:cond,body:b2},expect('done')));
       }
       else if(w==='if'&&!(PROFILE.csh&&/^if\s*\(/.test(t))){S.splice(i,0,t.replace(/^\S+\s*/,''));out.push(ifNode())} /* csh's one-line if is a command */
       else if(w==='case'){
@@ -1918,13 +2101,13 @@ function parseTree(lines){
         for(;;){
           while(i<S.length&&!S[i])i++;
           if(i>=S.length)throw MORE;
-          if(firstWord(S[i])==='esac'){i++;break}
+          if(firstWord(S[i])==='esac'){var end=S[i++];break}
           var a=S[i].match(/^\(?([^)]*)\)\s*([\s\S]*)$/);
           if(!a)throw new Error('syntax error');
           S[i]=a[2];
           arms.push({pats:a[1].split('|').map(function(x){return x.trim()}),body:block(['','esac'])});
         }
-        out.push({k:'case',word:m[1],arms:arms});
+        out.push(amp({k:'case',word:m[1],arms:arms},end));
       }
       else if(w==='foreach'){
         m=t.match(/^foreach\s+(\w+)\s*\(([\s\S]*)\)$/);
@@ -1940,14 +2123,60 @@ function parseTree(lines){
 function runBlock(B){
   B.forEach(function(st){queue(function(){if(!LOOP&&!LOGOUT)runStmt(st)})});
 }
-function afterLoop(){var was=LOOP;if(was!=='exit')LOOP=null;return was}
+function afterLoop(){var was=LOOP;if(was!=='exit'&&was!=='stop')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at */
+function over(was){return was==='break'||was==='exit'||was==='stop'}
 function round(body,again){ /* a while loop's body, then again() unless it ended in break or exit */
   runBlock(body);
   var stop;
-  queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
+  queue(function(){var was=afterLoop();stop=over(was);if(!stop)return sleep(0)});
   queue(function(){if(!stop&&!LOOP)again()});
 }
+var NODES=[],MARK='\uE031'; /* a loop with a pipe or redirection after it: the pipeline's stage MARK n runs NODES[n] */
 function runStmt(st){
+  if(st.bg){bgStmt(st);return}
+  if(st.tail||st.head){var id=NODES.indexOf(st);if(id<0)id=NODES.push(st)-1;execText((st.head?st.head+' ':'')+MARK+id+(st.tail?' '+st.tail:''));return} /* done | cat, done < f > g, echo q | while ...: the loop is a command of the pipeline */
+  if(/^(for|while|until|cwhile)$/.test(st.k)){ /* a loop: how deep, so that a ^Z can end them all and nothing after */
+    LOOPD++;loopStmt(st);
+    queue(function(){if(!--LOOPD&&LOOP==='stop')LOOP=null},true);
+    return;
+  }
+  loopStmt(st);
+}
+function bgStmt(st){ /* while ...; done &: the shell forks, and the copy runs it. In a `command` or a pipe, it is run through */
+  var it=Object.assign({},st,{bg:false});
+  if(!SUB&&!SINK&&(!ERRSINK||ERRSINK===GLASS)){startJob('',{run:function(){runStmt(it)},shown:compText(it,'').join('\n')});return}
+  var back=keep(),was=JOB;JOB={sub:SUB>0,level:SUB+1};SUB++;tell();runStmt(it);
+  queue(function(){JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
+}
+function compText(n,ind){ /* bash's make_command_string for a loop, an if or a case: the lines jobs shows, and a pipe or redirection after it */
+  var L=compLines(n,ind);
+  if(n.tail)L[L.length-1]+=' '+n.tail.replace(/\s+/g,' ');
+  if(n.head)L[0]=ind+n.head.replace(/\s+/g,' ')+' '+L[0].slice(ind.length);
+  return L;
+}
+function compLines(n,ind){
+  var I=ind+'    ';
+  function line(t){return t.trim().replace(/\s+/g,' ')}
+  function list(B){return B.map(function(x){return x.k==='cmd'?line(x.t):compText(x,'').join('\n')}).join('; ')}
+  function body(B,ind,last){
+    var L=[],run=[];
+    function flush(){if(run.length){L.push(ind+run.join('; ')+';');run=[]}}
+    B.forEach(function(x){if(x.k==='cmd')run.push(line(x.t));else{flush();var c=compText(x,ind);c[c.length-1]+=';';L=L.concat(c)}});
+    flush();
+    if(last&&L.length)L[L.length-1]=L[L.length-1].replace(/;$/,'');
+    return L;
+  }
+  if(n.k==='while'||n.k==='until')return [ind+n.k+' '+list(n.cond)+'; do'].concat(body(n.body,I),[ind+'done']);
+  if(n.k==='for')return [ind+'for '+n.v+' in '+(n.all?'"$@"':line(n.words))+';',ind+'do'].concat(body(n.body,I),[ind+'done']);
+  if(n.k==='if')return [ind+'if '+list(n.cond)+'; then'].concat(body(n.then,I),n.els?[ind+'else'].concat(body(n.els,I)):[],[ind+'fi']);
+  if(n.k==='case'){
+    var L=[ind+'case '+n.word+' in '];
+    n.arms.forEach(function(a){L=L.concat([I+a.pats.join(' | ')+')'],body(a.body,I+'    ',true),[I+';;'])});
+    return L.concat([ind+'esac']);
+  }
+  return [ind+line(n.t||'')];
+}
+function loopStmt(st){
   if(st.k==='cmd'){splitCmds(expand(st.t)).forEach(function(x){if(x.trim())execSeg(x)});return} /* an alias may hold a ; */
   if(st.k==='for'){
     substitute(st.words,function(text){
@@ -1957,7 +2186,7 @@ function runStmt(st){
       (function next(i){
         if(i>=W.length)return;
         queue(function(){ENV[st.v]=W[i];runBlock(st.body)});
-        queue(function(){var was=afterLoop();if(was!=='break'&&was!=='exit')next(i+1)});
+        queue(function(){if(!over(afterLoop()))next(i+1)});
       })(0);
     });
     return;
@@ -2085,7 +2314,7 @@ function splitCmds(s){ /* on ; outside quotes.
   var L=[],start=0,ch,j,depth=0;
   for(var i=0;i<s.length;i++){
     ch=s.charAt(i);
-    if(ch===';'){L.push(s.slice(start,i));start=i+1}
+    if(ch===';'&&(!depth||PROFILE.noUnix)){L.push(s.slice(start,i));start=i+1} /* (a; b): one command, in a Unix shell */
     else if(ch==='('&&!PROFILE.dos)depth++;
     else if(ch===')')depth=Math.max(0,depth-1);
     else if(ch==='&'&&!PROFILE.dos&&!depth&&!/[&>]/.test(s.charAt(i+1))&&!/[&><|]/.test(s.charAt(i-1))&&/\S/.test(s.slice(start,i))&&!/(&&|\|)\s*$/.test(s.slice(start,i))){
@@ -2164,7 +2393,7 @@ function run(raw){
   RUNS++;if(V7NOTE.length)queue(v7Notes);
   JOB=null;JOBS=0; /* the jobs of the line before have finished */
   if(PROFILE.bash)raw=dollarParen(raw);
-  SUB=0;
+  SUB=0;SUBSH=0;LOOPD=0;
   if(!raw.trim()&&PH.blank){queue(function(){PH.blank()});nextPrompt();return} /* a machine that answers an empty line (VM/370's CMS and CP) */
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
@@ -2194,12 +2423,12 @@ function run(raw){
   /* commands separated by ; run in turn; an alias may expand to several (alias cl='clear ; ls') */
   var segs=[];
   splitCmds(raw).forEach(function(seg){segs=segs.concat(splitCmds(expand(seg)))});
-  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)||PROFILE.csh&&/^\s*if\(/.test(x)})){ /* needs the shell's parser */
+  if(segs.some(function(x){return /[|<>*?\[$&\\#"'=`]/.test(x)||!PROFILE.noUnix&&/[()]/.test(x)||PROFILE.csh&&/^\s*if\(/.test(x)})){ /* needs the shell's parser */
     segs.forEach(function(x){if(x.trim())execSeg(x)});
     nextPrompt();
     return;
   }
-  segs.forEach(function(x){queue(function(){if(!LOGOUT)runOne(x)})});
+  segs.forEach(function(x){queue(function(){if(!LOGOUT)fgProc({text:x},function(){runOne(x)})})});
   nextPrompt();
 }
 
@@ -2348,7 +2577,7 @@ function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt *
   }
   if(FGJOB)signal(FGJOB,2,true); /* a job brought back with fg is the foreground's */
   GEN++;SINK=null;STDIN=null;STATUS=130;
-  wakers.slice().forEach(function(w){w()});
+  wakers.concat(FGP?FGP.wakers:[]).forEach(function(w){w()});
   resumeHeld();
   if(READ)finishRead(null);
 }
@@ -2361,6 +2590,7 @@ function ctrlKey(e){
   if(k==='c'){if(String(window.getSelection&&getSelection()))return false;interrupt()}
   else if(k==='d')eof();
   else if(k==='z'&&PROFILE.dos)eof();
+  else if(k==='z'&&control())tstp();
   else if(k==='s')HOLD=true;
   else if(k==='q'){HOLD=false;resumeHeld()}
   else if(k==='u')setBuf('');
@@ -2373,6 +2603,7 @@ document.addEventListener('keydown',function(e){
   keyed=null;
   if(KEYS){ /* a full-screen program has every key */
     if(e.metaKey||e.altKey||e.isComposing)return;
+    if(e.ctrlKey&&(e.key||'').toLowerCase()==='z'&&tstp()){e.preventDefault();return} /* but ^Z, where there is job control: the tty's SIGTSTP */
     var name=e.ctrlKey&&e.key.length===1?'C-'+e.key.toLowerCase():e.key;
     if(name.length===1||NAMED.test(name)||/^C-/.test(name)){e.preventDefault();if(name.length===1)keyed=name;KEYS(name)}
     return;
@@ -2397,7 +2628,7 @@ if(coarse){
     t.addEventListener('click',function(e){
       e.stopPropagation();
       var named=b[1].length>1;
-      if(KEYS)KEYS(named?b[1]:'C-'+b[1]);
+      if(KEYS){if(!(b[1]==='z'&&tstp()))KEYS(named?b[1]:'C-'+b[1])}
       else if(!named)ctrlKey({key:b[1],preventDefault:function(){}});
       else if(b[1]==='Tab'&&PROFILE.bash)complete();
       else recognize(b[1]);

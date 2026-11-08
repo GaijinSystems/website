@@ -30,8 +30,10 @@ cmd('versions','list installed software','versions','lists the software installe
 cmd('env','print the environment','env','prints the environment.',function(){
   P.say(['HOME='+P.st.home,'LOGNAME='+P.st.user].concat(P.envRows()));
 },'/bin');
+function procs(){return [['root',0,0,'sched'],['root',1,0,'/etc/init'],['root',112,1,'/usr/etc/routed'],['root',131,1,'/usr/etc/inetd'],['root',144,1,'/usr/lib/lpsched'],['root',188,1,'/usr/bin/X11/Xsgi -bs'],[P.st.owner,201,188,'4Dwm'],[P.st.owner,233,201,'fsn'],[P.st.user,244,1,'-csh']]} /* user, pid, ppid, command */
+P.procs=function(){return procs().map(function(r){return {pid:r[1],mine:r[0]===P.st.user,cmd:r[3]}})}; /* for kill and $$ */
 cmd('ps','process status','ps [ -ef ]','lists your processes. -e lists everyone\'s, and -f shows them in full.',function(a){
-  var f=a.join(''),T=[['root',0,0,'sched'],['root',1,0,'/etc/init'],['root',112,1,'/usr/etc/routed'],['root',131,1,'/usr/etc/inetd'],['root',144,1,'/usr/lib/lpsched'],['root',188,1,'/usr/bin/X11/Xsgi -bs'],[P.st.owner,201,188,'4Dwm'],[P.st.owner,233,201,'fsn'],[P.st.user,244,1,'-csh']],me=P.pidNow()||P.newPid();
+  var f=a.join(''),T=procs(),me=P.pidNow()||P.newPid();
   var n=T.length-1;
   P.jobs().forEach(function(j){if(j.pid!==me)T.push([P.st.user,j.pid,244,j.cmd])}); /* the jobs started with & */
   T.push([P.st.user,me,244,'ps '+a.join(' ')]);

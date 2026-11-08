@@ -24,11 +24,29 @@ V.globals=[1,1,1,1,1,1,1,1,1,1];
 /* a line from the console stack if there is one, else from the terminal. A stack that keeps filling itself (EDIT's
    STACK reading STACK back) lets the terminal breathe every few hundred lines, so ^C can stop it */
 var fromStack=0;
-V.read=function(then,trap){
-  if(V.hold(function(){V.read(then,trap)}))return;
+V.read=function(then,trap,prog){
+  if(V.hold(function(){V.read(then,trap,prog)}))return;
   if(V.stack.length){var l=V.stack.shift();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
   fromStack=0;
-  V.ask(then,trap);
+  V.ask(then,trap,false,prog);
+};
+/* a CMS program's read: &READ, and FORMAT's and SORT's questions. An attention (^C) while it is up does not end the
+   program. CP types its exclamation point (cms.js), the line typed so far is cancelled, and CMS reads again: on the
+   unit exception CP gives for it, DMSCIT clears the buffer and reissues the read ("user cancelled input line"); so a
+   line half typed is neither kept nor typed again. At an empty read the attention is CMS's own (imm): the line typed
+   after it may be an Immediate command, HX ending every EXEC (CMS, no ready message), HT and RT stopping and resuming
+   the typing, HO, SO, RO, TS, TE and HB with nothing here to do, and any other line goes to the read. A cancelled
+   line leaves the read as it was. VM/370 Release 6 source, DMKCNS and DMSCIT; Terminal User's Guide (GC20-1810),
+   Figure 6, Attention Handling in VM Mode */
+V.progRead=function(then,imm,term){ /* term: from the terminal, not the console stack */
+  var k=function(l){
+    if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t,term);return}
+    var w=imm&&l!==null?up(l.trim()):'';
+    if(w==='HX'){V.abend();V.pend=[];then(P.INT);return}
+    if(/^(HT|RT|HO|SO|RO|TS|TE|HB)$/.test(w)){if(w==='HT')V.ht=true;if(w==='RT')V.ht=false;V.progRead(then,false,term);return}
+    then(l);
+  };
+  if(term)V.ask(k,true,false,true);else V.read(k,true,true);
 };
 
 V.execCmd=function(a){return V.exec(a,{})}; /* the EXEC command: EXEC fn args */
@@ -338,23 +356,23 @@ function control(S,w,T,raw){
       A=T.slice(1);
       var what=A[0]||'1';
       if(what==='ARGS'||what==='VARS'){
-        V.read(function(l){
+        V.progRead(function(l){
           if(l===null||l===P.INT){S.stop=true;return}
           var X=tokens(up(l));
           if(what==='ARGS')setArgs(S,X);
           else A.slice(1).forEach(function(v,i){S.vars[v]=X[i]==='%'?'':(X[i]||'')});
-        },true);
+        });
         return 'wait';
       }
       var cnt=+what;
       if(!(cnt>=1)){fail(S,'CONV');return}
       (function more(k){
         if(!k)return;
-        V.read(function(l){
+        V.progRead(function(l){
           if(l===null||l===P.INT){S.stop=true;return}
           stmt(S,up(l));
           more(k-1);
-        },true);
+        });
       })(cnt);
       return 'wait';
   }

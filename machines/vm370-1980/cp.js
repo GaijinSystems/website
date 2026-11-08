@@ -69,7 +69,7 @@ V.directText=function(){
 };
 
 /* ---------- the virtual machine a logon gives ---------- */
-var TERM0={linend:'#',chardel:'@',escape:'"',linedel:'¢'}; /* the terminal's line editing characters, as a logon sets them */
+var TERM0={linend:'#',chardel:'@',escape:'"',linedel:'¢',attn:true}; /* the terminal's line editing characters, as a logon sets them, and ATTN ON */
 V.newMachine=function(user){
   V.user=user;V.cls=V.dir[user].cls;V.logon=P.now();V.vcpu=0;V.tcpu=0;
   V.devs={'009':{kind:'CONS'},'00C':{kind:'RDR',cls:'*'},'00D':{kind:'PUN',cls:'A',to:null,copy:1},'00E':{kind:'PRT',cls:'A',to:null,copy:1}};
@@ -173,7 +173,7 @@ CP.QUERY=function(a){
     case 'DASD':P.say(V.virtual('DASD'));return 0;
     case 'TERMINAL':
       var T=V.term;
-      P.say(['LINEND  '+(T.linend||' ')+' , LINEDEL  '+(T.linedel||' ')+' , CHARDEL  '+(T.chardel||' ')+' , ESCAPE  '+(T.escape||' ')+' , TABCHAR ON','LINESIZE 130, ATTN ON , APL OFF, TEXT OFF, MODE VM']);return 0;
+      P.say(['LINEND  '+(T.linend||' ')+' , LINEDEL  '+(T.linedel||' ')+' , CHARDEL  '+(T.chardel||' ')+' , ESCAPE  '+(T.escape||' ')+' , TABCHAR ON','LINESIZE 130, ATTN '+(T.attn?'ON ':'OFF')+', APL OFF, TEXT OFF, MODE VM']);return 0;
     case 'SET':
       var S=V.set;
       P.say(['MSG '+(S.msg?'ON ':'OFF')+', WNG '+(S.wng?'ON ':'OFF')+', EMSG '+S.emsg+', ACNT OFF, RUN '+(S.run?'ON':'OFF'),
@@ -285,6 +285,7 @@ CP.TERMINAL=function(a,w){
     var v=w[++i];
     if(v===undefined)return bad('CFT',26,'OPERAND MISSING OR INVALID');
     var f={LINEND:'linend',CHARDEL:'chardel',LINEDEL:'linedel',ESCAPE:'escape'}[k];
+    if(k==='ATTN'){if(up(v)!=='ON'&&up(v)!=='OFF')return bad('CFT',2,'INVALID OPERAND - '+v);V.term.attn=up(v)==='ON'}
     if(f){if(up(v)==='OFF')V.term[f]='';else if(up(v)==='ON')V.term[f]=TERM0[f];else if(v.length===1)V.term[f]=v;else return bad('CFT',2,'INVALID OPERAND - '+v)}
   }
   return 0;
@@ -593,9 +594,9 @@ V.online=function(raw){
 };
 
 /* ---------- a line as CP's line editing reads it ---------- */
-V.ask=function(then,trap,hidden){
-  if(V.hold(function(){V.ask(then,trap,hidden)}))return;
-  P.queue(function(){V.asking=true}); /* the read is up: an attention now is the read's, not a running program's */
+V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an attention does not end (V.progRead) */
+  if(V.hold(function(){V.ask(then,trap,hidden,prog)}))return;
+  P.queue(function(){V.asking=prog?'prog':true}); /* the read is up: an attention now is the read's, not a running program's */
   P.ask('',function(l){
     V.asking=false;
     if(l===null||l===P.INT){then(l);return}
