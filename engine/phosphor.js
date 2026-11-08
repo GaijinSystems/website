@@ -1303,7 +1303,7 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
       if(!/\S/.test(st.src))throw {syntax:tok}; /* > f, or echo a &> f: a redirection with no command (4.3BSD's syn3) */
       st.in=st.out=null; /* $empty > f: no command once the words are made, and csh does nothing at all */
     }
-    if(st.sub!==undefined&&st.words.length)throw {syntax:st.words[0]}; /* (a) b */
+    if(st.sub!==undefined&&st.words.length||st.paren)throw {syntax:st.words[0],paren:true}; /* (a) b, and csh's (a) 2>f: its 2 is a word (4.3BSD's syn3: Badly placed ()'s) */
     st.text=s.slice(at,i).replace(/^\s*(\|&?|&&|\|\||&)?\s*/,'').trim();at=i; /* as typed, for the job table */
     st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass||st.sub!==undefined||st.here!==undefined)stages.push(st);st=fresh();
   }
@@ -1322,8 +1322,22 @@ function parseList(s){ /* a line with no top-level ; into [{op,stages:[{words,ra
     if(ch==='#'&&w===null)break;
     if(ch==='('&&!PROFILE.noUnix&&blank()&&st.sub===undefined){ /* ( list ): a subshell, run as its own process (runSub); what is inside is read when it runs */
       var e=parenEnd(s,i);
-      if(e<0)throw {syntax:'end'};
+      if(e<0)throw {syntax:'end',paren:'open'};
       st.sub=s.slice(i+1,e);add(s.slice(i,e+1));i=e+1;continue;
+    }
+    if(ch==='('&&!PROFILE.noUnix&&w===null&&!redir&&(!i||/\s/.test(s.charAt(i-1)))&&!/^(\[\[|function)$/.test(st.words[0]||'')){ /* echo (a), (a) (b): a ( where no subshell can start */
+      if(PROFILE.csh){ /* 4.3BSD's syn3: words beside a ( ) are Badly placed ()'s, a second ( ) Badly placed (, and syn0 says Too many ('s first. set, if, while and the like take ( ) as words */
+        if(!/^(set|if|while|foreach|switch|exit|@|else)$/.test(st.words[0]||'')){
+          if(st.sub!==undefined||st.paren)throw {syntax:'(',paren:'('};
+          if((e=parenEnd(s,i))<0)throw {syntax:'end',paren:'open'};
+          st.paren=true;add(s.slice(i,e+1));i=e+1;continue;
+        }
+      }
+      else if(PROFILE.bash&&st.sub===undefined&&st.words.length===1&&/^\S+\s*$/.test(st.src)){ /* bash: name ( is a function's start, so the token after the ( is the one it did not expect */
+        var nx=s.slice(i+1).match(/^\s*(\|\||&&|;;|[|&;<>()]|[^\s|&;<>()]+)?/)[1];
+        if(nx!==')')throw {syntax:nx||'newline'};
+      }
+      else throw {syntax:'('}; /* bash and V7: a ( after the words, or after a ( ) */
     }
     if(ch==='{'&&blank()&&st.sub===undefined&&(e=groupEnd(s,i))!==-1){ /* { list; }: the list, in this shell; a redirection after it is for all of it */
       if(e<0)throw {syntax:'end'};
@@ -1410,7 +1424,7 @@ function runSub(text,lines){ /* in a step: ( list ), with its own directory, var
                                 lines: a { list; } in a pipe, which is its own process too, read as the lines it was typed on */
   if(SUB>=32){noFork();return}
   var tree;
-  try{tree=parseTree(lines||[text])}catch(e){typeLine(e===MORE?syntaxError('end'):e.message,'err');return}
+  try{tree=parseTree(lines||[text])}catch(e){synSay(e===MORE?syntaxError('end'):e.message);return}
   var back=keep(),was=SUBSH,loop=LOOP,shell=SHID,ld=LOOPD,g=GEN,job=ASIDE&&ASIDE.job;
   SUB++;SUBSH=SUB;SHID=++SHIDS;LOOPD=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs. Its $? is the shell's, as a fork's is */
   runBlock(tree);
@@ -1418,7 +1432,7 @@ function runSub(text,lines){ /* in a step: ( list ), with its own directory, var
 }
 function runGroup(text){ /* in a step: { list; } on its own, run by this shell: what it does to the directory and variables stays */
   var tree;
-  try{tree=parseTree(text.split('\n'))}catch(e){typeLine(e===MORE?syntaxError('end'):e.message,'err');return}
+  try{tree=parseTree(text.split('\n'))}catch(e){synSay(e===MORE?syntaxError('end'):e.message);return}
   runBlock(tree);
 }
 function runPipeline(stages){
@@ -2025,7 +2039,7 @@ function execSeg(seg){
     var back=null,was,text=seg.replace(/&\s*$/,'');
     queue(function(){
       if(control()&&/^\s*%\S*\s*$/.test(text)){jobCmd('bg',[],'bg',['bg',text.trim()]);return} /* %1 &: bg */
-      if(!SUB&&!SINK&&(!ERRSINK||ERRSINK===GLASS)){startJob(text);return} /* at the shell's own level: a job of its own, in the background */
+      if(!SUB&&!SINK&&(!ERRSINK||ERRSINK===GLASS)){if(!misread(text))startJob(text);return} /* at the shell's own level: a job of its own, in the background */
       back=keep();was=JOB;JOB={sub:SUB>0,level:SUB+1};SUB++;execSeg(text); /* inside a `command`, a pipe or a file: it is run through, as the one reading it waits for its end */
     });
     queue(function(){if(!back)return;JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
@@ -2044,18 +2058,24 @@ function execSeg(seg){
 function execLine(line){ /* a whole command line: aliases, and any number of commands */
   splitCmds(line).forEach(function(seg){splitCmds(expand(seg)).forEach(function(x){if(x.trim())execSeg(x)})});
 }
+function synSay(msg){typeLine(msg,'err');if(!PROFILE.csh&&/syntax error/.test(msg))queue(function(){STATUS=2})} /* bash and V7 sh: a syntax error's status is 2 (V7's synbad: exitsh(SYNBAD)); csh's error() sets 1 */
+function misread(seg){ /* (a) b &: the shell reads the whole line before it forks, so a syntax error is said and no job starts */
+  if(/`|\$\(/.test(seg))return false; /* what is substituted is read when the job runs */
+  try{parseList(seg)}catch(e){if(e&&e.syntax){synSay(syntaxError(e.syntax,e.redir,e.paren));return true}}
+  return false;
+}
 function parsed(seg){ /* parseList, or null once it has said what was wrong */
   try{return parseList(seg)}
   catch(e){
     if(e&&e.undefinedVar)typeLine(e.msg||e.undefinedVar+': Undefined variable.','err');
     else if(e===NOMATCH)typeLine('No match.','err');
-    else if(e&&e.syntax)typeLine(syntaxError(e.syntax,e.redir),'err');
+    else if(e&&e.syntax)synSay(syntaxError(e.syntax,e.redir,e.paren));
     else throw e;
     return null;
   }
 }
-function syntaxError(tok,redir){ /* tok: the word it stopped at, or end */
-  if(PROFILE.csh)return redir?'Missing name for redirect.':'Invalid null command.';
+function syntaxError(tok,redir,paren){ /* tok: the word it stopped at, or end */
+  if(PROFILE.csh)return redir?'Missing name for redirect.':paren==='open'?"Too many ('s.":paren==='('?'Badly placed (.':paren?"Badly placed ()'s.":'Invalid null command.';
   if(PROFILE.bash)return tok==='end'?'bash: syntax error: unexpected end of file':"bash: syntax error near unexpected token `"+tok+"'";
   return "syntax error: `"+(tok==='end'?'end of file':tok)+"' unexpected";
 }
@@ -2334,9 +2354,9 @@ function loopStmt(st){
   if(st.k==='cmd'){splitCmds(expand(st.t)).forEach(function(x){if(x.trim())execSeg(x)});return} /* an alias may hold a ; */
   if(st.k==='for'){
     substitute(st.words,function(text){
-      var L=parsed('x '+text);
+      var L=parsed('x x '+text); /* for's own words before the list: a ( in it is bash's token ( */
       if(!L)return;
-      var W=L[0]?L[0].stages[0].words.slice(1):[];
+      var W=L[0]?L[0].stages[0].words.slice(2):[];
       (function next(i){
         if(i>=W.length)return;
         queue(function(){ENV[st.v]=W[i];runBlock(st.body)});
@@ -2382,7 +2402,7 @@ function runScript(lines,args){ /* a script: a tree of statements, inside the cu
   if(PROFILE.bash)lines=lines.map(dollarParen); /* $(cmd) in a script too */
   if(!PROFILE.dos){
     try{tree=parseTree(lines.filter(function(l){return !/^\s*#/.test(l)}))}
-    catch(e){typeLine(e===MORE?'syntax error: end of file unexpected':e.message,'err');return}
+    catch(e){synSay(e===MORE?'syntax error: end of file unexpected':e.message);return}
   }
   queue(function(){return sleep(0)}); /* so that ^C can reach a script that keeps running itself */
   queue(function(){
@@ -2429,7 +2449,7 @@ function runCompound(lines){ /* typed at the prompt: keeps asking until it is co
   var tree;
   try{tree=parseTree(lines)}
   catch(e){
-    if(e!==MORE){typeLine(e.message,'err');return}
+    if(e!==MORE){synSay(e.message);return}
     var w0=PROFILE.csh&&lines.length===1&&statements(lines)[0]||'';
     if(/^while\b/.test(w0)&&PH.cshWhileRead&&!PH.cshWhileRead(w0.replace(/^while/,'')))return; /* csh: an error in the expression, before the loop is read */
     ask(PROFILE.csh?'? ':'> ',function(l){
@@ -2566,7 +2586,7 @@ function run(raw){
     return;
   }
   var oq=openQuote(raw);
-  if(!oq&&splitCmds(raw).semi){typeLine(syntaxError(';'),'err');queue(function(){STATUS=2});nextPrompt();return} /* bash: echo a & ; echo b */
+  if(!oq&&splitCmds(raw).semi){synSay(syntaxError(';'));nextPrompt();return} /* bash: echo a & ; echo b */
   if(oq&&PROFILE.csh){typeLine('Unmatched '+oq+'.','err');nextPrompt();return} /* csh reads no further line for it */
   if(oq){ /* sh and bash: the quoted text goes on on the next line */
     nextLine(function(l){
@@ -2577,10 +2597,10 @@ function run(raw){
     return;
   }
   if(!PROFILE.csh&&/(\||&&)\s*$/.test(raw.replace(/\\[\s\S]/g,'x').replace(/'[^']*'|"(?:[^"\\]|\\.)*"|`[^`]*`/g,'q').replace(/(^|\s)#.*$/,''))){ /* echo x | : the rest is on the next line */
-    nextLine(function(l){if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+' '+l)});
+    nextLine(function(l){if(l===null){synSay(syntaxError('end'));nextPrompt()}else run(raw+' '+l)});
     return;
   }
-  if(groupOpen(raw)){nextLine(function(l){if(l===null){typeLine(syntaxError('end'),'err');nextPrompt()}else run(raw+'\n'+l)});return} /* { echo a; and the } still to come */
+  if(groupOpen(raw)){nextLine(function(l){if(l===null){synSay(syntaxError('end'));nextPrompt()}else run(raw+'\n'+l)});return} /* { echo a; and the } still to come */
   if(compound(raw)){
     queue(function(){runCompound([raw])});
     nextPrompt(function(){LOOP=null});
