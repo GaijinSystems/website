@@ -40,9 +40,12 @@ function value(x){ /* a word as written, in pieces: 'as is', "with $variables", 
     return sq!==undefined?P.unguard(sq):dq!==undefined?P.vars(dq):bs!==undefined?P.unguard(bs):P.vars(bare);
   });
 }
+function listOf(k){var x=P.shwords[k];return x&&x.s===P.shvars[k]?x.w:null} /* the words set z = ( ) kept, while z is still that */
+function store(k,L){P.shvars[k]=L.join(' ');P.shwords[k]={s:P.shvars[k],w:L}}
+function restore(o,was){Object.keys(o).forEach(function(k){delete o[k]});Object.assign(o,was)}
 function listVars(){ /* set, or @, on its own */
   var V={argv:'()',cwd:P.st.cwd,home:P.st.home,path:'('+(P.env.PATH||'').replace(/:/g,' ')+')',prompt:'% ',shell:'/bin/csh',status:'0',term:P.env.TERM,user:P.st.user};
-  Object.keys(P.shvars).forEach(function(k){var x=P.shwords[k];V[k]=x&&x.s===P.shvars[k]&&x.w.length!==1?'('+x.w.join(' ')+')':P.shvars[k]}); /* a list of other than one word in ( ) */
+  Object.keys(P.shvars).forEach(function(k){var x=listOf(k);V[k]=x&&x.length!==1?'('+x.join(' ')+')':P.shvars[k]}); /* a list of other than one word in ( ) */
   P.say(Object.keys(V).sort().map(function(k){return k+'\t'+V[k]}));
 }
 function said(e,as){ /* says an error csh reports: Undefined variable, or one of exp()'s with as (if) named in place of @. Anything else is thrown on */
@@ -63,7 +66,7 @@ builtin(['set'],function(){
           if(/["'\\]/.test(x)){L.push(value(x));return}
           value(x).split(/\s+/).filter(Boolean).forEach(function(y){L=L.concat(P.glob(y))}); /* no match: the parser has said so */
         });
-        P.shvars[m[1]]=L.join(' ');P.shwords[m[1]]={s:P.shvars[m[1]],w:L};
+        store(m[1],L);
       }
       else P.shvars[m[1]]=value(m[2]||'');
       t=t.slice(m[0].length);
@@ -233,7 +236,7 @@ builtin(['@'],function(){ /* @ name = expr, @ name[n] = expr, @ name op= expr, @
     }
     function words(name,i){ /* getvx: the variable's words, when it has an [i] */
       if(!P.has(P.shvars,name))throw {undefinedVar:name};
-      var x=P.shwords[name],w=x&&x.s===P.shvars[name]?x.w.slice():P.shvars[name].split(/\s+/).filter(Boolean);
+      var x=listOf(name),w=x?x.slice():P.shvars[name].split(/\s+/).filter(Boolean);
       if(i<1||i>w.length)throw {csh:'@: Subscript out of range'};
       return w;
     }
@@ -261,12 +264,9 @@ builtin(['@'],function(){ /* @ name = expr, @ name[n] = expr, @ name op= expr, @
       }
       v=x.v;
       if(sub===null){P.shvars[name]=x.s;delete P.shwords[name]}
-      else{var w=words(name,sub);w[sub-1]=x.s;P.shvars[name]=w.join(' ');P.shwords[name]={s:P.shvars[name],w:w}} /* asx */
+      else{var w=words(name,sub);w[sub-1]=x.s;store(name,w)} /* asx */
     }while((p=unq(W[v++]))!==undefined);
-  },function(e,r,any){if(e)said(e);else if(!any)P.status(0)},function(){
-    Object.keys(P.shvars).forEach(function(k){delete P.shvars[k]});Object.assign(P.shvars,keepV);
-    Object.keys(P.shwords).forEach(function(k){delete P.shwords[k]});Object.assign(P.shwords,keepW);
-  });
+  },function(e,r,any){if(e)said(e);else if(!any)P.status(0)},function(){restore(P.shvars,keepV);restore(P.shwords,keepW)});
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});

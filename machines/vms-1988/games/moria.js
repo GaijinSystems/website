@@ -445,28 +445,28 @@ function* $help(topic){
     $writeln(s);lines++;blank=s==='';
   }
   function* list(node,ind){
-    var pad=new Array(ind+1).join(' '),row='';
+    var pad=' '.repeat(ind),row='';
     if(!blank)yield* out('');
     yield* out(pad+'Additional information available:');
     yield* out('');
     for(var i=0;i<node.subs.length;i++){
       var n=node.subs[i].name,w=Math.ceil((n.length+1)/11)*11;
       if(row&&ind+row.length+n.length>80){yield* out(pad+row.replace(/\s+$/,''));row=''}
-      row+=n+new Array(w-n.length+1).join(' ');
+      row+=n.padEnd(w);
     }
     if(row)yield* out(pad+row.replace(/\s+$/,''));
   }
   function* show(p){ /* a topic: its keywords down from the top, its text, its subtopics */
     yield* out('');
     for(var i=0;i<p.length;i++){
-      yield* out(new Array(2*i+1).join(' ')+p[i].name);
+      yield* out(' '.repeat(2*i)+p[i].name);
       yield* out('');
     }
-    var t=p[p.length-1].text;
-    for(i=0;i<t.length&&!quit;i++)yield* out(t[i]);
-    if(p[p.length-1].subs.length)yield* list(p[p.length-1],2*p.length);
+    var t=p[p.length-1];
+    for(i=0;i<t.text.length&&!quit;i++)yield* out(t.text[i]);
+    if(t.subs.length)yield* list(t,2*p.length);
   }
-  function words(s){return String(s).trim().split(/\s+/).filter(Boolean)}
+  function words(s){return s.trim().split(/\s+/).filter(Boolean)}
   function* ask(W){ /* keywords from where we are: descend while each names one topic, show what they name */
     var at=cur.slice();
     for(var i=0;i<W.length&&!quit;i++){
@@ -475,7 +475,7 @@ function* $help(topic){
       var M=$hmatch(node,W[i]);
       if(!M.length){
         yield* out('');
-        yield* out('Sorry, no documentation on '+at.map(function(n){return n.name.toUpperCase()}).concat(W.slice(0,i+1).map(function(w){return w.toUpperCase()})).join(' '));
+        yield* out('Sorry, no documentation on '+at.map(function(n){return n.name}).concat(W.slice(0,i+1)).join(' ').toUpperCase());
         if(node.subs.length)yield* list(node,2*at.length||2);
         cur=at;return;
       }
@@ -491,7 +491,7 @@ function* $help(topic){
   if(W.length)yield* ask(W);
   else{ /* HELP alone: the library's HELP topic, then everything it has */
     var h=lib.subs.filter(function(s){return s.name==='HELP'})[0];
-    if(h){last=[h];yield* out('');yield* out(h.name);yield* out('');for(var i=0;i<h.text.length;i++)yield* out(h.text[i])}
+    if(h){last=[h];yield* show(last)}
     yield* list(lib,2);
   }
   while(!quit){
@@ -515,7 +515,7 @@ function* $hline(){
     if(c==='\r'||c==='\n'){$writeln('');return s}
     if(c==='\x1a'){$writeln('Exit');return null}
     if(c==='\x7f'||c==='\b'){if(s){s=s.slice(0,-1);$puts('\b \b')}continue}
-    if(c==='\x15'){while(s){s=s.slice(0,-1);$puts('\b \b')}continue}
+    if(c==='\x15'){$puts('\b \b'.repeat(s.length));s='';continue}
     if(c<' '||s.length>=80)continue;
     s+=c;$puts(c);
   }

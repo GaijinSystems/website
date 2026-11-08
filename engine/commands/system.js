@@ -17,8 +17,7 @@ P.command({names:['dmesg'],path:'/etc',
 /* == ps == rows: show pid tty time command. show is x (ps x), a (ps a) or - (always) */
 var PSN=0;
 P.newPid=function(){ /* each new process gets the next id after the machine's own: ps, and a command started with & */
-  var T=table();
-  if(!PSN)PSN=(T.length?T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0):995)+5; /* a machine with no == ps == rows has its own ps: well past it */
+  if(!PSN){var T=table();PSN=(T.length?T.reduce(function(m,r){return Math.max(m,parseInt(r.p[0],10)||0)},0):995)+5} /* a machine with no == ps == rows has its own ps: well past it */
   return PSN++;
 };
 function table(){
