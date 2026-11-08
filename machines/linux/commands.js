@@ -14,6 +14,7 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
 var BOOT=null,OLD=null,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
 P.setup(function(){
   BOOT=new Date(P.st.login.getTime()-52e3); /* the machine came up as the terminal did */
+  exported(); /* what the session starts with is exported */
   function ps1(){
     var S=P.st;
     if(S.user==='root'&&S.home==='/'){S.home='/root';if(S.cwd==='/')S.cwd='/root'} /* root logged in at the console: root's home */
@@ -167,21 +168,54 @@ cmd('export','','set export attribute for shell variables','export [-fn] [name[=
   var args=w.slice(1).filter(function(x){return x!=='-p'});
   if(!args.length){var E=envAll();lines(Object.keys(E).sort().map(function(k){return 'declare -x '+k+'="'+E[k]+'"'}));return}
   args.forEach(function(x){
-    var m=x.match(/^([A-Za-z_]\w*)(?:=(.*))?$/);
+    var m=x.match(/^([A-Za-z_]\w*)(?:\+?=[\s\S]*)?$/);
     if(!m){err("bash: export: `"+x+"': not a valid identifier");return}
-    if(m[2]!==undefined)P.env[m[1]]=m[2];
+    exported()[m[1]]=true;P.bashVars.asg(x);
   });
 });
-cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [name ...]','gives each name the value after its =; the attributes are not kept here. with no name, lists the variables.',function(a,raw,w){
-  var args=w.slice(1).filter(function(x){return x.charAt(0)!=='-'&&x.charAt(0)!=='+'});
-  if(!args.length){var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));return}
-  args.forEach(function(x){var m=x.match(/^([A-Za-z_]\w*)(?:=([\s\S]*))?$/);if(!m){err('bash: '+w[0]+": `"+x+"': not a valid identifier");return}if(m[2]!==undefined)P.env[m[1]]=m[2]});
+var EXP=null; /* the exported names, which declare -p shows with -x: the ones the session started with, and export's */
+function exported(){if(!EXP){EXP=Object.create(null);Object.keys(P.env).concat(['HOME','LOGNAME','USER']).forEach(function(k){EXP[k]=true})}return EXP}
+function declared(n){ /* declare -p's line for n, or null when it is not set */
+  var V=P.bashVars,k=V.kind(n),v=V.value(n);
+  if(!k&&v===null)return null;
+  return 'declare '+(k?'-'+k:exported()[n]?'-x':'--')+' '+n+(v===null?'':'='+v);
+}
+function assigns(name,w,decl){ /* declare, typeset and readonly: name=value, name=( ... ), name[i]=value each; -a and -A make arrays. false when one went wrong */
+  var ok=true,V=P.bashVars;
+  w.forEach(function(x){
+    var m=x.match(/^([A-Za-z_]\w*)(\[[^\]]*\])?(\+?=[\s\S]*)?$/);
+    if(!m||m[2]&&m[3]===undefined){err('bash: '+name+": `"+x+"': not a valid identifier");ok=false;return}
+    if(decl&&!V.make(m[1],decl==='A')){err('bash: '+name+': '+m[1]+': cannot convert '+(decl==='A'?'indexed to associative':'associative to indexed')+' array');ok=false;return}
+    if(m[3]!==undefined&&V.asg(x,decl)===false)ok=false;
+  });
+  return ok;
+}
+cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [name ...]','gives each name the value after its =; -a makes an indexed array, -A an associative one, and name=( ... ) gives an array its elements. -p shows each name as a declare command; with no name, lists the variables. the other attributes are not kept here.',function(a,raw,w){
+  var o='',args=[];
+  w.slice(1).forEach(function(x){if(!args.length&&/^[-+][A-Za-z]+$/.test(x)){if(x.charAt(0)==='-')o+=x.slice(1)}else args.push(x)});
+  var decl=o.indexOf('A')>=0?'A':o.indexOf('a')>=0?'a':null,E=envAll();
+  if(o.indexOf('p')>=0){
+    var bad=false;
+    (args.length?args:Object.keys(E).concat(P.bashVars.names()).filter(function(k,i,L){return L.indexOf(k)===i}).sort()).forEach(function(n){var t=declared(n);if(t===null){err('bash: '+w[0]+': '+n+': not found');bad=true}else P.typeLine(t)});
+    if(bad)P.status(1);
+    return;
+  }
+  if(!args.length){
+    var arr=P.bashVars.names();
+    lines(Object.keys(E).concat(arr).filter(function(k,i,L){return L.indexOf(k)===i}).sort().filter(function(k){return arr.indexOf(k)<0||P.bashVars.value(k)!==null}).map(function(k){return k+'='+(arr.indexOf(k)>=0?P.bashVars.value(k):E[k])}));
+    return;
+  }
+  if(!assigns(w[0],args,decl))P.status(1);
 });
 cmd('readonly','','mark shell variables as unchangeable','readonly [-aAf] [name[=value] ...] or readonly -p','gives each name the value after its =; that it may not be changed is not kept here.',function(a,raw,w){
-  w.slice(1).filter(function(x){return x.charAt(0)!=='-'}).forEach(function(x){var m=x.match(/^([A-Za-z_]\w*)(?:=([\s\S]*))?$/);if(!m){err("bash: readonly: `"+x+"': not a valid identifier");return}if(m[2]!==undefined)P.env[m[1]]=m[2]});
+  if(!assigns('readonly',w.slice(1).filter(function(x){return x.charAt(0)!=='-'}),null))P.status(1);
 });
 cmd('local','','define local variables','local [option] name[=value] ...','makes a variable local to a shell function; there are none here, so it says so.',function(){err('bash: local: can only be used in a function')});
-cmd('unset','','unset values and attributes of shell variables and functions','unset [-f] [-v] [-n] [name ...]','removes each variable named.',function(a){a.forEach(function(k){delete P.env[k]})});
+cmd('unset','','unset values and attributes of shell variables and functions','unset [-f] [-v] [-n] [name ...]','removes each variable named, or one element of an array: unset \'x[1]\'.',function(a,raw,w){
+  var bad=false;
+  w.slice(1).filter(function(x){return !/^-[fvn]+$/.test(x)}).forEach(function(k){if(!P.bashVars.unset(k)){err("bash: unset: `"+k+"': not a valid identifier");bad=true}});
+  if(bad)P.status(1);
+});
 cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... [-] [NAME=VALUE]... [COMMAND [ARG]...]','with no command, prints the environment, one NAME=value to a line.',function(){
   var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));
 });
