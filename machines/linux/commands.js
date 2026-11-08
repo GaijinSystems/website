@@ -296,7 +296,7 @@ cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','l
 function why(n){return !n?'No such file or directory':n.type==='d'?'Is a directory':'Permission denied'}
 cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [OPTION]... [FILE]...','prints each file in turn, or its standard input. -n numbers the lines.',function(a){
   var o=opts(a),num=o.has('n','number'),k=0,bad=false;
-  function put(L){P.say(num?L.map(function(l){return String(++k).padStart(6)+'\t'+l}):L)}
+  function put(L){var R=num?L.map(function(l){return String(++k).padStart(6)+'\t'+l}):L;R.open=L.open;P.say(R)} /* a last line with no newline stays open */
   if(!o.ops.length){P.input([],put);return}
   var kb=false; /* once - has read the keyboard, the rest waits for it */
   o.ops.forEach(function(x){

@@ -46,7 +46,7 @@ V.progRead=function(then,imm){
   if(V.busy&&!V.inPend){V.emit(function(){V.progRead(then,imm)});return}
   var k=function(l,split){
     if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t);return}
-    var w=imm&&l!==null&&!split?V.immediate(up(l.trim())):''; /* DMSCIT: the whole line, so HX#X is not HX */
+    var w=imm&&l!==null&&!split?V.immediate(up(l)):''; /* DMSCIT: the whole line, exactly two characters, so HX#X and 'HX ' are not HX */
     if(w==='HX'){V.abend();V.pend=[];then(P.INT);return}
     if(w){V.progRead(then,false);return}
     var was=V.cap;V.cap=V.cap||V.busy;

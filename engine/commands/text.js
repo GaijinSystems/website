@@ -108,17 +108,38 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
   });
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
-  var fl=flags(a),F=operands(a),o=F[0];
-  P.input(F,function(L){
-    if(F.length&&!P.find(o))return; /* it said so, and moves on */
-    var words=0,chars=0;
+  var fl=flags(a),F=operands(a),o=F[0],want=[!fl||/l/.test(fl),!fl||/w/.test(fl),!fl||/c/.test(fl)];
+  function counts(L){ /* newlines, words and bytes: a last line with no newline is no line */
+    var words=0,chars=0,x=L.open?1:0;
     L.forEach(function(l){var t=l.trim();if(t)words+=t.split(/\s+/).length;chars+=l.length+1});
-    var c=[];
-    if(!fl||/l/.test(fl))c.push(L.length);
-    if(!fl||/w/.test(fl))c.push(words);
-    if(!fl||/c/.test(fl))c.push(chars);
-    P.typeLine(c.map(function(n){return String(n).padStart(7)}).join('')+(o?' '+o:''));
-  });
+    return [L.length-x,words,chars-x].filter(function(n,i){return want[i]});
+  }
+  if(!P.profile.bash){
+    P.input(F,function(L){
+      if(F.length&&!P.find(o))return; /* it said so, and moves on */
+      P.typeLine(counts(L).map(function(n){return String(n).padStart(7)}).join('')+(o?' '+o:''));
+    });
+    return;
+  }
+  /* GNU wc: a row for each file, and a total for more than one. The width (compute_number_width) is 1 for one count of one file,
+     else that of the regular files' total size, and at least 7 when one is not a regular file (a directory, a pipe, the terminal) */
+  var one=want.filter(Boolean).length===1,S=P.stdin(),width=1,total=[0,0,0].slice(0,want.filter(Boolean).length),bad=false;
+  if(!(one&&F.length<2)){
+    var size=0,min=1;
+    if(!F.length){if(S&&S.from&&S.from.type!=='d')size=P.fsize(S.from);else min=7}
+    F.forEach(function(x){var n=P.find(x);if(!n)return;if(n.type==='d'||n.dev)min=7;else size+=P.fsize(n)});
+    width=Math.max(min,String(size).length);
+  }
+  function row(c,name){P.typeLine(c.map(function(n,i){return (i?' ':'')+String(n).padStart(width)}).join('')+(name!==undefined?' '+name:''))}
+  function add(c){c.forEach(function(n,i){total[i]+=n})}
+  if(!F.length){P.input([],function(L){var c=counts(L);row(c)});return}
+  F.forEach(function(x){P.queue(function(){
+    var n=P.find(x);
+    if(!n||n.prot){P.typeLine('wc: '+x+': '+(!n?'No such file or directory':'Permission denied'),'err');bad=true;return}
+    if(n.type==='d'){row(total.map(function(){return 0}),x);P.typeLine('wc: '+x+': Is a directory','err');bad=true;return} /* it counts what it read, nothing, then says why it stopped */
+    var c=counts(P.text(n));add(c);row(c,x);
+  })});
+  P.queue(function(){if(F.length>1)row(total,'total');P.status(bad?1:0)});
 });
 cmd('sort','sort lines','sort [ -nru ] [ file ... ]','sorts the lines. -r backwards, -n by number, -u dropping repeats.',function(a){
   var fl=flags(a);
@@ -140,7 +161,7 @@ cmd('uniq','drop repeated lines','uniq [ -c ] [ file ]','prints one of each run 
 function count(a,dflt){var m=flags(a).match(/\d+/);return m?+m[0]:dflt}
 /* head's arguments: {n: lines, c: bytes or null, F: [{f, n}], err: lines to print, q, v}. A negative n or c: all but that many at the end */
 P.headArgs=function(w){
-  var o={n:10,c:null,F:[],err:null,q:false,v:false},i;
+  var o={n:10,c:null,F:[],err:null,q:false,v:false,z:false},i;
   if(!P.profile.bash){ /* 4.3BSD's head.c (IRIX's is in /usr/bsd): -count before a file sets it for the files after it; else "Badly formed number" */
     for(i=0;i<w.length;i++){
       if(w[i].charAt(0)!=='-'){o.F.push({f:w[i],n:o.n});continue}
@@ -149,7 +170,7 @@ P.headArgs=function(w){
     }
     return o;
   }
-  /* GNU head: -n N, -c N (N may be -N, or have a suffix such as k), --lines, --bytes, -q, -v; -N with letters after it (-2c, -1k, -3v) only as the first argument */
+  /* GNU head: -n N, -c N (N may be -N, or have a suffix such as k), --lines, --bytes, -q, -v, -z; -N, with or without letters after it (-2, -2c, -1k, -3v), only as the first argument */
   function num(s,what){ /* xdectoumax with "bkKmMGTPEZYRQ0": b is 512; k, K, m, M, G ... Q powers of 1024, or of 1000 with B (or D) after them; KiB as K */
     var m=/^(-?)[ \t\n\v\f\r]*\+?(\d+)(?:(b)|([kKmMGTPEZYRQ])(B|D|iB)?)?$/.exec(s);
     if(!m)throw ['head: invalid number of '+what+": '"+s+"'"];
@@ -165,7 +186,7 @@ P.headArgs=function(w){
       for(var q=0;q<d[2].length;q++){
         var l=d[2].charAt(q);
         if(l==='c'){lines=false;mul=''}else if(/[bkm]/.test(l)){lines=false;mul=l}else if(l==='l')lines=true;
-        else if(l==='q'){o.q=true;o.v=false}else if(l==='v'){o.v=true;o.q=false}else if(l!=='z')bad('head: invalid trailing option -- '+l);
+        else if(l==='q'){o.q=true;o.v=false}else if(l==='v'){o.v=true;o.q=false}else if(l==='z')o.z=true;else bad('head: invalid trailing option -- '+l);
       }
       if(lines)o.n=num(d[1]+mul,'lines');else o.c=num(d[1]+mul,'bytes');
       i=1;
@@ -183,7 +204,7 @@ P.headArgs=function(w){
           if(L[0]==='lines'){o.n=num(v,'lines');o.c=null}else o.c=num(v,'bytes');
         }
         else if(m[2])bad("head: option '--"+L[0]+"' doesn't allow an argument");
-        else if(L[0]==='verbose')o.v=true;else if(L[0]!=='zero-terminated')o.q=true;
+        else if(L[0]==='verbose')o.v=true;else if(L[0]==='zero-terminated')o.z=true;else o.q=true;
         continue;
       }
       for(var j=1;j<x.length;j++){
@@ -195,41 +216,44 @@ P.headArgs=function(w){
           break;
         }
         if(/\d/.test(ch))bad('head: invalid trailing option -- '+ch);
-        if(ch==='q'){o.q=true;o.v=false}else if(ch==='v'){o.v=true;o.q=false}else if(ch!=='z')bad("head: invalid option -- '"+ch+"'");
+        if(ch==='q'){o.q=true;o.v=false}else if(ch==='v'){o.v=true;o.q=false}else if(ch==='z')o.z=true;else bad("head: invalid option -- '"+ch+"'");
       }
     }
   }catch(e){if(!Array.isArray(e))throw e;o.err=e;return o}
   o.F=F.map(function(f){return {f:f,n:o.n}});
   return o;
 };
-function headOf(L,n,c){ /* the first n lines, or c bytes: a line it cuts short is left open */
-  if(c===null)return n<0?L.slice(0,Math.max(0,L.length+n)):L.slice(0,n);
+function headOf(L,n,c,z){ /* the first n lines, or c bytes; z: lines end at a NUL (-z). A line it cuts short, or that had no newline, is left open */
+  var R;
+  if(c===null&&!z){R=n<0?L.slice(0,Math.max(0,L.length+n)):L.slice(0,n);R.open=!!L.open&&n>=L.length;return R}
   var t=L.map(function(l){return l+'\n'}).join('');
-  t=c<0?t.slice(0,Math.max(0,t.length+c)):t.slice(0,c);
-  var R=t?t.replace(/\n$/,'').split('\n'):[];
-  if(t&&!/\n$/.test(t))R[R.length-1]=[R[R.length-1],'',{open:true}];
+  if(L.open)t=t.slice(0,-1);
+  if(c!==null)t=c<0?t.slice(0,Math.max(0,t.length+c)):t.slice(0,c);
+  else{var Z=t.match(/[^\0]*\0|[^\0]+$/g)||[];t=(n<0?Z.slice(0,Math.max(0,Z.length+n)):Z.slice(0,n)).join('')}
+  R=t?t.replace(/\n$/,'').split('\n'):[];
+  R.open=!!t&&!/\n$/.test(t);
   return R;
 }
 cmd('head','print the first lines','head [ -n ] [ file ... ]','prints the first n lines, normally 10.',function(a){
   var o=P.headArgs(a),many=o.F.length>1&&!o.q||o.v,first=true;
   if(o.err&&P.profile.bash){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1);return} /* GNU's: before it reads anything */
-  if(!o.F.length&&!o.err){if(o.v)P.say(['==> standard input <==']);P.input([],function(L){P.say(headOf(L,o.n,o.c))})}
+  if(!o.F.length&&!o.err){if(o.v)P.say(['==> standard input <==']);P.input([],function(L){P.say(headOf(L,o.n,o.c,o.z))})}
   o.F.forEach(function(x){P.queue(function(){ /* one after the other: standard input from the keyboard is read in its turn */
     var std=x.f==='-'&&P.profile.bash,n=!std&&P.find(x.f);
     if(!std&&(!n||n.type==='d'||n.prot)){P.input([x.f],function(){});return} /* it says so */
     if(many)P.say((first?[]:['']).concat(['==> '+(std?'standard input':x.f)+' <==']));first=false; /* write_header: before it reads */
-    P.input(std?[]:[x.f],function(L){P.say(headOf(L,x.n,o.c))});
+    P.input(std?[]:[x.f],function(L){P.say(headOf(L,x.n,o.c,o.z))});
   })});
   if(o.err){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1)}
 });
 cmd('tail','print the last lines','tail [ -n ] [ file ... ]','prints the last n lines, normally 10.',function(a){
-  var n=count(a,10);P.input(operands(a),function(L){P.say(n?L.slice(-n):[])});
+  var n=count(a,10);P.input(operands(a),function(L){var R=n?L.slice(-n):[];R.open=!!L.open&&R.length>0;P.say(R)});
 });
 cmd('tr','change characters','tr string1 string2','changes each character of string1 into the matching one of string2. ranges like a-z work.',function(a,raw,words){
   function span(s){return s.replace(/(.)-(.)/g,function(m,x,y){var o='';for(var c=x.charCodeAt(0);c<=y.charCodeAt(0);c++)o+=String.fromCharCode(c);return o})}
   if(words.length<3&&!P.profile.perror){P.typeLine('usage: '+P.man.tr.syn);return}
   var from=span(words[1]||''),to=span(words[2]||'');
-  P.input([],function(L){P.say(L.map(function(l){return l.split('').map(function(c){var i=from.indexOf(c);return i<0?c:to.charAt(Math.min(i,to.length-1))}).join('')}))});
+  P.input([],function(L){var R=L.map(function(l){return l.split('').map(function(c){var i=from.indexOf(c);return i<0?c:to.charAt(Math.min(i,to.length-1))}).join('')});R.open=L.open;P.say(R)});
 });
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
   var app=/a/.test(flags(a)),F=operands(a);
@@ -356,15 +380,25 @@ builtin(['read'],function(a,raw,words){
     if(bash&&!N.length){P.env.REPLY=all;P.status(eof?1:0);return} /* no name: the line as it is, in REPLY */
     for(var i=0;i<N.length;i++)if(!ID.test(N[i])){P.typeLine(bash?'bash: read: `'+N[i]+"': not a valid identifier":N[i]+': is not an identifier','err');P.status(1);return}
     var V=N.map(function(){return ''}),j=0,n=0;
-    if(bash){ /* bash: IFS white space around the words goes, and runs of it are one break; the last name takes the rest */
-      var ws=function(x){return x&&!x.q&&/[ \t\n]/.test(x.c)};
-      while(ws(C[j]))j++;
-      for(;n<N.length-1&&j<C.length;n++){
-        while(j<C.length&&!ws(C[j]))V[n]+=C[j++].c;
+    if(bash){ /* bash's read.def and get_word_from_string: a word ends at an IFS character, with the IFS white space around it, and runs
+                 of that white space are one break; the last name takes the rest, less the IFS white space at its end, unless that rest
+                 is one word and its break. Leading IFS white space goes; a character a backslash quoted is never a break */
+      var ifs=typeof P.env.IFS==='string'?P.env.IFS:' \t\n',sep=function(x){return !!x&&!x.q&&ifs.indexOf(x.c)>=0},ws=function(x){return sep(x)&&/[ \t\n]/.test(x.c)};
+      var word=function(){ /* the next word from j, and j past its break */
         while(ws(C[j]))j++;
+        var w='';while(j<C.length&&!sep(C[j]))w+=C[j++].c;
+        var white=ws(C[j]);if(j<C.length)j++;
+        while(ws(C[j]))j++;
+        if(white&&sep(C[j])&&!ws(C[j])){j++;while(ws(C[j]))j++} /* white space, then one other IFS character: one break */
+        return w;
+      };
+      while(ws(C[j]))j++;
+      for(;n<N.length-1;n++)V[n]=j<C.length?word():'';
+      if(j<C.length){
+        var at=j,w1=word();
+        if(j<C.length){var e=C.length;while(e>at&&ws(C[e-1]))e--;for(V[n]='';at<e;at++)V[n]+=C[at].c}
+        else V[n]=w1;
       }
-      var e=C.length;while(e>j&&ws(C[e-1]))e--;
-      for(;j<e;j++)V[n]+=C[j].c;
     }
     else{ /* V7's readvar: while names are left, every IFS character ends a word, leading ones too; the last name takes the rest as it is */
       var ifs=typeof P.env.IFS==='string'?P.env.IFS:' \t\n';
