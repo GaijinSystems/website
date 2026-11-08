@@ -28,7 +28,7 @@ V.globals=[1,1,1,1,1,1,1,1,1,1];
 var fromStack=0;
 V.read=function(then,trap,prog){
   if(V.hold(function(){V.read(then,trap,prog)}))return;
-  if(V.stack.length){var l=V.stack.shift();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
+  if(V.stack.length){var l=V.pop();if(++fromStack%250===0)P.pause(1);P.queue(function(){then(l)});return}
   fromStack=0;
   V.ask(then,trap,false,prog);
 };
@@ -44,9 +44,9 @@ V.read=function(then,trap,prog){
    typed after the attention, stacked by DMSCIT, answers it. What the program then types goes through V.pend too */
 V.progRead=function(then,imm){
   if(V.busy&&!V.inPend){V.emit(function(){V.progRead(then,imm)});return}
-  var k=function(l){
+  var k=function(l,split){
     if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t);return}
-    var w=imm&&l!==null?V.immediate(up(l.trim())):'';
+    var w=imm&&l!==null&&!split?V.immediate(up(l.trim())):''; /* DMSCIT: the whole line, so HX#X is not HX */
     if(w==='HX'){V.abend();V.pend=[];then(P.INT);return}
     if(w){V.progRead(then,false);return}
     var was=V.cap;V.cap=V.cap||V.busy;

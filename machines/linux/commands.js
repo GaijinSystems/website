@@ -237,7 +237,7 @@ cmd('su','/usr/bin','run a command with substitute user and group ID','su [optio
     if(l===null||l===P.INT)return;
     var word=P.profile.rootPassword;
     if(who==='root'&&word&&P.fold(l)===P.fold(word)){
-      if(piped){err('Password: ');P.queue(function(){P.status(0)})} /* to the terminal, not the pipe. The line stays open on a real one; every line ends here */
+      if(piped){P.typeLine('Password: ','err',null,{open:true});P.queue(function(){P.status(0)})} /* to the terminal, not the pipe, and the line stays open */
       if(run!=null){as('root',run,false,login);return}
       if(piped)return; /* the shell reads the rest of the pipe, finds nothing, and ends */
       if(P.rootHeld()){nest('root',login);return} /* under root already: one more shell */

@@ -329,7 +329,7 @@ var GEN=0,inner=null,wakers=[],ASIDE=null,FGP=null; /* ASIDE: the aside() a step
 function owner(){return ASIDE&&ASIDE.job||inner&&inner.proc} /* the job a step is part of, or the foreground pipeline ^Z can stop */
 function jobOf(x){return x&&(x.resume?x:x.job)} /* a job, or a foreground pipeline's job */
 function wakeList(){var o=owner();return o?o.wakers:wakers} /* a background job's waits are its own: ^C does not end them */
-function sleep(ms){var own=owner()||null;return new Promise(function(r){
+function sleep(ms){var own=owner()||null;if(ms>0&&pipeWait())return Promise.resolve();return new Promise(function(r){ /* a write that met SIGPIPE: the process is gone, and so is its sleep */
   var W=wakeList(),done=function(){
     clearTimeout(t);var i=W.indexOf(done);if(i>=0)W.splice(i,1);
     var j=jobOf(own); /* its job, stopped: the time runs on, and the sleep ends once it goes on (nanosleep's restart) */
@@ -436,7 +436,10 @@ function typeLine(text,cls,cb,opt){
     if(cls==='err')STATUS=1;
     var to=cls!=='err'?SINK:ERRSINK!==GLASS?ERRSINK:null; /* a pipe or a file; errors still go to the glass, unless 2>file or 2>&1 */
     if(to){
-      to.push(' '.repeat(opt.indent||0)+(opt.pre||'')+plain(text));
+      if(to.pipe&&to.pipe.gone){if(!to.broke)pipeBroke(to);if(cb)cb();res();return} /* its reader has gone: this write gets SIGPIPE */
+      var l=' '.repeat(opt.indent||0)+(opt.pre||'')+plain(text);
+      if(to.open&&to.length)to[to.length-1]+=l;else to.push(l); /* after a line left open (echo -n): this goes on in it */
+      to.open=!!opt.open;
       if(cb)cb();res();return;
     }
     if(glassBusy(job)){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
@@ -446,14 +449,15 @@ function typeLine(text,cls,cb,opt){
     res=function(){GL.n--;if(job)GL.bg--;glassNext();res0()};
     if(gone()){res();return}
     text=UP(text);
-    var d=document.createElement('div'),host=d,above=side&&bufNode?bufNode.parentNode:null; /* an aside's line goes in above the one being typed in */
-    d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
+    var above=side&&bufNode?bufNode.parentNode:null,more=!above&&OPEN&&OPEN===out.lastElementChild?OPEN:null; /* an aside's line goes in above the one being typed in; more: the line left open, which this goes on in */
+    var d=more||document.createElement('div'),host=d;OPEN=null;if(more&&JOIN===more)JOIN=null;
+    if(!more)d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
     /* indent: left margin for the whole line; hang: extra margin for wrapped continuation lines only */
     if(opt.indent||opt.hang){d.style.paddingLeft=((opt.indent||0)+(opt.hang||0))+'ch';if(opt.hang)d.style.textIndent=(-opt.hang)+'ch'}
     if(opt.href){host=document.createElement('a');host.href=opt.href;
       if(!/^mailto:/i.test(opt.href)){host.target='_blank';host.rel='noopener'}d.appendChild(host)}
     var pre=opt.pre?UP(opt.pre):'',t=document.createTextNode(pre);host.appendChild(t);
-    if(above)out.insertBefore(d,above);else{d.appendChild(cursor);out.appendChild(d)}
+    if(more)d.appendChild(cursor);else     if(above&&!above.cut)out.insertBefore(d,above);else if(above)out.appendChild(d);else{d.appendChild(cursor);out.appendChild(d)} /* below a read that goes on in a line cut short: the carriage stayed there */
     trim(out,240);
     var at=host===d&&!above?cursor:null; /* new text goes before the cursor; a link has no cursor inside it, nor a line typed above */
     var sp=opt.speed||1,i=0;
@@ -464,6 +468,7 @@ function typeLine(text,cls,cb,opt){
       if(i>=text.length){
         scrollBottom();
         announce(pre+plain(text.replace(/\u0003[^\u0004]*(\u0004|$)/g,' ')));
+        if(opt.open&&!above&&d===out.lastElementChild)OPEN=JOIN=d; /* echo -n: what comes next, and the prompt, go on in this line */
         if(cb)cb();res();return;
       }
       var ch=text.charAt(i++);
@@ -538,11 +543,11 @@ function refit(){ /* rows already printed re-fit on rotate/resize; not while a f
   var c=cols();for(var i=0;i<gs.length;i++)squeeze(gs[i],c);
 }
 window.addEventListener('resize',refit);
-var MODE='shell',JOIN=null; /* shell | login | password (password input is not echoed). JOIN: the line the next prompt goes on in (interrupt) */
+var MODE='shell',JOIN=null,OPEN=null; /* shell | login | password (password input is not echoed). JOIN: the line the next prompt goes on in (interrupt); OPEN: a line of output left open (echo -n), which the next output goes on in */
 function showPrompt(p,mode){
-  MODE=mode||'shell';
+  MODE=mode||'shell';OPEN=null; /* what comes after the prompt and what is typed starts a line of its own */
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
-  var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';JOIN=null; /* after the text cut short, when nothing came between */
+  var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';d.cut=d===JOIN;JOIN=null; /* after the text cut short, when nothing came between */
   if(MODE!=='read')HIDE=false;
   bufNode=document.createTextNode(MODE==='password'||HIDE?'':UP(buf));
   d.appendChild(document.createTextNode(UP(p==null?(RP?PROFILE.rootPrompt:promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
@@ -560,6 +565,7 @@ function oopsW(who,x,old){ /* the same for a file that could not be made: no suc
 function readKey(p,trap){ /* one keypress, no return needed. Call it from inside a queued step.
                             ^C stops the command, unless trap: then the program gets it as C-c */
   ttyWant('key'); /* a key from /dev/null: none ever comes */
+  pipeWait();
   return new Promise(function(res){
     var h=hold(),got=function(k){
       if(k.length!==1&&k!=='Enter'&&k!=='C-c')return;
@@ -582,7 +588,7 @@ function owns(job,h){return !!h&&!!h.owner&&jobOf(h.owner)===job}
 var HIDE=false,READ=null,TRAP=false,INT='\u0003'; /* a program is waiting for a line from the keyboard */
 function readLine(p,trap,hidden){ /* one line from the keyboard, or null at ^D or ^C. Call it from inside a queued step.
                               trap: the program deals with ^C itself, and gets INT */
-  if(ttyWant('input'))return Promise.resolve(null); /* a background job's /dev/null */
+  if(ttyWant('input')||pipeWait())return Promise.resolve(null); /* a background job's /dev/null; a writer waiting here lets its reader read */
   return new Promise(function(res){
     var h=hold(),got=function(v){letGo(h);res(v)};
     h.show=function(){READ=got;TRAP=!!trap;HIDE=!!hidden;showPrompt(p==null?'':p,'read')};
@@ -750,12 +756,16 @@ function program(make,o){ /* a full-screen program: make(S,done) returns its {fe
   });
   queue(function(){if(crashed)typeLine(who+': core dumped','err')});
 }
+function gnuOops(x,n){ /* GNU's wording: head and tail open, then read; sort says which it could not do; the rest name the file */
+  var c=CURRENT,why=!n?'No such file or directory':n.prot?'Permission denied':'Is a directory',dir=!!n&&!n.prot;
+  typeLine(/^(head|tail)$/.test(c)?c+(dir?": error reading '"+x+"': ":": cannot open '"+x+"' for reading: ")+why:c==='sort'?'sort: '+(dir?'read failed: ':'cannot read: ')+x+': '+why:c+': '+x+': '+why,'err');
+}
 function input(names,done){ /* the lines a command works on: named files, else its pipe or <, else the keyboard */
   if(names.length){
     var L=[];
     names.forEach(function(x){
       var n=find(x);
-      if(!n||n.type==='d'||n.prot)oops('',x,n,CURRENT+": can't open "+x);
+      if(!n||n.type==='d'||n.prot)PROFILE.bash?gnuOops(x,n):oops('',x,n,CURRENT+": can't open "+x);
       else L=L.concat(textOf(n));
     });
     done(L);
@@ -1532,13 +1542,13 @@ function newJob(cmds,ids,o){ /* a job's entry in the table */
 function jobWords(c){ /* a command as the job table shows it: ( list ) spaced out, as bash's and csh's printers do */
   var k=markNode(c);
   if(k)return compText(k.node,'').join('\n')+c.slice(k.len); /* a loop as bash prints it, then | cat */
-  var m=/^\(([\s\S]*)\)$/.exec(c);
-  if(!m)return c;
-  var L=splitCmds(m[1]).map(oneLine).filter(Boolean).map(subWords);
+  var e=c.charAt(0)==='('?parenEnd(c,0):-1,rest=e<0?'':oneLine(c.slice(e+1)); /* ( list ) > f: the redirection after it, as both printers do */
+  if(e<0||rest&&!/^\d*[<>]/.test(rest))return c;
+  var L=splitCmds(c.slice(1,e)).map(oneLine).filter(Boolean).map(subWords);
   return '( '+L.map(function(x,i){ /* bash: a & b; csh's padd leaves the & out: a; b */
-    var bg=/&$/.test(x);if(PROFILE.csh&&bg)x=x.replace(/\s*&$/,'');
+    var bg=/(^|[^\\])(\\\\)*&$/.test(x);if(PROFILE.csh&&bg)x=x.replace(/\s*&$/,''); /* echo \& is no background */
     return i<L.length-1?x+(bg&&!PROFILE.csh?' ':'; '):x;
-  }).join('')+' )';
+  }).join('')+' )'+(rest?' '+rest:'');
 }
 function subWords(t){ /* a command of a ( list ): its own ( ) spaced out too, as the printers do all the way down */
   return andOr(t).map(function(p){return (p.op?p.op+' ':'')+pipeRaw(p.text).map(function(x){return jobWords(oneLine(x))}).join(' | ')}).join(' ');
@@ -1948,6 +1958,9 @@ function shellPid(){var r=loginShell();return r?r.pid:23} /* $$: the login shell
 function shellSignal(n,group){ /* kill $$, or kill 0 (its process group: with no job control, the jobs too). What the shell does not set aside ends it */
   if(group&&!control())liveJobs().forEach(function(j){if(j.owner===0)signal(j,n)});
   var x=(SIG[n]||{}).name,kept=control()?/^(TERM|QUIT|INT|TSTP|TTIN|TTOU)$/:/^(TERM|QUIT|INT|SEGV|ALRM)$/; /* interactive: bash and csh set TERM and QUIT aside and catch INT; V7 sh sets TERM and QUIT aside and catches INT, SEGV and ALRM (fault.c: SEGV grows its memory, ALRM ends it only while it waits at the prompt) */
+  if(x==='ALRM'&&!control()&&!PROFILE.bash&&!PROFILE.csh&&ASIDE&&ASIDE.job&&!SCRIPTS)Promise.resolve().then(function(){ /* V7's fault(): ALRM calls done() while the shell waits at its prompt (flags&waiting). Only a job can send it then; the logout runs in the shell's own queue, after the job's step */
+    if(bufNode&&MODE==='shell'&&!LOGOUT){leavePrompt();PH.logout();queue(function(){LOGOUT=false},true)}
+  });
   if(kept.test(x||'')||sigDo(n)!=='end'||SCRIPTS||ASIDE||group&&(SUB||SHID))return; /* a script's own shell is another process. $$ in ( ), a pipe or a `command` is still the shell's; their kill 0 is their own group */
   PH.logout();
 }
@@ -2178,23 +2191,37 @@ function pipeReader(stages,i){ /* what the command at stages[i] does with the pi
   if(w[0]!=='tee'&&w[0]!=='tr'&&ops.some(function(x){return x!=='-'}))return gone; /* cat f, grep x f: they read their files */
   var down=i<stages.length-1&&st.out===null&&!st.closed&&!st.glass?pipeReader(stages,i+1):null;
   if(!down)return null;
-  var p=newPipe(down),r={done:false,take:function(l){if(pass(l)&&!pipeWrite(p,l))r.done=true}}; /* its write after its reader went: SIGPIPE */
+  var p=newPipe(down),r={done:false,take:function(l){if(pass(l)&&!pipeWrite(p,l))r.done=true}, /* its write after its reader went: SIGPIPE */
+    flush:function(){pipeTake(p);r.done=p.gone}};
   return r;
 }
 function newPipe(r){return r&&{r:r,q:[],n:0,gone:false}}
 function pipeWrite(p,l){ /* false: the reader has gone, and the writer gets SIGPIPE */
   if(p.gone)return false;
   p.q.push(l);p.n+=l.length+1;
-  if(p.n>=PIPEBUF){for(var k=0;k<p.q.length&&!p.r.done;k++)p.r.take(p.q[k]);p.q=[];p.n=0;p.gone=p.r.done}
+  if(p.n>=PIPEBUF)pipeTake(p);
   return true;
 }
-function pipeFull(){ /* a loop writing to a pipe whose reader has gone: the loop's process dies of SIGPIPE (bash: status 141) */
+function pipeTake(p){ /* the reader reads what waits in the pipe; cat, grep, tr or tee pass it straight on down theirs */
+  for(var k=0;k<p.q.length&&!p.r.done;k++)p.r.take(p.q[k]);
+  if(p.r.flush&&!p.r.done)p.r.flush();
+  p.q=[];p.n=0;p.gone=p.r.done;
+}
+function pipeBroke(S){S.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true} /* the writer's process dies of SIGPIPE (bash: status 141) */
+function pipeFull(){ /* a loop writing to a pipe whose reader has gone: the loop's process dies of SIGPIPE */
   var S=SINK,bad;
   if(!S||!S.cap)return false;
   bad=S.length>=S.cap;
   if(S.pipe)for(;!bad&&S.fed<S.length;S.fed++)bad=!pipeWrite(S.pipe,S[S.fed]);
-  if(!bad)return false;
-  S.broke=true;STATUS=128+SIG.PIPE;LOOP='exit';return true;
+  return bad&&pipeBroke(S);
+}
+function pipeWait(){ /* in a step: the writer waits (sleep, a read from the terminal), so its reader gets to read what is in the pipe now,
+                        not only once PIPEBUF has filled it; true when a write the writer made has met a reader that is gone */
+  var S=SINK;
+  if(!S||!S.pipe||S.broke)return !!(S&&S.broke);
+  if(pipeFull())return true;
+  pipeTake(S.pipe);
+  return false;
 }
 function passWait(){ /* between rounds of a while loop, so that ^C can reach it; a loop writing into a pipe only now and then */
   var S=SINK;

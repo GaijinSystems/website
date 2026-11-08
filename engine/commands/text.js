@@ -149,18 +149,27 @@ P.headArgs=function(w){
     }
     return o;
   }
-  /* GNU head: -n N, -c N (N may be -N, or have a suffix such as k), --lines, --bytes, -q, -v; -N only as the first argument */
-  function num(s,what){
-    var m=/^([-+]?)(\d+)(b|[kKmMgG](iB|B)?)?$/.exec(s),k=1;
+  /* GNU head: -n N, -c N (N may be -N, or have a suffix such as k), --lines, --bytes, -q, -v; -N with letters after it (-2c, -1k, -3v) only as the first argument */
+  function num(s,what){ /* xdectoumax with "bkKmMGTPEZYRQ0": b is 512; k, K, m, M, G ... Q powers of 1024, or of 1000 with B (or D) after them; KiB as K */
+    var m=/^(-?)[ \t\n\v\f\r]*\+?(\d+)(?:(b)|([kKmMGTPEZYRQ])(B|D|iB)?)?$/.exec(s);
     if(!m)throw ['head: invalid number of '+what+": '"+s+"'"];
-    if(m[3])k=m[3]==='b'?512:Math.pow(m[4]==='B'?1000:1024,' kmg'.indexOf(m[3].charAt(0).toLowerCase()));
-    return (m[1]==='-'?-1:1)*m[2]*k;
+    var k=m[3]?512:m[4]?Math.pow(/^[BD]$/.test(m[5]||'')?1000:1024,'kmgtpezyrq'.indexOf(m[4].toLowerCase())+1):1;
+    return (m[1]?-1:1)*Math.min(Number.MAX_VALUE,m[2]*k); /* past the largest number: as much as there is */
   }
   function bad(t){throw [t,"Try 'head --help' for more information."]}
   var F=[];
   try{
     i=0;
-    if(/^-\d+$/.test(w[0]||'')){o.n=+w[0].slice(1);i=1}
+    if(/^-\d/.test(w[0]||'')){ /* parse_obsolete_option: the digits, then letters */
+      var d=/^-(\d+)(.*)$/.exec(w[0]),lines=true,mul='';
+      for(var q=0;q<d[2].length;q++){
+        var l=d[2].charAt(q);
+        if(l==='c'){lines=false;mul=''}else if(/[bkm]/.test(l)){lines=false;mul=l}else if(l==='l')lines=true;
+        else if(l==='q'){o.q=true;o.v=false}else if(l==='v'){o.v=true;o.q=false}else if(l!=='z')bad('head: invalid trailing option -- '+l);
+      }
+      if(lines)o.n=num(d[1]+mul,'lines');else o.c=num(d[1]+mul,'bytes');
+      i=1;
+    }
     for(;i<w.length;i++){
       var x=w[i],m;
       if(x==='--'){F=F.concat(w.slice(i+1));break}
@@ -193,21 +202,24 @@ P.headArgs=function(w){
   o.F=F.map(function(f){return {f:f,n:o.n}});
   return o;
 };
-function headOf(L,n,c){ /* the first n lines, or c bytes (a line it cuts short still comes out as a line) */
+function headOf(L,n,c){ /* the first n lines, or c bytes: a line it cuts short is left open */
   if(c===null)return n<0?L.slice(0,Math.max(0,L.length+n)):L.slice(0,n);
   var t=L.map(function(l){return l+'\n'}).join('');
   t=c<0?t.slice(0,Math.max(0,t.length+c)):t.slice(0,c);
-  return t?t.replace(/\n$/,'').split('\n'):[];
+  var R=t?t.replace(/\n$/,'').split('\n'):[];
+  if(t&&!/\n$/.test(t))R[R.length-1]=[R[R.length-1],'',{open:true}];
+  return R;
 }
 cmd('head','print the first lines','head [ -n ] [ file ... ]','prints the first n lines, normally 10.',function(a){
   var o=P.headArgs(a),many=o.F.length>1&&!o.q||o.v,first=true;
   if(o.err&&P.profile.bash){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1);return} /* GNU's: before it reads anything */
-  if(!o.F.length&&!o.err)P.input([],function(L){P.say((o.v?['==> standard input <==']:[]).concat(headOf(L,o.n,o.c)))});
-  o.F.forEach(function(x){
+  if(!o.F.length&&!o.err){if(o.v)P.say(['==> standard input <==']);P.input([],function(L){P.say(headOf(L,o.n,o.c))})}
+  o.F.forEach(function(x){P.queue(function(){ /* one after the other: standard input from the keyboard is read in its turn */
     var std=x.f==='-'&&P.profile.bash,n=!std&&P.find(x.f);
     if(!std&&(!n||n.type==='d'||n.prot)){P.input([x.f],function(){});return} /* it says so */
-    P.input(std?[]:[x.f],function(L){P.say((many?(first?[]:['']).concat(['==> '+(std?'standard input':x.f)+' <==']):[]).concat(headOf(L,x.n,o.c)));first=false});
-  });
+    if(many)P.say((first?[]:['']).concat(['==> '+(std?'standard input':x.f)+' <==']));first=false; /* write_header: before it reads */
+    P.input(std?[]:[x.f],function(L){P.say(headOf(L,x.n,o.c))});
+  })});
   if(o.err){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1)}
 });
 cmd('tail','print the last lines','tail [ -n ] [ file ... ]','prints the last n lines, normally 10.',function(a){
@@ -326,19 +338,43 @@ builtin(['read'],function(a,raw,words){
     }
   }
   if(N.length&&!ID.test(N[0])){P.typeLine(bash?'bash: read: `'+N[0]+"': not a valid identifier":N[0]+': is not an identifier','err');P.status(1);return} /* the first name is looked at before it reads (V7's readvar, bash's read) */
-  if(S){got(S.length?S.shift():null);return} /* a pipe or < : its next line */
-  P.ask(o.p===undefined?null:o.p,got,false,!!o.s);
+  var esc=!(bash&&o.r),C=[],eof=false,more=false; /* C: the line's characters, {c, q}: q when a backslash quoted it; more: a line that goes on */
+  function next(then){if(S)then(S.length?S.shift():null);else P.ask(o.p===undefined||more?null:o.p,then,false,!!o.s)} /* a pipe or <: its next line; else the keyboard (the prompt only once) */
+  next(got);
   function got(line){
-    if(bash&&!o.r&&line!==null)line=line.replace(/\\([\s\S])/g,'$1').replace(/\\$/,''); /* without -r a backslash is dropped and the character after it kept */
-    if(bash&&!N.length){P.env.REPLY=line===null?'':line;P.status(line===null?1:0);return} /* no name: the line as it is, in REPLY */
-    if(line===null){N.forEach(function(k){if(ID.test(k))P.env[k]=''});P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
-    var rest=line.trim();
-    for(var i=0;i<N.length;i++){
-      if(!ID.test(N[i])){P.typeLine(bash?'bash: read: `'+N[i]+"': not a valid identifier":N[i]+': is not an identifier','err');P.status(1);return}
-      var m=i<N.length-1?/^(\S*)\s*([\s\S]*)$/.exec(rest):[0,rest,'']; /* the last name takes the rest of the line, its spaces and all */
-      P.env[N[i]]=m[1];rest=m[2];
+    if(line===null)eof=true;
+    else{
+      for(var k=0;k<line.length;k++){
+        var ch=line.charAt(k);
+        if(ch!=='\\'||!esc){C.push({c:ch});continue}
+        if(k===line.length-1){more=true;next(got);return} /* a backslash at the end: the line goes on in the next one (nextc's \ newline) */
+        C.push({c:line.charAt(++k),q:true});
+      }
     }
-    P.status(0);
+    if(eof&&!C.length){N.forEach(function(k){if(ID.test(k))P.env[k]=''});if(bash&&!N.length)P.env.REPLY='';P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
+    var all=C.map(function(x){return x.c}).join('');
+    if(bash&&!N.length){P.env.REPLY=all;P.status(eof?1:0);return} /* no name: the line as it is, in REPLY */
+    for(var i=0;i<N.length;i++)if(!ID.test(N[i])){P.typeLine(bash?'bash: read: `'+N[i]+"': not a valid identifier":N[i]+': is not an identifier','err');P.status(1);return}
+    var V=N.map(function(){return ''}),j=0,n=0;
+    if(bash){ /* bash: IFS white space around the words goes, and runs of it are one break; the last name takes the rest */
+      var ws=function(x){return x&&!x.q&&/[ \t\n]/.test(x.c)};
+      while(ws(C[j]))j++;
+      for(;n<N.length-1&&j<C.length;n++){
+        while(j<C.length&&!ws(C[j]))V[n]+=C[j++].c;
+        while(ws(C[j]))j++;
+      }
+      var e=C.length;while(e>j&&ws(C[e-1]))e--;
+      for(;j<e;j++)V[n]+=C[j].c;
+    }
+    else{ /* V7's readvar: while names are left, every IFS character ends a word, leading ones too; the last name takes the rest as it is */
+      var ifs=typeof P.env.IFS==='string'?P.env.IFS:' \t\n';
+      for(;j<C.length;j++){
+        if(n<N.length-1&&!C[j].q&&ifs.indexOf(C[j].c)>=0)n++;
+        else V[n]+=C[j].c;
+      }
+    }
+    N.forEach(function(k,i){P.env[k]=V[i]});
+    P.status(eof?1:0);
   }
 });
 function testExpr(w){
