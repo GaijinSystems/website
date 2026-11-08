@@ -94,15 +94,14 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
   var gnu=P.profile.bash,only=gnu&&/o/.test(fl),pat=gnu&&/F/.test(fl)?rest[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):rest[0]; /* GNU's -F: the pattern as it is; -o: just what matched */
   try{re=new RegExp(pat,/i/.test(fl)?'i':'')}catch(e){P.typeLine('grep: bad pattern '+rest[0],'err');return}
   P.input(rest.slice(1).map(P.fold),function(L){
-    var hits=[],n=0,all=new RegExp(re.source,re.flags+'g');
+    var hits=[],n=0,all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl);
     L.forEach(function(l,i){
-      if(re.test(l)===/v/.test(fl))return;
+      if(re.test(l)===v)return;
       n++;
-      var at=/n/.test(fl)?(i+1)+':':'';
+      var at=num?(i+1)+':':'';
       if(!only){hits.push(at+l);return}
-      if(/v/.test(fl))return; /* -v -o: the lines that do not match have no matching part to print */
-      for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed */
-      all.lastIndex=0;
+      if(v)return; /* -v -o: the lines that do not match have no matching part to print */
+      for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
     });
     if(/c/.test(fl))P.typeLine(String(n));else P.say(hits);
     P.status(n?0:1);
