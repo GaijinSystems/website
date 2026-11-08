@@ -594,7 +594,7 @@ V.online=function(raw){
 
 /* ---------- a line as CP's line editing reads it ---------- */
 V.ask=function(then,trap,hidden){
-  if(V.hold&&V.hold(function(){V.ask(then,trap,hidden)}))return;
+  if(V.hold(function(){V.ask(then,trap,hidden)}))return;
   P.queue(function(){V.asking=true}); /* the read is up: an attention now is the read's, not a running program's */
   P.ask('',function(l){
     V.asking=false;

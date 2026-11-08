@@ -1044,7 +1044,7 @@ cmd(['read_mail','rdm'],function(a){
       }
       else{err('read_mail: Invalid message specifier. '+x);return null}
     }
-    if(N.some(function(n){return n===undefined})||!N.length){err('read_mail: There are no messages.');return null} /* first, last or all with every message deleted: emf_et_$no_messages */
+    if(!N.length||N.indexOf(undefined)>=0){err('read_mail: There are no messages.');return null} /* first, last or all with every message deleted: emf_et_$no_messages */
     var badN=N.filter(function(n){return n<1||n>L.length||del.indexOf(n-1)>=0})[0];
     if(badN!==undefined){err('read_mail: Message '+(P.has(typed,badN)?typed[badN]:badN)+' '+(badN<1||badN>L.length?'does not exist.':'has been deleted.'));return null}
     return N;

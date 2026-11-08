@@ -1080,8 +1080,7 @@ function expand(seg){ /* each command of a pipeline, or after && or ||: longest 
   for(var i=0;i<seg.length;i++){ /* the same quotes, `commands`, comments and csh ( ) as andOr */
     var c=seg.charAt(i),two=seg.substr(i,2);
     if(c==='\\'){i++;continue}
-    if(c==='`'&&(j=seg.indexOf('`',i+1))>=0){i=j;continue}
-    if((c==="'"||c==='"')&&(j=c==='"'?closeDq(seg,i):seg.indexOf(c,i+1))>=0){i=j;continue}
+    if((j=quoteEnd(seg,i))>=0){i=j;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(seg.charAt(i-1))))break;
     if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
     else if(!depth&&(c==='|'||two==='&&')){
@@ -1142,7 +1141,7 @@ function envOf(k){
   if(k.charAt(0)==='#')return String((k==='#argv'?ARGS.slice(1).join(' ').split(/\s+/).filter(Boolean):wordsOf(k.slice(1))).length); /* csh: $#name, how many words */
   if(k==='*')return ARGS.slice(1).join(' ');
   var sub=/^(\w+)\[([^\]]*)\]$/.exec(k); /* csh: $z[2], the second word; $z[1-2], $z[2-], $z[-2], $z[-] and $z[*] all of them */
-  if(sub)return range(wordsOf(sub[1]),sub[2].indexOf('$')<0?sub[2]:varsIn(sub[2]),k).join(' ');
+  if(sub)return range(wordsOf(sub[1]),varsIn(sub[2]),k).join(' ');
   if(/^\d+$/.test(k))return ARGS[+k]||'';
   if(k==='$')return '23';
   if(k==='HOME')return ST.home;
@@ -1384,8 +1383,7 @@ function andOr(s){ /* [{op,text}], split at && and || outside quotes, `commands`
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i),two=s.substr(i,2);
     if(c==='\\'){i++;continue}
-    if(c==='`'&&(j=s.indexOf('`',i+1))>=0){i=j;continue}
-    if((c==="'"||c==='"')&&(j=c==='"'?closeDq(s,i):s.indexOf(c,i+1))>=0){i=j;continue}
+    if((j=quoteEnd(s,i))>=0){i=j;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))break;
     if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
     else if(!depth&&(two==='&&'||two==='||')){L.push({op:op,text:s.slice(start,i)});op=two;start=i+2;i++}
@@ -1577,6 +1575,12 @@ function runBlock(B){
   B.forEach(function(st){queue(function(){if(!LOOP&&!LOGOUT)runStmt(st)})});
 }
 function afterLoop(){var was=LOOP;if(was!=='exit')LOOP=null;return was}
+function round(body,again){ /* a while loop's body, then again() unless it ended in break or exit */
+  runBlock(body);
+  var stop;
+  queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
+  queue(function(){if(!stop&&!LOOP)again()});
+}
 function runStmt(st){
   if(st.k==='cmd'){splitCmds(expand(st.t)).forEach(function(x){if(x.trim())execSeg(x)});return} /* an alias may hold a ; */
   if(st.k==='for'){
@@ -1595,25 +1599,13 @@ function runStmt(st){
   if(st.k==='while'||st.k==='until'){
     (function again(){
       runBlock(st.cond);
-      queue(function(){
-        if(LOOP||(STATUS===0)!==(st.k==='while'))return;
-        runBlock(st.body);
-        var stop;
-        queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
-        queue(function(){if(!stop&&!LOOP)again()});
-      });
+      queue(function(){if(!LOOP&&(STATUS===0)===(st.k==='while'))round(st.body,again)});
     })();
     return;
   }
   if(st.k==='cwhile'){ /* the expression is worked out afresh each time round, $variables and all */
     (function again(){
-      PH.cshWhile(st.cond,function(yes){
-        if(!yes)return;
-        runBlock(st.body);
-        var stop;
-        queue(function(){var was=afterLoop();stop=was==='break'||was==='exit';if(!stop)return sleep(0)});
-        queue(function(){if(!stop&&!LOOP&&!LOGOUT)again()});
-      });
+      PH.cshWhile(st.cond,function(yes){if(yes)round(st.body,function(){if(!LOGOUT)again()})});
     })();
     return;
   }
@@ -1710,6 +1702,7 @@ function openQuote(s){ /* the quote a line leaves open, or '': a quote opens any
   }
   return '';
 }
+function quoteEnd(s,i){var c=s.charAt(i);return c==='"'?closeDq(s,i):c==="'"||c==='`'?s.indexOf(c,i+1):-1} /* where the quote or `command` at i ends, or -1 */
 function closeDq(s,i){ /* the " that closes the one at i: a `command` inside it may hold its own */
   for(var j=i+1,k;j<s.length;j++){
     if(s.charAt(j)==='\\'){j++;continue}
@@ -1732,8 +1725,7 @@ function splitCmds(s){ /* on ; outside quotes.
     }
     else if(ch==='\\')i++;
     else if(ch==='#'&&!PROFILE.dos&&(!i||/[\s;|&<>]/.test(s.charAt(i-1))))break; /* a comment: no ; in it counts */
-    else if(ch==='`'&&(j=s.indexOf('`',i+1))>=0)i=j;
-    else if((ch==="'"||ch==='"')&&(j=ch==='"'?closeDq(s,i):s.indexOf(ch,i+1))>=0)i=j;
+    else if((j=quoteEnd(s,i))>=0)i=j;
   }
   L.push(s.slice(start));
   return L;
