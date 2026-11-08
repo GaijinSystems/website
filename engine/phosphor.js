@@ -1605,7 +1605,7 @@ function runStmt(st){
   }
   if(st.k==='cwhile'){ /* the expression is worked out afresh each time round, $variables and all */
     (function again(){
-      PH.cshWhile(st.cond,function(yes){if(yes)round(st.body,function(){if(!LOGOUT)again()})});
+      PH.cshWhile(st.cond,function(yes,any,last){if(yes)round(st.body,function(){if(!LOGOUT)again()});else if(any)STATUS=last});
     })();
     return;
   }
