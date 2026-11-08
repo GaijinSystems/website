@@ -77,7 +77,7 @@ V.input=function(raw){
 P.onInterrupt=function(trap){
   release();
   var bang=V.term&&!V.term.attn?'':'!';
-  if(trap&&V.asking==='prog'){var kb=document.getElementById('kb');V.typed=!!(kb&&kb.value);V.asking=false;return bang} /* a program's read: see V.progRead */
+  if(trap&&V.asking==='prog'){V.typed=!!P.typed();V.asking=false;return bang} /* a program's read: see V.progRead */
   if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&V.execs.length){
     V.attn=true;
     P.queue(function(){if(V.attn&&V.execs.length&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
@@ -98,16 +98,20 @@ V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: 
   P.queue(k);
   return true;
 };
+V.immediate=function(w){ /* an Immediate command (w in capitals): HX, HT and RT, and the ones with nothing here to do; HT and RT stop and resume the typing */
+  if(!/^(HX|HT|RT|HO|SO|RO|TS|TE|HB)$/.test(w))return '';
+  if(w==='HT')V.ht=true;
+  if(w==='RT')V.ht=false;
+  return w;
+};
 function attention(raw){
   var L=V.lineEdit(raw),hx=false,h=V.side,on=!!(h&&h.live());
   V.attn=false;
   L.forEach(function(l){
     if(hx)return;
-    var w=up(l.trim());
+    var w=V.immediate(up(l.trim()));
     if(w==='HX')hx=true;
-    else if(w==='HT')V.ht=true;
-    else if(w==='RT')V.ht=false;
-    else if(!/^(HO|SO|RO|TS|TE|HB)$/.test(w))V.stack.push(l);
+    else if(!w)V.stack.push(l);
   });
   if(hx){V.abend();V.execs=[];V.pend=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
   if(on){release();P.queue(function(){return h.end()})}else V.carryOn();

@@ -41,9 +41,9 @@ V.read=function(then,trap,prog){
 V.progRead=function(then,imm,term){ /* term: from the terminal, not the console stack */
   var k=function(l){
     if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t,term);return}
-    var w=imm&&l!==null?up(l.trim()):'';
+    var w=imm&&l!==null?V.immediate(up(l.trim())):'';
     if(w==='HX'){V.abend();V.pend=[];then(P.INT);return}
-    if(/^(HT|RT|HO|SO|RO|TS|TE|HB)$/.test(w)){if(w==='HT')V.ht=true;if(w==='RT')V.ht=false;V.progRead(then,false,term);return}
+    if(w){V.progRead(then,false,term);return}
     then(l);
   };
   if(term)V.ask(k,true,false,true);else V.read(k,true,true);
