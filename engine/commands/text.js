@@ -143,13 +143,29 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       wd=A.shift().slice(1);if(!bsd)break;
     }
     var dirCounts=function(d){ /* V7's fopen and getc read a directory as they read any file (4.3BSD's read() and IRIX 4's EFS do too): the bytes of
-                                   its raw entries, ., .. and the rest, counted as wc.c counts bytes; 16 to an entry, V7's layout (a 2-byte inode,
-                                   ls -i's, and a 14-byte name); 4.3BSD's and IRIX's real layouts differ */
-      var c={l:0,w:0,c:0},tok=false;
-      ['.','..'].concat(Object.keys(d.kids)).forEach(function(nm){
+                                   its raw entries, ., .. and the rest, counted as wc.c counts bytes. V7: 16 to an entry (a 2-byte inode, ls -i's,
+                                   and a 14-byte name). 4.3BSD (sys/dir.h): struct direct, a 4-byte d_ino, 2-byte d_reclen and d_namlen (the VAX's
+                                   byte order), the name and a NUL padded to 4 bytes (DIRSIZ), in DIRBLKSIZ (512) blocks that no entry crosses: the
+                                   last entry of a block takes the rest of it, so the size is whole blocks. IRIX 4's EFS has its own block layout,
+                                   which no source here settles: it is given 4.3BSD's */
+      var c={l:0,w:0,c:0},tok=false,N=['.','..'].concat(Object.keys(d.kids)),R=[],used=0;
+      function put(x){c.c++;if(x>32&&x<127){if(!tok)c.w++;tok=true;return}if(x===10)c.l++;else if(x!==32&&x!==9)return;tok=false}
+      if(v7){N.forEach(function(nm){
         var ino=P.hash(nm,9973)+2,b=[ino&255,ino>>8&255];
         for(var i=0;i<14;i++)b.push(i<nm.length?nm.charCodeAt(i)&255:0);
-        b.forEach(function(x){c.c++;if(x>32&&x<127){if(!tok)c.w++;tok=true;return}if(x===10)c.l++;else if(x!==32&&x!==9)return;tok=false});
+        b.forEach(put);
+      });return c}
+      N.forEach(function(nm){
+        var nl=Math.min(nm.length,255),sz=8+((nl+1+3)&~3);
+        if(used+sz>512){R[R.length-1].len+=512-used;used=0}
+        R.push({nm:nm.slice(0,nl),len:sz});used+=sz;
+      });
+      R[R.length-1].len+=512-used;
+      R.forEach(function(r){
+        var ino=P.hash(r.nm,9973)+2,b=[ino&255,ino>>8&255,ino>>16&255,ino>>>24,r.len&255,r.len>>8,r.nm.length,0];
+        for(var i=0;i<r.nm.length;i++)b.push(r.nm.charCodeAt(i)&255);
+        while(b.length<r.len)b.push(0);
+        b.forEach(put);
       });
       return c;
     };

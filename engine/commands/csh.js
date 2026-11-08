@@ -83,7 +83,8 @@ builtin(['setenv'],function(a){
 builtin(['unsetenv'],function(a){if(!a.length){P.typeLine('unsetenv: Too few arguments.','err');return}delete P.env[a[0]]});
 builtin(['unalias'],function(a){
   if(!a.length){P.typeLine('unalias: Too few arguments.','err');return}
-  P.aliases=P.aliases.filter(function(x){return a.indexOf(x.from.join(' '))<0});
+  var R=a.map(function(x){try{return P.globRe(x)}catch(e){return null}}); /* sh.func.c's unset1: each word a pattern (Gmatch), every alias it matches goes */
+  P.aliases=P.aliases.filter(function(x){var k=x.from.join(' ');return !a.some(function(p,i){return p===k||R[i]&&R[i].test(k)})});
 });
 function closing(s,from){ /* the ) that matches, outside quotes */
   var depth=1,q=null;

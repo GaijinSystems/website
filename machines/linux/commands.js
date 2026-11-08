@@ -35,6 +35,22 @@ P.setup(function(){
     }
     bye(a,raw,w);
   };
+  var shown=P.cmds.set; /* bash's set: with no words, the variables; options are taken and change nothing here; the words after them (after --, or
+                           the first word that is no option) are the positional parameters, $1 $2 ... $# and $@, silently */
+  if(shown)P.cmds.set=function(a,raw,w){
+    var W=w.slice(1),i=0,pos=null;
+    if(!W.length){shown(a,raw,w);return}
+    for(;i<W.length;i++){
+      var x=W[i];
+      if(x==='--'){pos=W.slice(i+1);break}
+      if(x==='-'){if(i+1<W.length)pos=W.slice(i+1);break}
+      if(!/^[-+]./.test(x)){pos=W.slice(i);break}
+      var bad=x.slice(1).replace(/[abefhkmnptuvxBCEHPTo]/g,'');
+      if(bad){err('bash: set: '+x.charAt(0)+bad.charAt(0)+': invalid option');err('set: usage: set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [-] [arg ...]');P.queue(function(){P.status(2)});return}
+      if(/o/.test(x)&&i+1<W.length)i++; /* -o name */
+    }
+    if(pos)P.args([P.args()[0]||''].concat(pos));
+  };
   if(P.cmds.sh){var sh=P.cmds.sh;P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;sh(a,raw,w)};P.paths.bash='/usr/bin'} /* bash on its own: you are in one already */
   var GNU={cat:['concatenate files and print on the standard output','cat [OPTION]... [FILE]...'],pwd:['print name of current/working directory','pwd [OPTION]...'],
     echo:['display a line of text','echo [SHORT-OPTION]... [STRING]...'],mkdir:['make directories','mkdir [OPTION]... DIRECTORY...'],rm:['remove files or directories','rm [OPTION]... [FILE]...'],
@@ -100,7 +116,7 @@ function human(b,suffix){ /* 4.0K, 13K, 1.9G: GNU rounds up */
 }
 
 /* ---------- the shell ---------- */
-var BUILTIN=['alias','bg','cd','command','declare','echo','exit','export','false','fg','help','history','jobs','kill','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
+var BUILTIN=['alias','bg','cd','command','declare','echo','exit','export','false','fg','help','history','jobs','kill','let','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
 cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
   'changes the working directory to dir, or to your home directory if there is none. cd - goes back to the one before, and says where that is.',
   function(a){
@@ -211,6 +227,110 @@ cmd('readonly','','mark shell variables as unchangeable','readonly [-aAf] [name[
   if(!assigns('readonly',w.slice(1).filter(function(x){return x.charAt(0)!=='-'}),null))P.status(1);
 });
 cmd('local','','define local variables','local [option] name[=value] ...','makes a variable local to a shell function; there are none here, so it says so.',function(){err('bash: local: can only be used in a function')});
+/* bash's printf builtin (printf.def): the format's backslash escapes, %s %b %q %c %d %i %o %u %x %X %e %f %g and %%, with flags, widths and
+   precisions (* takes them from the words), the format again for words left over, and -v name to set a variable instead */
+var PFESC={a:'\x07',b:'\b',e:'\x1b',E:'\x1b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\','"':'"',"'":"'",'?':'?'};
+function pfEsc(s,b){ /* the escapes of a format, or of a %b word (b), where \0nnn is octal and \c ends all output: {s, stop} */
+  var o='',m;
+  for(var i=0;i<s.length;i++){
+    var c=s.charAt(i),n=s.charAt(i+1);
+    if(c!=='\\'||i+1>=s.length){o+=c;continue}
+    if(b&&n==='c')return {s:o,stop:true};
+    if((m=(b?/^0([0-7]{0,3})/:/^([0-7]{1,3})/).exec(s.slice(i+1)))){o+=String.fromCharCode(parseInt(m[1]||'0',8)&255);i+=m[0].length;continue}
+    if((m=/^x([0-9a-fA-F]{1,2})/.exec(s.slice(i+1)))){o+=String.fromCharCode(parseInt(m[1],16));i+=m[0].length;continue}
+    if((m=/^(u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8})/.exec(s.slice(i+1)))){o+=String.fromCodePoint(parseInt(m[1].slice(1),16));i+=m[0].length;continue}
+    if(P.has(PFESC,n)&&(!b||(n!=='"'&&n!=="'"&&n!=='?'))){o+=PFESC[n];i++;continue}
+    o+=c;
+  }
+  return {s:o,stop:false};
+}
+function pfQuote(x){ /* %q: bash's sh_backslash_quote, or $'...' for a word with a control character in it */
+  if(x==='')return "''";
+  if(/[\x00-\x1f\x7f]/.test(x))return "$'"+x.replace(/[\\']/g,'\\$&').replace(/[\x00-\x1f\x7f]/g,function(c){var k={'\x07':'a','\b':'b','\x1b':'E','\f':'f','\n':'n','\r':'r','\t':'t','\v':'v'}[c];return '\\'+(k||('00'+c.charCodeAt(0).toString(8)).slice(-3))})+"'";
+  return x.replace(/[ \t'"\\|&;()<>!{}*\[?\]^$`,]|^[~#]/g,'\\$&');
+}
+cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','printf [-v var] format [arguments]',
+  'prints its arguments as the format says: %s a string, %d a number, %x hex, %o octal, %c a character, %b a string with backslash escapes, %q quoted for the shell, %% a %; widths and precisions as in C. the format is used again while arguments are left. -v var puts the output in var.',
+  function(a,raw,w){
+    var W=w.slice(1),to=null,at=P.bashVars.at();
+    if(W[0]==='-v'){if(W.length<2){err(at+'printf: -v: option requires an argument');err('printf: usage: printf [-v var] format [arguments]');P.queue(function(){P.status(2)});return}to=W[1];W=W.slice(2)}
+    if(W[0]==='--')W=W.slice(1);
+    if(!W.length){err('printf: usage: printf [-v var] format [arguments]');P.queue(function(){P.status(2)});return}
+    var F=W[0],A=W.slice(1),k=0,out='',bad=false,stop=false;
+    function arg(){return k<A.length?A[k++]:undefined}
+    function num(x,conv){ /* an integer word: 'c is its character's code; 0x and 0 prefixes; a word that is not all number is an error, with the part that was */
+      if(x===undefined||x==='')return BigInt(0);
+      if(/^['"]/.test(x))return BigInt(x.length>1?x.codePointAt(1):0);
+      var m=/^\s*([-+]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)/.exec(x),v=BigInt(0);
+      if(m){var d=m[2];v=/^0[xX]/.test(d)?BigInt(d):/^0./.test(d)?BigInt('0o'+d.slice(1)):BigInt(d);if(m[1]==='-')v=-v}
+      if(!m||m[0].length<x.length){flush();err(at+'printf: '+x+': invalid number');bad=true}
+      return v;
+    }
+    function flo(x){
+      if(x===undefined||x==='')return 0;
+      if(/^['"]/.test(x))return x.length>1?x.codePointAt(1):0;
+      var m=/^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?|^\s*[-+]?(inf|nan)/i.exec(x),v=m?parseFloat(m[0]):0;
+      if(!m||m[0].length<x.length){flush();err(at+'printf: '+x+': invalid number');bad=true}
+      return v;
+    }
+    function flush(){ /* what it has made so far goes out before an error: bash writes as it goes */
+      if(to!==null||!out)return;
+      var L=out.split('\n'),last=L.pop();L.forEach(function(l){P.typeLine(l)});if(last)P.typeLine(last,null,null,{open:true});out='';
+    }
+    function pad(s,fl,wd){if(wd===null||s.length>=wd)return s;return fl.indexOf('-')>=0?s+' '.repeat(wd-s.length):' '.repeat(wd-s.length)+s}
+    function intOut(v,c,fl,wd,pr){
+      var neg=false,s;
+      if(c==='d'||c==='i'){neg=v<BigInt(0);s=(neg?-v:v).toString()}
+      else{s=BigInt.asUintN(64,v).toString(c==='o'?8:c==='u'?10:16);if(c==='X')s=s.toUpperCase()}
+      if(pr!==null){if(!pr&&v===BigInt(0))s='';s=s.padStart(pr,'0')}
+      var pre='';
+      if(fl.indexOf('#')>=0){if(c==='o'&&s.charAt(0)!=='0')s='0'+s;else if((c==='x'||c==='X')&&v!==BigInt(0))pre=c==='x'?'0x':'0X'}
+      if(c==='d'||c==='i')pre=neg?'-':fl.indexOf('+')>=0?'+':fl.indexOf(' ')>=0?' ':'';
+      if(fl.indexOf('0')>=0&&fl.indexOf('-')<0&&pr===null&&wd!==null)return pre+s.padStart(wd-pre.length,'0');
+      return pad(pre+s,fl,wd);
+    }
+    function floOut(v,c,fl,wd,pr){
+      var p=pr===null?6:pr,lc=c.toLowerCase(),s;
+      function ex(t){return t.replace(/e([+-])(\d)$/,'e$10$2')}
+      if(!isFinite(v))s=isNaN(v)?'nan':(v<0?'-':'')+'inf';
+      else if(lc==='f')s=Math.abs(v).toFixed(p);
+      else if(lc==='e')s=ex(Math.abs(v).toExponential(p));
+      else{
+        var P0=p||1,X=v?Math.floor(Math.log10(Math.abs(v))):0;
+        if(v&&Number(Math.abs(v).toExponential(P0-1).split('e')[1])!==X)X++;
+        s=P0>X&&X>=-4?Math.abs(v).toFixed(Math.max(0,P0-1-X)):ex(Math.abs(v).toExponential(P0-1));
+        if(fl.indexOf('#')<0)s=s.replace(/\.?0+(e|$)/,'$1').replace(/^(\d+)\.(e|$)/,'$1$2');
+      }
+      if(c!==lc)s=s.toUpperCase();
+      var pre=v<0||Object.is(v,-0)?'-':fl.indexOf('+')>=0?'+':fl.indexOf(' ')>=0?' ':'';
+      if(fl.indexOf('0')>=0&&fl.indexOf('-')<0&&wd!==null&&isFinite(v))return pre+s.padStart(wd-pre.length,'0');
+      return pad(pre+s,fl,wd);
+    }
+    do{
+      var took=false;
+      for(var i=0;i<F.length&&!stop;i++){
+        var c=F.charAt(i);
+        if(c==='\\'){var e=/^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)?/.exec(F.slice(i))[0];out+=pfEsc(e,false).s;i+=e.length-1;continue}
+        if(c!=='%'){out+=c;continue}
+        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([a-zA-Z%])?/.exec(F.slice(i)),fl=m[1],wd=m[2]===undefined?null:m[2],pr=m[3]===undefined?null:m[3],cv=m[4];
+        if(!cv||!/[sbqcdiouxXeEfFgG%]/.test(cv)){flush();err(at+"printf: `"+F.slice(i,i+m[0].length)+"': missing format character");P.queue(function(){P.status(1)});stop=true;bad=null;break}
+        i+=m[0].length-1;
+        if(cv==='%'){out+='%';continue}
+        if(wd==='*'){took=true;wd=Number(num(arg()));if(wd<0){fl+='-';wd=-wd}}else if(wd!==null)wd=+wd;
+        if(pr==='*'){took=true;pr=Number(num(arg()));if(pr<0)pr=null}else if(pr!==null)pr=+pr||0;
+        var x=arg();if(x!==undefined)took=true;
+        if(cv==='s'){var t=x===undefined?'':x;out+=pad(pr!==null?t.slice(0,pr):t,fl,wd)}
+        else if(cv==='b'){var r=pfEsc(x===undefined?'':x,true);out+=pad(pr!==null?r.s.slice(0,pr):r.s,fl,wd);if(r.stop)stop=true}
+        else if(cv==='q'){var q=pfQuote(x===undefined?'':x);out+=pad(pr!==null?q.slice(0,pr):q,fl,wd)}
+        else if(cv==='c'){out+=pad(x===undefined?'':x.charAt(0),fl,wd)}
+        else if(/[diouxX]/.test(cv))out+=intOut(num(x),cv,fl,wd,pr);
+        else out+=floOut(flo(x),cv,fl,wd,pr);
+      }
+    }while(!stop&&took&&k<A.length);
+    if(to!==null){if(!P.bashVars.asg(to+'='+out)){err(at+'printf: `'+to+"': not a valid identifier");P.queue(function(){P.status(2)})}}
+    else flush();
+    if(bad)P.queue(function(){P.status(1)});
+  });
 cmd('unset','','unset values and attributes of shell variables and functions','unset [-f] [-v] [-n] [name ...]','removes each variable named, or one element of an array: unset \'x[1]\'.',function(a,raw,w){
   var bad=false;
   w.slice(1).filter(function(x){return !/^-[fvn]+$/.test(x)}).forEach(function(k){if(!P.bashVars.unset(k)){err("bash: unset: `"+k+"': not a valid identifier");bad=true}});

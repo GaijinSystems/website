@@ -37,7 +37,7 @@ V.read=function(then,trap,prog){
    unit exception CP gives for it, DMSCIT reissues the read ("user cancelled input line"); so a line half typed is
    neither kept nor typed again. At an empty read the attention is CMS's own (imm): the line typed after it may be an
    Immediate command, HX ending every EXEC (CMS, no ready message), HT and RT stopping and resuming the typing, HO, SO,
-   RO, TS, TE and HB with nothing here to do, and any other line goes to the read. A cancelled line leaves the read as
+   RO and HB with nothing here to do, and any other line goes to the read. A cancelled line leaves the read as
    it was. VM/370 Release 6 source, DMKCNS and DMSCIT; Terminal User's Guide (GC20-1810), Figure 6, Attention Handling
    in VM Mode. The read is the console stack's first line if there is one (DMSCRD), so while a command runs it waits
    its turn in V.pend behind what the command types: an attention before it is up leaves it to come, and the line

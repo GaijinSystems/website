@@ -1,5 +1,5 @@
 /* PHOSPHOR-9 terminal: machine "v7-1979" and "bsd-1987", the quiz.k files that quiz reads, from V7, unchanged; 4.3BSD
-   shipped the same files. Each quiz.js adds its own index, which names them where that system keeps them. Some of the data files quote
+   shipped the same files. quiz.js adds each system's index, which names them where that system keeps them. Some of the data files quote
    poems and the like, which belong to their authors. The source is under this notice:
 
 Copyright(C) Caldera International Inc. 2001-2002. All rights reserved.
