@@ -45,7 +45,7 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
     }
     if(rest.indexOf('=')<0&&rest.split(/\s+/).indexOf('-h')>=0){P.typeLine('usage: '+P.man.alias.syn);return}
     var nm,to;
-    if((m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()}
+    if(!P.profile.csh&&(m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()} /* csh's alias is always name, then the words: an = in them is theirs */
     else{
       var key=P.fold(rest).split(/\s+/).join(' '),hit=P.aliases.filter(function(x){return x.from.join(' ')===key});
       if(hit.length){P.typeLine(aliasRow(hit[0]));return}

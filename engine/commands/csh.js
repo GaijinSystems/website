@@ -191,14 +191,14 @@ var NEED={};
 function inner(L,brace){return function(at,end){return brace(at,L.R.slice(at,end).join(' '))}} /* cexp's brace: the words as written */
 function braces(work,done,reset){ /* work(brace) works something out; a { command } in it is run first, as its own process, and the
                                      whole worked out again with its status: each runs once, in order, and one skipped by && or || never */
-  var ran={},any=false,st0=P.lastStatus(); /* $status as it was before: csh expands the variables once */
+  var ran={},any=false,last=0,st0=P.lastStatus(); /* $status as it was before: csh expands the variables once */
   (function again(){
     var need=null,r;
     try{r=work(function(at,cmd){if(P.has(ran,at))return ran[at];need={at:at,cmd:cmd};throw NEED})}
-    catch(e){if(e!==NEED){done(e,null,any);return}}
-    if(!need){done(null,r,any);return}
+    catch(e){if(e!==NEED){done(e,null,any,last);return}}
+    if(!need){done(null,r,any,last);return}
     any=true;
-    P.forked(need.cmd,function(st){ran[need.at]=st;P.status(st0);if(reset)reset();again()});
+    P.forked(need.cmd,function(st){ran[need.at]=last=st;P.status(st0);if(reset)reset();again()});
   })();
 }
 function test(t,as,then){ /* then(true or false) for the expression in t, or nothing once an error has been said */
@@ -206,16 +206,16 @@ function test(t,as,then){ /* then(true or false) for the expression in t, or not
     var L=lex(t),r=cexp(L.W,0,inner(L,brace));
     if(r.k<L.W.length)throw {csh:'@: Expression syntax'};
     return r.n;
-  },function(e,n,any){if(e)said(e,as);else then(!!n,any)});
+  },function(e,n,any,last){if(e)said(e,as);else then(!!n,any,last)});
 }
 P.cshWhile=function(t,then){test(t,'while',then)}; /* while ( expr ): the loop asks before each time round */
 builtin(['if'],function(){ /* the one-line form: if (expr) command */
   var s=P.source(),m=/^\s*if\s*\(/.exec(s),end=m?closing(s,m[0].length):-1,cmd=end<0?'':s.slice(end+1).trim();
   if(end<0||/^then\b/.test(cmd)){P.typeLine('if: Expression syntax.','err');return}
   P.status(P.lastStatus()); /* if ($status != 0) asks about the command before */
-  test(s.slice(m[0].length-1,end+1),'if',function(yes,any){
+  test(s.slice(m[0].length-1,end+1),'if',function(yes,any,last){
     if(yes&&cmd)P.exec(cmd); /* a command like any other: exit here logs you out. $status in it is still the one from before */
-    else if(!any)P.status(0);
+    else if(!any)P.status(0);else P.status(last); /* a { } that ran leaves its own status */
   });
 });
 builtin(['@'],function(){ /* @ name = expr, @ name[n] = expr, @ name op= expr, @ name++ (4.3BSD's dolet); @ alone lists the variables as set does */
@@ -265,7 +265,7 @@ builtin(['@'],function(){ /* @ name = expr, @ name[n] = expr, @ name op= expr, @
       if(sub===null){P.shvars[name]=x.s;delete P.shwords[name]}
       else{var w=words(name,sub);w[sub-1]=x.s;store(name,w)} /* asx */
     }while((p=unq(W[v++]))!==undefined);
-  },function(e,r,any){if(e)said(e);else if(!any)P.status(0)},function(){restore(P.shvars,keepV);restore(P.shwords,keepW)});
+  },function(e,r,any,last){if(e)said(e);else if(!any)P.status(0);else P.status(last)},function(){restore(P.shvars,keepV);restore(P.shwords,keepW)});
 });
 builtin(['rehash','jobs','nice','sync'],function(){});
 builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});
