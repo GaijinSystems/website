@@ -244,7 +244,7 @@ builtin(['read'],function(a,raw,words){
   if(S){got(S.length?S.shift():null);return} /* a pipe or < : its next line */
   P.ask(null,got);
   function got(line){
-    if(line===null){P.status(1);return}
+    if(line===null){N.forEach(function(k){P.env[k]=''});P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
     var parts=line.trim().split(/\s+/);
     N.forEach(function(k,i){P.env[k]=i===N.length-1?parts.slice(i).join(' '):parts[i]||''});
     P.status(0);

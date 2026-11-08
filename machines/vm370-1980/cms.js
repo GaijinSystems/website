@@ -29,7 +29,7 @@ function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.
 function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
 V.rcs=rcs;
 V.ready=function(rc){
-  V.ht=false; /* HT holds only until the ready message */
+  V.ht=false;V.busy=false; /* HT holds only until the ready message */
   if(V.abended){V.abended=false;P.typeLine('CMS');return} /* after an abend or HX: CMS, and no ready message */
   var c=cost(),n=P.now();
   if(V.opt.rdymsg==='SMSG'){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
@@ -41,7 +41,7 @@ V.input=function(raw){
   var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
   V.asking=false;
   if(V.attn&&V.state!=='cms')V.attn=false;
-  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.pend=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
+  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.pend=[];V.abended=false;V.busy=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -66,31 +66,33 @@ V.input=function(raw){
   }
   V.lineEdit(raw).forEach(function(l){P.queue(function(){logical(l)})});
 };
-/* attention (^C): what is running stops, and what it left in the console stack goes too, so none of it runs later as commands.
-   But an EXEC running (not the editor's, not at a read) takes the attention as CMS does, a virtual machine interruption:
-   the terminal takes a line, and with HX it ends; with anything else it carries on (CMS User's Guide, GC20-1819,
-   Section 2: Virtual Machine Interruptions; Command and Macro Reference, GC20-1818: Immediate Commands). While that line
-   is read the EXEC goes on, typing above it, as Release 6 does under Hercules; a read of its own waits for the line */
+/* attention (^C) to a CMS command or an EXEC running (not the editor's, not at a read): CMS takes it as a virtual machine
+   interruption, and DMSCIT reads a line from the terminal (its attention read): HX ends the command, HT stops the typing,
+   and any other line goes to the console stack, for the command's next read or for CMS once it is done; meanwhile the
+   command carries on (CMS User's Guide, GC20-1819, Section 2: Virtual Machine Interruptions; Command and Macro
+   Reference, GC20-1818: Immediate Commands). While that line is read what it types goes on above it, as Release 6 does
+   under Hercules; a read of its own waits for the line. What a command types goes through V.pend (exec.js), so the
+   attention loses none of it. Elsewhere (CP, the editor typing) what is running stops, and the console stack goes too */
 /* At every attention CP types an exclamation point where the carriage is and starts a new line, or nothing with TERMINAL
    ATTN OFF (DMKCNS: "restore, exclamation, idles, CR, idles", the exclamation alone for a teletype); a line being typed
    in is cancelled, and the read is up again (DMSCIT reissues it) */
 P.onInterrupt=function(trap){
   release();
-  var bang=V.term&&!V.term.attn?'':'!';
+  var bang=V.term&&!V.term.attn?{says:'',same:true}:'!'; /* ATTN OFF: DMKCNS's CNSEXNO sends idles only, no new line, so the read goes on in the same line */
   if(trap&&V.asking==='prog'){V.typed=!!P.typed();V.asking=false;return bang} /* a program's read: see V.progRead */
-  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&V.execs.length){
+  if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&(V.execs.length||V.busy)){
     V.attn=true;
-    P.queue(function(){if(V.attn&&V.execs.length&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
+    P.queue(function(){if(V.attn&&(V.execs.length||V.pend.length)&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
     return bang;
   }
   V.asking=false;
   if(!V.attn){V.stack=[];V.pend=[]}
   return bang;
 };
-/* the line typed after an attention to a running EXEC. HX ends every EXEC, and CMS answers CMS; HT stops the typing until
-   the ready message or RT; HO, SO, RO, TS, TE and HB are Immediate commands too, with nothing here to do; anything else,
-   a null line too, is stacked for CMS to read when the EXEC is done (or for its &READ), and the EXEC carries on.
-   #CP lines are CP's and leave the attention's read as it was */
+/* the line typed after an attention to a running command or EXEC. HX ends it and every EXEC, and CMS answers CMS; HT
+   stops the typing until the ready message or RT; HO, SO, RO, TS, TE and HB are Immediate commands too, with nothing
+   here to do; anything else, a null line too, is stacked for CMS to read when the command is done (or for its read),
+   and it carries on. #CP lines are CP's and leave the attention's read as it was */
 function release(){if(V.attnWait){var r=V.attnWait;V.attnWait=null;r()}} /* what waited for the attention's line goes on */
 V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: k when that line is in */
   if(!V.attn||!P.asideNow())return false;
@@ -135,8 +137,9 @@ function cmsLine(l){
     if(!(/^ACC/.test(W[0]||'')&&W.indexOf('NOPROF')>0)&&V.find('PROFILE','EXEC','*'))P.queue(function(){V.exec(['PROFILE'],{profile:true})});
   }
   var quiet=false;
-  if(l.trim())P.queue(function(){V.rc=V.command(l,{typed:true});if(V.rc===-3&&V.unknown)quiet=true;V.unknown=false});
+  if(l.trim())P.queue(function(){V.busy=true;V.rc=V.command(l,{typed:true});if(V.rc===-3&&V.unknown)quiet=true;V.unknown=false});
   P.queue(function(){
+    V.busy=false;
     if(V.state!=='cms'||V.cpMode)return;
     if(!quiet)V.ready(V.rc);
     if(V.stack.length)cmsLine(V.stack.shift()); /* what an EXEC left in the console stack: CMS reads it as its next commands */
@@ -165,7 +168,11 @@ V.cmsName=function(w){ /* the command a word names: a user synonym, the name its
   if(!V.opt.abbrev||!V.synStd)return null;
   return V.lookup(T,w);
 };
-V.command=function(l,ctx){ /* one CMS command line; its return code */
+V.command=function(l,ctx){ /* one CMS command line; its return code. What it types goes through V.pend (see P.typeLine below) */
+  var was=V.cap;V.cap=true;
+  try{return command(l,ctx)}finally{V.cap=was}
+};
+function command(l,ctx){
   var W=V.words(l),w=W[0]||'';
   if(!w)return 0;
   ctx=ctx||{};
@@ -182,7 +189,7 @@ V.command=function(l,ctx){ /* one CMS command line; its return code */
   if(ctx.typed)osWords(w); /* and a word from across the room after it */
   V.unknown=!!ctx.typed; /* at the terminal, no ready message follows */
   return -3;
-};
+}
 /* OS/VS words typed at CMS, which knew none of them: what a VM shop said to the batch side across the room */
 var OSV=[[/^\/\//,['JCL IS FOR OS. CMS TAKES YOU AT YOUR WORD.']],[/^TSO$/,['TSO IS ON THE OTHER MACHINE. HERE EVERYONE HAS A 370 OF THEIR OWN.']],
   [/^IEFBR14$/,['IEFBR14 DOES NOTHING, AND NEEDS A JOB CARD TO DO IT.','CMS DOES NOTHING TOO, AND NEEDS NO CARD FOR IT.']]];
@@ -664,8 +671,8 @@ C.FORMAT=function(a,o){
       if(x===null||x===P.INT)return;
       var label=up(x.trim()).slice(0,6);
       out('DMSFOR733I FORMATTING DISK \''+m+'\'');
-      P.pause(1500);
-      P.queue(function(){
+      V.emit(function(){P.pause(1500)}); /* through V.pend, so an attention does not stop it */
+      V.emit(function(){
         d.disk.files={};d.disk.unformatted=false;d.disk.label=label;
         if(d.disk.keep)V.formatGuest();
         done();
@@ -761,10 +768,19 @@ P.setup(function(){
   });
   P.fallback=function(word,raw){P.status(0);V.input(raw);return true};
   P.blank=function(){V.input('')}; /* an empty line: CMS answers it, and the first one after IPL runs the profile */
-  /* HT: what is typed from here to the ready message is not, but for error messages (Command and Macro Reference, HT) */
+  /* HT: what is typed from here to the ready message is not, but for error messages (Command and Macro Reference, HT).
+     While a CMS command runs (V.cap) its lines go through V.pend, a line at a time, as an EXEC's do (exec.js) */
   var tl=P.typeLine,sy=P.say;
-  P.typeLine=function(t,cls){if(V.ht&&cls!=='err')return;return tl.apply(this,arguments)};
-  P.say=function(L){return sy.call(this,V.ht?L.filter(function(l){return P.lineOf(l)[1]==='err'}):L)};
+  P.typeLine=function(t,cls){
+    var a=arguments,self=this;
+    if(V.cap&&!V.inPend){V.emit(function(){P.typeLine.apply(self,a)});return}
+    if(V.ht&&cls!=='err')return;
+    return tl.apply(this,arguments);
+  };
+  P.say=function(L){
+    if(V.cap&&!V.inPend){L.forEach(function(l){var x=P.lineOf(l);P.typeLine(x[0],x[1],null,x[2])});return}
+    return sy.call(this,V.ht?L.filter(function(l){return P.lineOf(l)[1]==='err'}):L);
+  };
   /* the visitor's first connection: LOGON GUEST, typed for them, then CMS and the profile */
   V.state='online';
   var n=P.now();
