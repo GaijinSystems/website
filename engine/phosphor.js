@@ -1374,7 +1374,7 @@ function substitute(s,then,done,dq){ /* run every `command`, left to right, put 
   if(!m){then(done+s);return}
   var sink=[],keepSink,keepIn,own=false,before=done+s.slice(0,m.a);
   queue(function(){if(SUB>=32){noFork();return}keepSink=SINK;keepIn=STDIN;SINK=sink;STDIN=null;SUB++;own=true;execLine(m.cmd)});
-  queue(function(){SINK=keepSink;STDIN=keepIn;if(own)SUB--},true);
+  queue(function(){if(!own)return;SINK=keepSink;STDIN=keepIn;SUB--},true);
   /* x=`command`, and csh's set x = `command`, are one word whatever it prints */
   queue(function(){substitute(s.slice(m.b+1),then,before+SEP+guard(sink.join(' '),/(^|\s)[A-Za-z_]\w*=$/.test(before)||PROFILE.csh&&/(^|&&|\|\||\))\s*set\s[^&|]*=\s*$/.test(before.replace(/"[^"]*"|'[^']*'/g,'q'))),m.dq)});
 }
@@ -1663,7 +1663,7 @@ function keep(){ /* a program's child shell starts here: what the shell does to 
     PH.aliases=al;
   }
 }
-function noFork(){typeLine(PROFILE.csh?'No more processes.':PROFILE.bash?'bash: fork: retry: Resource temporarily unavailable':'fork failed - too many processes','err')} /* past 32 processes deep: a command that calls itself */
+function noFork(){typeLine(PROFILE.csh?'No more processes.':PROFILE.bash?'bash: fork: Resource temporarily unavailable':'fork failed - too many processes','err')} /* past 32 processes deep: a command that calls itself */
 function forked(cmd,then){ /* csh's { command }: run as its own process, then(its status) */
   var back=null,st;
   queue(function(){if(SUB>=32){noFork();st=1;return}back=keep();SUB++;STATUS=0;execLine(cmd)});
