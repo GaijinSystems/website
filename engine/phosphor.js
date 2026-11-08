@@ -333,7 +333,7 @@ function sleep(ms){return new Promise(function(r){
 var TTY={}; /* thrown by what wants the terminal (a read, the full screen) in a background job: the job stops there */
 function queue(fn,always){
   var g=GEN,side=ASIDE,job=side&&side.job,oops=function(e){console.error(e)},step=function(){
-    if(job?job.dead:g!==GEN&&!always||side&&side.stopped&&!always)return; /* a job goes on after ^C, until it is killed; then none of its steps run */
+    if(job?job.dead&&always!==2:g!==GEN&&!always||side&&side.stopped&&!always)return; /* a job goes on after ^C, until it is killed; then none of its steps run but a redirection's write */
     if(job&&job.state==='Stopped')return stopWait(job).then(step); /* kill -STOP: its next step waits for fg, bg or kill -CONT */
     var sc={p:null};
     function once(){ /* a job's step runs with the job's own directory, variables, output and status; once it stops for the terminal, again when it is resumed */
@@ -1373,7 +1373,7 @@ function runPipeline(stages){
       if(st.err!==null&&errs)writeFile(st.err,errs,true);
       pipe=epipe||(st.out!==null||st.glass||st.closed?[]:sink);
       SINK=keepSink;STDIN=keepIn;ERRSINK=keepErr;
-    },true);
+    },2); /* 2: in a killed job too, so that what it wrote stays in the file */
   });
 }
 function backtick(s,dq,done){ /* the first `command` outside single quotes. dq: starting inside "; done: what s carries straight on from, which decides a # at its very start */
