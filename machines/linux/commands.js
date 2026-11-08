@@ -295,8 +295,9 @@ cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','l
 /* ---------- cat, rm and mkdir, with GNU's messages; the work is the engine's ---------- */
 function why(n){return !n?'No such file or directory':n.type==='d'?'Is a directory':'Permission denied'}
 cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [OPTION]... [FILE]...','prints each file in turn, or its standard input. -n numbers the lines.',function(a){
-  var o=opts(a),num=o.has('n','number'),k=0,bad=false;
-  function put(L){var R=num?L.map(function(l){return String(++k).padStart(6)+'\t'+l}):L;R.open=L.open;P.say(R)} /* a last line with no newline stays open */
+  var o=opts(a),num=o.has('n','number'),k=0,bad=false,cont=false;
+  function put(L){ /* a last line with no newline stays open, and the next file goes on in it without a number of its own */
+    var R=num?L.map(function(l,i){return i||!cont?String(++k).padStart(6)+'\t'+l:l}):L;R.open=L.open;if(L.length)cont=!!L.open;P.say(R)}
   if(!o.ops.length){P.input([],put);return}
   var kb=false; /* once - has read the keyboard, the rest waits for it */
   o.ops.forEach(function(x){

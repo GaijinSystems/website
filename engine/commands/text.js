@@ -93,19 +93,35 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
   if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
   var gnu=P.profile.bash,only=gnu&&/o/.test(fl),pat=gnu&&/F/.test(fl)?rest[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):rest[0]; /* GNU's -F: the pattern as it is; -o: just what matched */
   try{re=new RegExp(pat,/i/.test(fl)?'i':'')}catch(e){P.typeLine('grep: bad pattern '+rest[0],'err');return}
-  P.input(rest.slice(1).map(P.fold),function(L){
-    var hits=[],n=0,all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl);
-    L.forEach(function(l,i){
-      if(re.test(l)===v)return;
+  /* the files in turn, each line with its file's name when there are more than one (and no -h). A file it cannot open: V7's grep
+     says so and stops there (status 2); 4.3BSD's, System V's (IRIX) and GNU's go on, and end with status 2 all the same. -s: V7's
+     and 4.3BSD's print nothing, for the status alone; System V's and GNU's leave out the messages about files. GNU's -q prints
+     nothing and stops at the first match, which makes the status 0 whatever went wrong */
+  var v7=!gnu&&!P.profile.csh,sys5=!gnu&&P.profile.csh&&!P.profile.perror,S=/s/.test(fl);
+  var quiet=gnu?/q/.test(fl):S&&!sys5,hush=S&&(gnu||sys5),F=rest.slice(1),many=F.length>1&&!((gnu||P.profile.perror)&&/h/.test(fl)),total=0,bad=false;
+  function scan(L,name){
+    var hits=[],n=0,all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl),pre=name!==undefined&&many?name+':':'';
+    for(var i=0;i<L.length;i++){
+      var l=L[i];
+      if(re.test(l)===v)continue;
       n++;
-      var at=num?(i+1)+':':'';
-      if(!only){hits.push(at+l);return}
-      if(v)return; /* -v -o: the lines that do not match have no matching part to print */
+      if(quiet&&gnu)break;
+      var at=pre+(num?(i+1)+':':'');
+      if(!only){hits.push(at+l);continue}
+      if(v)continue; /* -v -o: the lines that do not match have no matching part to print */
       for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
-    });
-    if(/c/.test(fl))P.typeLine(String(n));else P.say(hits);
-    P.status(n?0:1);
-  });
+    }
+    total+=n;
+    if(!quiet){if(/c/.test(fl))P.typeLine(pre+n);else P.say(hits)}
+    return n;
+  }
+  if(!F.length){P.input([],function(L){P.status(scan(L)?0:1)});return}
+  for(var k=0;k<F.length;k++){
+    var x=F[k],nd=P.find(P.fold(x));
+    if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([P.fold(x)],function(){});bad=true;if(v7)break;continue}
+    if(scan(P.text(nd),x)&&quiet&&gnu)break;
+  }
+  P.queue(function(){P.status(bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
   var fl=flags(a),F=operands(a),o=F[0],want=[!fl||/l/.test(fl),!fl||/w/.test(fl),!fl||/c/.test(fl)];
@@ -114,11 +130,26 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
     L.forEach(function(l){var t=l.trim();if(t)words+=t.split(/\s+/).length;chars+=l.length+1});
     return [L.length-x,words,chars-x].filter(function(n,i){return want[i]});
   }
-  if(!P.profile.bash){
-    P.input(F,function(L){
-      if(F.length&&!P.find(o))return; /* it said so, and moves on */
-      P.typeLine(counts(L).map(function(n){return String(n).padStart(7)}).join('')+(o?' '+o:''));
-    });
+  if(!P.profile.bash){ /* wc.c of V7, 4.3BSD and System V: a row for each file it could open, in the order of the option's letters, and a
+                          total after more than one name. The options: V7 and System V take only the first word, 4.3BSD each in turn,
+                          the last winning. Columns: V7 "%7ld", "%7ld " and "%7ld" for l, w and c; 4.3BSD " %7ld"; System V (IRIX) "%7ld" */
+    var bsd=P.profile.perror,v7=!bsd&&!P.profile.csh,wd='lwc',A=a.slice(),T={l:0,w:0,c:0};
+    while(A.length&&A[0].charAt(0)==='-'){
+      if(bsd&&!/^[lwc]/.test(A[0].slice(1))){P.typeLine('Usage: wc [-lwc] [files]','err');P.status(1);return}
+      wd=A.shift().slice(1);if(!bsd)break;
+    }
+    want=[1,1,1];
+    var col=function(k,n){return bsd?' '+String(n).padStart(7):String(n).padStart(7)+(v7&&k==='w'?' ':'')};
+    var put=function(c,name){var o='';for(var i=0;i<wd.length;i++){var k=wd.charAt(i);if(c[k]!==undefined)o+=col(k,c[k])}P.typeLine(o+(name!==undefined?' '+name:''))};
+    var tally=function(L){var x=counts(L);return {l:x[0],w:x[1],c:x[2]}};
+    if(!A.length){P.input([],function(L){put(tally(L))});return}
+    A.forEach(function(x){P.queue(function(){
+      var n=P.find(x),c;
+      if(!n||n.prot){P.input([x],function(){});return} /* it says it cannot open it, and goes on with the next */
+      if(n.type==='d'){P.input([x],function(){});c={l:0,w:0,c:0}}else c=tally(P.text(n));
+      put(c,x);T.l+=c.l;T.w+=c.w;T.c+=c.c;
+    })});
+    if(A.length>1)P.queue(function(){put(T,'total')});
     return;
   }
   /* GNU wc: a row for each file, and a total for more than one. The width (compute_number_width) is 1 for one count of one file,
@@ -362,8 +393,9 @@ builtin(['read'],function(a,raw,words){
     }
   }
   if(N.length&&!ID.test(N[0])){P.typeLine(bash?'bash: read: `'+N[0]+"': not a valid identifier":N[0]+': is not an identifier','err');P.status(1);return} /* the first name is looked at before it reads (V7's readvar, bash's read) */
-  var esc=!(bash&&o.r),C=[],eof=false,more=false; /* C: the line's characters, {c, q}: q when a backslash quoted it; more: a line that goes on */
-  function next(then){if(S)then(S.length?S.shift():null);else P.ask(o.p===undefined||more?null:o.p,then,false,!!o.s)} /* a pipe or <: its next line; else the keyboard (the prompt only once) */
+  var esc=!(bash&&o.r),C=[],eof=false,more=false,cut=false; /* C: the line's characters, {c, q}: q when a backslash quoted it; more: a line that goes on */
+  function next(then){ /* cut: the input ended in the middle of this line, with no newline: it is read, and read still says end of input (bash, V7's readvar) */
+    if(S){var l=S.length?S.shift():null;if(l!==null&&!S.length&&S.open){S.open=false;cut=true}then(l)}else P.ask(o.p===undefined||more?null:o.p,then,false,!!o.s)} /* a pipe or <: its next line; else the keyboard (the prompt only once) */
   next(got);
   function got(line){
     if(line===null)eof=true;
@@ -374,6 +406,7 @@ builtin(['read'],function(a,raw,words){
         if(k===line.length-1){more=true;next(got);return} /* a backslash at the end: the line goes on in the next one (nextc's \ newline) */
         C.push({c:line.charAt(++k),q:true});
       }
+      if(cut)eof=true;
     }
     if(eof&&!C.length){N.forEach(function(k){if(ID.test(k))P.env[k]=''});if(bash&&!N.length)P.env.REPLY='';P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
     var all=C.map(function(x){return x.c}).join('');
