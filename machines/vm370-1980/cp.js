@@ -600,7 +600,9 @@ V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an a
   P.ask('',function(l){
     V.asking=false;
     if(l===null||l===P.INT){then(l);return}
-    then(V.lineEdit(l,true)[0]);
+    var L=V.lineEdit(l,!prog);
+    if(prog)V.stack=L.slice(1).concat(V.stack); /* a program's read takes the first logical line; the rest are stacked (DMSCRD) */
+    then(L[0]);
   },trap,hidden);
 };
 V.lineEdit=function(s,one){ /* logical lines: the line end splits them, the character delete takes one back, the line delete

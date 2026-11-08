@@ -23,7 +23,8 @@ V.execs=[]; /* the EXECs running, the outermost first */
 V.globals=[1,1,1,1,1,1,1,1,1,1];
 
 /* a line from the console stack if there is one, else from the terminal. A stack that keeps filling itself (EDIT's
-   STACK reading STACK back) lets the terminal breathe every few hundred lines, so ^C can stop it */
+   STACK reading STACK back) lets the terminal breathe every few hundred lines, so an attention (^C) can stop it and HX
+   end it */
 var fromStack=0;
 V.read=function(then,trap,prog){
   if(V.hold(function(){V.read(then,trap,prog)}))return;
@@ -33,21 +34,25 @@ V.read=function(then,trap,prog){
 };
 /* a CMS program's read: &READ, and FORMAT's and SORT's questions. An attention (^C) while it is up does not end the
    program. CP types its exclamation point (cms.js), the line typed so far is cancelled, and CMS reads again: on the
-   unit exception CP gives for it, DMSCIT clears the buffer and reissues the read ("user cancelled input line"); so a
-   line half typed is neither kept nor typed again. At an empty read the attention is CMS's own (imm): the line typed
-   after it may be an Immediate command, HX ending every EXEC (CMS, no ready message), HT and RT stopping and resuming
-   the typing, HO, SO, RO, TS, TE and HB with nothing here to do, and any other line goes to the read. A cancelled
-   line leaves the read as it was. VM/370 Release 6 source, DMKCNS and DMSCIT; Terminal User's Guide (GC20-1810),
-   Figure 6, Attention Handling in VM Mode */
-V.progRead=function(then,imm,term){ /* term: from the terminal, not the console stack */
+   unit exception CP gives for it, DMSCIT reissues the read ("user cancelled input line"); so a line half typed is
+   neither kept nor typed again. At an empty read the attention is CMS's own (imm): the line typed after it may be an
+   Immediate command, HX ending every EXEC (CMS, no ready message), HT and RT stopping and resuming the typing, HO, SO,
+   RO, TS, TE and HB with nothing here to do, and any other line goes to the read. A cancelled line leaves the read as
+   it was. VM/370 Release 6 source, DMKCNS and DMSCIT; Terminal User's Guide (GC20-1810), Figure 6, Attention Handling
+   in VM Mode. The read is the console stack's first line if there is one (DMSCRD), so while a command runs it waits
+   its turn in V.pend behind what the command types: an attention before it is up leaves it to come, and the line
+   typed after the attention, stacked by DMSCIT, answers it. What the program then types goes through V.pend too */
+V.progRead=function(then,imm){
+  if(V.busy&&!V.inPend){V.emit(function(){V.progRead(then,imm)});return}
   var k=function(l){
-    if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t,term);return}
+    if(l===P.INT){var t=V.typed;V.typed=false;V.progRead(then,imm||!t);return}
     var w=imm&&l!==null?V.immediate(up(l.trim())):'';
     if(w==='HX'){V.abend();V.pend=[];then(P.INT);return}
-    if(w){V.progRead(then,false,term);return}
-    then(l);
+    if(w){V.progRead(then,false);return}
+    var was=V.cap;V.cap=V.cap||V.busy;
+    try{then(l)}finally{V.cap=was}
   };
-  if(term)V.ask(k,true,false,true);else V.read(k,true,true);
+  V.read(k,true,true);
 };
 
 V.execCmd=function(a){return V.exec(a,{})}; /* the EXEC command: EXEC fn args */

@@ -138,10 +138,77 @@ cmd('uniq','drop repeated lines','uniq [ -c ] [ file ]','prints one of each run 
   });
 });
 function count(a,dflt){var m=flags(a).match(/\d+/);return m?+m[0]:dflt}
+/* head's arguments: {n: lines, c: bytes or null, F: [{f, n}], err: lines to print, q, v}. A negative n or c: all but that many at the end */
+P.headArgs=function(w){
+  var o={n:10,c:null,F:[],err:null,q:false,v:false},i;
+  if(!P.profile.bash){ /* 4.3BSD's head.c (IRIX's is in /usr/bsd): -count before a file sets it for the files after it; else "Badly formed number" */
+    for(i=0;i<w.length;i++){
+      if(w[i].charAt(0)!=='-'){o.F.push({f:w[i],n:o.n});continue}
+      if(!/^\d*$/.test(w[i].slice(1))){o.err=['Badly formed number'];break}
+      o.n=+w[i].slice(1)||0;
+    }
+    return o;
+  }
+  /* GNU head: -n N, -c N (N may be -N, or have a suffix such as k), --lines, --bytes, -q, -v; -N only as the first argument */
+  function num(s,what){
+    var m=/^([-+]?)(\d+)(b|[kKmMgG](iB|B)?)?$/.exec(s),k=1;
+    if(!m)throw ['head: invalid number of '+what+": '"+s+"'"];
+    if(m[3])k=m[3]==='b'?512:Math.pow(m[4]==='B'?1000:1024,' kmg'.indexOf(m[3].charAt(0).toLowerCase()));
+    return (m[1]==='-'?-1:1)*m[2]*k;
+  }
+  function bad(t){throw [t,"Try 'head --help' for more information."]}
+  var F=[];
+  try{
+    i=0;
+    if(/^-\d+$/.test(w[0]||'')){o.n=+w[0].slice(1);i=1}
+    for(;i<w.length;i++){
+      var x=w[i],m;
+      if(x==='--'){F=F.concat(w.slice(i+1));break}
+      if(x==='-'||x.charAt(0)!=='-'){F.push(x);continue}
+      if((m=/^--([^=]*)(=([\s\S]*))?$/.exec(x))){
+        var L=['lines','bytes','quiet','silent','verbose','zero-terminated'].filter(function(n){return n.indexOf(m[1])===0});
+        if(L.length!==1)bad((L.length?'head: option \''+x+'\' is ambiguous':'head: unrecognized option \''+x+'\''));
+        if(/^(lines|bytes)$/.test(L[0])){
+          var v=m[2]?m[3]:w[++i];
+          if(v===undefined)bad("head: option '--"+L[0]+"' requires an argument");
+          if(L[0]==='lines'){o.n=num(v,'lines');o.c=null}else o.c=num(v,'bytes');
+        }
+        else if(m[2])bad("head: option '--"+L[0]+"' doesn't allow an argument");
+        else if(L[0]==='verbose')o.v=true;else if(L[0]!=='zero-terminated')o.q=true;
+        continue;
+      }
+      for(var j=1;j<x.length;j++){
+        var ch=x.charAt(j);
+        if(ch==='n'||ch==='c'){
+          var a=j+1<x.length?x.slice(j+1):w[++i];
+          if(a===undefined)bad("head: option requires an argument -- '"+ch+"'");
+          if(ch==='n'){o.n=num(a,'lines');o.c=null}else o.c=num(a,'bytes');
+          break;
+        }
+        if(/\d/.test(ch))bad('head: invalid trailing option -- '+ch);
+        if(ch==='q'){o.q=true;o.v=false}else if(ch==='v'){o.v=true;o.q=false}else if(ch!=='z')bad("head: invalid option -- '"+ch+"'");
+      }
+    }
+  }catch(e){if(!Array.isArray(e))throw e;o.err=e;return o}
+  o.F=F.map(function(f){return {f:f,n:o.n}});
+  return o;
+};
+function headOf(L,n,c){ /* the first n lines, or c bytes (a line it cuts short still comes out as a line) */
+  if(c===null)return n<0?L.slice(0,Math.max(0,L.length+n)):L.slice(0,n);
+  var t=L.map(function(l){return l+'\n'}).join('');
+  t=c<0?t.slice(0,Math.max(0,t.length+c)):t.slice(0,c);
+  return t?t.replace(/\n$/,'').split('\n'):[];
+}
 cmd('head','print the first lines','head [ -n ] [ file ... ]','prints the first n lines, normally 10.',function(a){
-  var n=count(a,10),F=operands(a);
-  if(F.length<2){P.input(F,function(L){P.say(L.slice(0,n))});return}
-  F.forEach(function(x,i){P.input([x],function(L){P.say((i?['']:[]).concat(['==> '+x+' <=='],L.slice(0,n)))})});
+  var o=P.headArgs(a),many=o.F.length>1&&!o.q||o.v,first=true;
+  if(o.err&&P.profile.bash){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1);return} /* GNU's: before it reads anything */
+  if(!o.F.length&&!o.err)P.input([],function(L){P.say((o.v?['==> standard input <==']:[]).concat(headOf(L,o.n,o.c)))});
+  o.F.forEach(function(x){
+    var std=x.f==='-'&&P.profile.bash,n=!std&&P.find(x.f);
+    if(!std&&(!n||n.type==='d'||n.prot)){P.input([x.f],function(){});return} /* it says so */
+    P.input(std?[]:[x.f],function(L){P.say((many?(first?[]:['']).concat(['==> '+(std?'standard input':x.f)+' <==']):[]).concat(headOf(L,x.n,o.c)));first=false});
+  });
+  if(o.err){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1)}
 });
 cmd('tail','print the last lines','tail [ -n ] [ file ... ]','prints the last n lines, normally 10.',function(a){
   var n=count(a,10);P.input(operands(a),function(L){P.say(n?L.slice(-n):[])});
@@ -240,13 +307,37 @@ builtin(['break'],function(){P.loop('break')});
 builtin(['continue'],function(){P.loop('continue')});
 builtin(['shift'],function(){var A=P.args();if(A.length>1)A.splice(1,1)});
 builtin(['read'],function(a,raw,words){
-  var N=words.slice(1),S=P.stdin();
+  var N=words.slice(1),S=P.stdin(),bash=P.profile.bash,o={},ID=/^[A-Za-z_]\w*$/;
+  if(bash){ /* bash's options: -r keeps backslashes, -p its prompt (at the terminal), -s does not echo; the rest are taken and set aside */
+    var USE='read: usage: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]';
+    while(N.length&&/^-./.test(N[0])){
+      var x=N.shift();
+      if(x==='--')break;
+      for(var j=1;j<x.length;j++){
+        var ch=x.charAt(j);
+        if('adinNptu'.indexOf(ch)>=0){
+          var v=j+1<x.length?x.slice(j+1):N.shift();
+          if(v===undefined){P.typeLine('bash: read: -'+ch+': option requires an argument','err');P.typeLine(USE,'err');P.queue(function(){P.status(2)});return}
+          o[ch]=v;break;
+        }
+        if('ers'.indexOf(ch)<0){P.typeLine('bash: read: -'+ch+': invalid option','err');P.typeLine(USE,'err');P.queue(function(){P.status(2)});return}
+        o[ch]=true;
+      }
+    }
+  }
+  if(N.length&&!ID.test(N[0])){P.typeLine(bash?'bash: read: `'+N[0]+"': not a valid identifier":N[0]+': is not an identifier','err');P.status(1);return} /* the first name is looked at before it reads (V7's readvar, bash's read) */
   if(S){got(S.length?S.shift():null);return} /* a pipe or < : its next line */
-  P.ask(null,got);
+  P.ask(o.p===undefined?null:o.p,got,false,!!o.s);
   function got(line){
-    if(line===null){N.forEach(function(k){P.env[k]=''});P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
-    var parts=line.trim().split(/\s+/);
-    N.forEach(function(k,i){P.env[k]=i===N.length-1?parts.slice(i).join(' '):parts[i]||''});
+    if(bash&&!o.r&&line!==null)line=line.replace(/\\([\s\S])/g,'$1').replace(/\\$/,''); /* without -r a backslash is dropped and the character after it kept */
+    if(bash&&!N.length){P.env.REPLY=line===null?'':line;P.status(line===null?1:0);return} /* no name: the line as it is, in REPLY */
+    if(line===null){N.forEach(function(k){if(ID.test(k))P.env[k]=''});P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
+    var rest=line.trim();
+    for(var i=0;i<N.length;i++){
+      if(!ID.test(N[i])){P.typeLine(bash?'bash: read: `'+N[i]+"': not a valid identifier":N[i]+': is not an identifier','err');P.status(1);return}
+      var m=i<N.length-1?/^(\S*)\s*([\s\S]*)$/.exec(rest):[0,rest,'']; /* the last name takes the rest of the line, its spaces and all */
+      P.env[N[i]]=m[1];rest=m[2];
+    }
     P.status(0);
   }
 });
