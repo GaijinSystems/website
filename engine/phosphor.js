@@ -431,11 +431,12 @@ function typeLine(text,cls,cb,opt){
       to.push(' '.repeat(opt.indent||0)+(opt.pre||'')+plain(text));
       if(cb)cb();res();return;
     }
-    if(job?GL.n:GL.bg){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
+    if(glassBusy(job)){GL.wait.push({job:job,go:go});return}go(); /* one line at a time on the glass between a background job and the rest */
+    function gone(){return job?job.dead:gen!==GEN} /* killed, or ^C */
     function go(){
     GL.n++;if(job)GL.bg++;
     res=function(){GL.n--;if(job)GL.bg--;glassNext();res0()};
-    if(job?job.dead:gen!==GEN){res();return}
+    if(gone()){res();return}
     text=UP(text);
     var d=document.createElement('div'),host=d,above=ASIDE&&bufNode?bufNode.parentNode:null; /* an aside's line goes in above the one being typed in */
     d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
@@ -450,7 +451,7 @@ function typeLine(text,cls,cb,opt){
     var sp=opt.speed||1,i=0;
     function here(){return at&&at.parentNode===host?at:null} /* a prompt that came up meanwhile has the cursor now */
     function step(){
-      if(job?job.dead:gen!==GEN){res();return}
+      if(gone()){res();return}
       if(HOLD){held=step;return}
       if(i>=text.length){
         scrollBottom();
@@ -494,7 +495,8 @@ function typeLine(text,cls,cb,opt){
   })});
 }
 var GL={n:0,bg:0,wait:[]}; /* lines typing on the glass now, how many of them a background job's, and those waiting their turn */
-function glassNext(){while(GL.wait.length&&!(GL.wait[0].job?GL.n:GL.bg))GL.wait.shift().go()}
+function glassBusy(job){return job?GL.n:GL.bg} /* a job's line waits for any line, the rest only for a job's */
+function glassNext(){while(GL.wait.length&&!glassBusy(GL.wait[0].job))GL.wait.shift().go()}
 function say(lines){
   lines.forEach(function(l){var x=lineOf(l);typeLine(x[0],x[1],null,x[2])});
 }
@@ -1422,11 +1424,13 @@ function tell(n){ /* the job's notice, once, when it starts: bash [1] and its la
   var j=JOB;
   if(!j||j.told||SUB!==j.level)return; /* not for a `command` inside it */
   j.told=true;
-  var ids=[];for(var i=0;i<(n||1);i++)ids.push(PH.newPid());
+  var ids=newPids(n||1);
   j.pids=n?ids:null;LASTBG=String(ids[ids.length-1]);
   if(!PROFILE.csh&&(SCRIPTS||j.sub))return;
-  typeLine(PROFILE.csh?'['+ ++JOBS+'] '+ids.join(' '):PROFILE.bash?'['+ ++JOBS+'] '+LASTBG:LASTBG);
+  typeLine(notice(control()?++JOBS:0,ids));
 }
+function newPids(n){var ids=[];for(var i=0;i<n;i++)ids.push(PH.newPid());return ids}
+function notice(num,ids){return PROFILE.csh?'['+num+'] '+ids.join(' '):(PROFILE.bash?'['+num+'] ':'')+ids[ids.length-1]} /* a job's notice as it starts */
 /* Background jobs. A job started with & at the shell's own level runs in a queue of its own beside the one queue (aside), with a
    copy of the shell's state that its steps swap in and out (procGet, procPut): it goes on while the visitor types, ^C does not
    reach it, and kill, wait, fg and bg do. Its notice comes when it starts; bash and csh say what has become of it before the next
@@ -1460,15 +1464,14 @@ function mine(){return TABLE.filter(function(j){return j.owner===SHID}).sort(fun
 function control(){return PROFILE.bash||PROFILE.csh} /* job control: jobs, fg, bg, %n, and a job that wants the terminal stops */
 function startJob(text){ /* in a step of the shell: text & */
   if(liveJobs().length>=JOBMAX){noFork();return} /* the fork fails, as it does past the process limit */
-  var cmds=pipeText(text),one=andOr(text).length<2,n=one?cmds.length:1,ids=[];
-  for(var i=0;i<n;i++)ids.push(PH.newPid());
+  var cmds=pipeText(text),one=andOr(text).length<2,ids=newPids(one?cmds.length:1);
   var job={num:TABLE.reduce(function(m,j){return j.owner===SHID&&!j.kept?Math.max(m,j.num):m},0)+1,owner:SHID,
     pids:ids,cmds:one?cmds:[text.trim().replace(/\s+/g,' ')],state:'Running',code:0,sig:0,wd:ST.cwd,start:now(),wakers:[],resume:[],noted:true,born:RUNS,
     control:!!control()&&!SCRIPTS&&!SHID};
   job.text=job.cmds.join(' | ');
   job.done=new Promise(function(r){job.fin=r});
   LASTBG=String(ids[ids.length-1]);
-  if(PROFILE.csh||!SCRIPTS)typeLine(PROFILE.csh?'['+job.num+'] '+ids.join(' '):PROFILE.bash?'['+job.num+'] '+LASTBG:LASTBG); /* bash and sh say it only to someone typing; csh in a script too */
+  if(PROFILE.csh||!SCRIPTS)typeLine(notice(job.num,ids)); /* bash and sh say it only to someone typing; csh in a script too */
   var c=procGet();
   c.SUB=1;c.JOB={sub:false,level:1,told:true,pids:one?ids.slice():null};c.KEPT=[];c.LOOP=null;c.PIDNOW=null;c.SHID=++SHIDS;
   if(!job.control&&!c.STDIN)c.STDIN=[]; /* no job control: it reads /dev/null */
@@ -1510,7 +1513,7 @@ function stopJob(job,sig){ /* SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU: its next step 
 function ttyStop(job){ /* it wants the terminal: it stops until fg (true), or ends (false) */
   if(job.dead)return Promise.resolve(false);
   if(!job.control){job.dead=true;job.state='Done';ended(job);return Promise.resolve(false)} /* no job control: nothing stops it, and it cannot have the screen */
-  stopJob(job,sigNum(TTYWHY==='output'?'TTOU':'TTIN'));
+  stopJob(job,SIG[TTYWHY==='output'?'TTOU':'TTIN']);
   return stopWait(job);
 }
 var TTYWHY='input';
@@ -1555,7 +1558,6 @@ var SIGNALS=PROFILE.bash?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal
   :PROFILE.csh?'1 HUP Hangup|2 INT Interrupt|3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/BPT trap|6 IOT IOT trap|7 EMT EMT trap|8 FPE Floating exception|9 KILL Killed|10 BUS Bus error|11 SEGV Segmentation fault|12 SYS Bad system call|13 PIPE Broken pipe|14 ALRM Alarm clock|15 TERM Terminated|16 URG Urgent I/O condition|17 STOP Stopped (signal)|18 TSTP Stopped|19 CONT Continued|20 CHLD Child exited|21 TTIN Stopped (tty input)|22 TTOU Stopped (tty output)|23 IO I/O possible|24 XCPU Cputime limit exceeded|25 XFSZ Filesize limit exceeded|26 VTALRM Virtual timer expired|27 PROF Profiling timer expired|28 WINCH Window size changed|29 - Signal 29|30 USR1 User defined signal 1|31 USR2 User defined signal 2'
   :'1 HUP Hangup|2 INT |3 QUIT Quit|4 ILL Illegal instruction|5 TRAP Trace/BPT trap|6 IOT IOT trap|7 EMT EMT trap|8 FPE Floating exception|9 KILL Killed|10 BUS Bus error|11 SEGV Memory fault|12 SYS Bad system call|13 PIPE |14 ALRM Alarm call|15 TERM Terminated';
 var SIG={};SIGNALS.split('|').forEach(function(x){var m=x.match(/^(\d+) (\S+) ?(.*)$/);SIG[m[1]]={name:m[2],says:m[3]};if(m[2]!=='-')SIG[m[2]]=+m[1]});
-function sigNum(name){return SIG[name]}
 function sigDo(n){ /* what it does to a job that has not set it aside: stop, cont, none or end */
   var x=(SIG[n]||{}).name;
   return /^(STOP|TSTP|TTIN|TTOU)$/.test(x)?'stop':x==='CONT'?'cont':/^(CHLD|URG|WINCH)$/.test(x)||x==='IO'&&!PROFILE.bash||!n?'none':'end';
@@ -1576,16 +1578,19 @@ function why(job){ /* what the job's status says: bash's printable_job_status, c
   if(PROFILE.csh)return s==='Running'?'Running ':s==='Stopped'?SIG[job.sig].says:s==='Done'?(job.code?'Exit '+String(job.code).padEnd(16):'Done'):job.sig===2?null:SIG[job.sig].says;
   return s==='Running'||s==='Stopped'?s:s==='Done'?(job.code?'Exit '+job.code:'Done'):SIG[job.sig].says;
 }
+function markOf(job){return job===CUR.c?'+':job===CUR.p?'-':' '}
+function cshPre(job){return '['+job.num+']'+(job.num<10?' ':'')+' '+markOf(job)+' '} /* csh's [n] and its mark */
+function wdNote(job,sep){return job.wd!==ST.cwd?sep+'(wd: '+polite(job.wd)+')':''} /* where it was started, when that is not here */
 function jobRows(job,how){ /* how: '' as jobs and the notices print it, 'l' with the ids, 'p' only the id */
-  var mark=job===CUR.c?'+':job===CUR.p?'-':' ',w=why(job),R=[],core=job.state==='Killed'&&cored(job.sig)?' (core dumped)':'';
+  var mark=markOf(job),w=why(job),R=[],core=job.state==='Killed'&&cored(job.sig)?' (core dumped)':'';
   if(how==='p')return [String(job.pids[0])];
   if(PROFILE.csh){
-    var pre='['+job.num+']'+(job.num<10?' ':'')+' '+mark+' ',dir=how==='l'&&job.wd!==ST.cwd?' (wd: '+polite(job.wd)+')':'';
+    var pre=cshPre(job),dir=how==='l'?wdNote(job,' '):'';
     if(how!=='l')return [pre+(w===null?'':w.padEnd(21))+job.text+core];
     job.cmds.forEach(function(c,i){var end=i===job.cmds.length-1;R.push((i?'       ':pre)+String(job.pids[i]||job.pids[0]).padStart(5)+' '+(w===null?'':(i?'':w).padEnd(21))+c+(end?core+dir:' |'))});
     return R;
   }
-  var tail=(job.state==='Running'?' &':'')+(job.wd!==ST.cwd?'  (wd: '+polite(job.wd)+')':'');
+  var tail=(job.state==='Running'?' &':'')+wdNote(job,'  ');
   if(how!=='l')return ['['+job.num+']'+mark+'  '+w.padEnd(24)+job.text+tail];
   job.cmds.forEach(function(c,i){R.push(i?'     '+String(job.pids[i]).padStart(5)+' '+''.padEnd(22)+'| '+c+(i===job.cmds.length-1?tail:''):'['+job.num+']'+mark+' '+String(job.pids[0]).padStart(5)+' '+w.padEnd(24)+c+(job.cmds.length===1?tail:''))});
   return R;
@@ -1620,7 +1625,7 @@ function findJob(w,who){ /* a job spec: %n %+ %% %- %name %?text (bash's fg, bg 
   return {job:hits[0]};
 }
 function fgJob(job){ /* in a step: the job has the terminal until it ends; ^C kills it */
-  typeLine(PROFILE.csh?job.text+(job.wd!==ST.cwd?' (wd: '+polite(job.wd)+')':''):job.text+(job.wd!==ST.cwd?'\t(wd: '+polite(job.wd)+')':''));
+  typeLine(job.text+wdNote(job,PROFILE.csh?' ':'\t'));
   queue(function(){
     if(job.over)return;
     FGJOB=job;job.fg=true;job.noted=true;
@@ -1633,18 +1638,18 @@ function fgJob(job){ /* in a step: the job has the terminal until it ends; ^C ki
 function bgJob(job){ /* bg: a stopped job goes on in the background (and stops again if it still wants the terminal) */
   if(PROFILE.bash&&job.state==='Running'){typeLine('bash: bg: job '+job.num+' already in background','err');queue(function(){STATUS=0});return}
   if(PROFILE.csh)current(job,'end');
-  var mark=job===CUR.c?'+':job===CUR.p?'-':' ';
-  typeLine('['+job.num+']'+(PROFILE.csh?(job.num<10?' ':'')+' '+mark+' ':mark===' '?' ':mark+' ')+job.text+' &');
+  var mark=markOf(job);
+  typeLine((PROFILE.csh?cshPre(job):'['+job.num+']'+(mark===' '?' ':mark+' '))+job.text+' &');
   resumeJob(job,true);
 }
 function waitJobs(L){ /* in a step: until each has ended; ^C stops the waiting, not the jobs */
   return new Promise(function(r){
-    var left=L.filter(function(j){return !j.over}).length;
+    var live=L.filter(function(j){return !j.over}),left=live.length;
     function done(){var i=wakers.indexOf(stop);if(i>=0)wakers.splice(i,1);r()}
     function stop(){left=-1;done()}
     if(!left){r();return}
     wakers.push(stop);
-    L.filter(function(j){return !j.over}).forEach(function(j){j.done.then(function(){if(left>0&&!--left)done()})}); /* only the jobs still running count down */
+    live.forEach(function(j){j.done.then(function(){if(left>0&&!--left)done()})}); /* only the jobs still running count down */
   });
 }
 function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
@@ -1661,8 +1666,8 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
       if(W[0]==='--')W.shift();
     }
     if(WARNED===RUNS-1)WARNED=RUNS; /* a jobs between: exit goes */
-    var L=[],bad=false;
-    if(W.length)W.forEach(function(w){var r=findJob(w,'jobs');if(r.err){err(r.err);bad=true}else L.push(r.job)});
+    var L=[];
+    if(W.length)W.forEach(function(w){var r=findJob(w,'jobs');if(r.err)err(r.err);else L.push(r.job)});
     else L=mine().filter(function(j){return only==='r'?j.state==='Running':only==='s'?j.state==='Stopped':only==='n'?!j.noted:true});
     L.forEach(function(j){jobRows(j,how).forEach(function(r){typeLine(r)});j.noted=true;if(j.over)drop(j)});
     return;
@@ -1755,7 +1760,9 @@ function stoppedWarn(){ /* exit and logout with stopped jobs: once, unless the l
   return true;
 }
 function psJobs(){ /* each process of each job still going: for ps */
-  return liveJobs().reduce(function(R,j){return R.concat(j.pids.map(function(p,i){return {pid:p,cmd:j.cmds[i]||j.text,stopped:j.state==='Stopped',start:j.start}}))},[]);
+  var R=[];
+  liveJobs().forEach(function(j){j.pids.forEach(function(p,i){R.push({pid:p,cmd:j.cmds[i]||j.text,stopped:j.state==='Stopped',start:j.start})})});
+  return R;
 }
 function endJobs(){TABLE.slice().forEach(function(j){j.dead=true;j.state='Killed';j.sig=1;ended(j)});TABLE=[];CUR={c:null,p:null};V7NOTE=[];FGJOB=null} /* logout: the session's jobs go with it */
 function execSeg(seg){
