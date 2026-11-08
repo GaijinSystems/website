@@ -9,7 +9,7 @@ var V=P.vm=P.vm||{};
 var up=V.up;
 /* what an EXEC types goes through V.pend, a line at a time: an attention (^C) drops the queued steps that would type
    them, but not the lines, and when the EXEC carries on they are typed first. So nothing it worked out ahead is lost,
-   as on Release 6, where the attention only interrupts the typing (CMS User's Guide, GC20-1819, Virtual Machine
+   as on Release 6, where after the attention the program resumes execution (CMS User's Guide, GC20-1819, Virtual Machine
    Interruptions: the program resumes execution) */
 V.pend=[];
 function next(){var f=V.pend.shift();if(f)f()}

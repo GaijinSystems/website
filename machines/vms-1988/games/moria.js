@@ -404,7 +404,7 @@ function $zeros(hi){return new Array(hi+2).fill(0)}
    its records, so the number of blank lines in every block is exact; where in its block each one stood is taken from
    MORIAHLP.HLP, the help source of Moria UB 5.00 (Nick B Triantos and William Palter, SUNY Buffalo, 1988; from the
    Moria 4.8 text, with the same notices: github.com/dungeons-of-moria/moria-ub, and vms50.tar.Z at ftp.funet.fi),
-   whose topics but two (LOCATION and PRINT, reworded) have the same text, and whose blank lines fit every block's
+   whose topics but two (LOCATION and PRINT, where the library has '44' and '99' in quotes and fills its lines differently) have the same text, and whose blank lines fit every block's
    count; WEAPONS and ARMOR, which it lacks, follow the text's own layout (before a paragraph, a heading, a subtopic,
    and at the end of a module). No undamaged copy of 4.8's own library or source has been found. ARMOR is the copy
    the library's index points to. HELP as on VAX/VMS: the topic's keywords and text, "Additional information
@@ -2108,7 +2108,7 @@ var $HLB=["1 HELP",
 "|Metal Lamellar Armor       |  [   | 950 | 340 | -3   |  0   | 23 |   1d6  |",
 "|Full Plate Armor           |  [   |1050 | 380 | -3   |  0   | 25 |   2d4  |",
 "|Ribbed Plate Armor         |  [   |1200 | 380 | -3   |  0   | 28 |   2d4  |",
-"+---------------------------+------+-----+-----+------+------+----+--------+"];
+"+---------------------------+------+-----+-----+------+------+----+--------+",""];
 /* the driver's handles on the run */
 var $main0=$main;
 $main={main:function(){return $main0()},argv:function(a){$argv=a},screen:function(){return {scr:$scr,cy:$cy,cx:$cx}},keys:function(){return $keys},onshow:function(f){$show=f}};

@@ -333,7 +333,7 @@ function sleep(ms){return new Promise(function(r){
 var TTY={}; /* thrown by what wants the terminal (a read, the full screen) in a background job: the job stops there */
 function queue(fn,always){
   var g=GEN,side=ASIDE,job=side&&side.job,oops=function(e){console.error(e)},step=function(){
-    if(job?job.dead&&!always:g!==GEN&&!always||side&&side.stopped&&!always)return; /* a job goes on after ^C, until it is killed */
+    if(job?job.dead:g!==GEN&&!always||side&&side.stopped&&!always)return; /* a job goes on after ^C, until it is killed; then none of its steps run */
     if(job&&job.state==='Stopped')return stopWait(job).then(step); /* kill -STOP: its next step waits for fg, bg or kill -CONT */
     var sc={p:null};
     function once(){ /* a job's step runs with the job's own directory, variables, output and status; once it stops for the terminal, again when it is resumed */
@@ -1446,7 +1446,7 @@ function procPut(c){
   SINK=c.SINK;STDIN=c.STDIN;ERRSINK=c.ERRSINK;STATUS=c.STATUS;PREV=c.PREV;SUB=c.SUB;SCRIPTS=c.SCRIPTS;LOOP=c.LOOP;JOB=c.JOB;JOBS=c.JOBS;PIDNOW=c.PIDNOW;ARGS=c.ARGS;
   CURRENT=c.CURRENT;SOURCE=c.SOURCE;KEPT=c.KEPT;SHID=c.SHID;refill(ENV,c.env);refill(CSHV,c.vars);refill(CSHW,c.wds);ST.cwd=c.cwd;PH.aliases=c.al;
 }
-function refill(o,from){for(var k in o)if(!(k in from))delete o[k];Object.assign(o,from)}
+function refill(o,from){for(var k in o)if(!Object.prototype.hasOwnProperty.call(from,k))delete o[k];Object.assign(o,from)}
 function pipeText(t){ /* the commands of a pipeline, split at its | (not ||), outside quotes and ( ) */
   var L=[],start=0,depth=0,j;
   for(var i=0;i<t.length;i++){
@@ -1701,7 +1701,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
       if(!k)err('bash: wait: pid '+w+' is not a child of this shell');
       got.push(k||null);
     });
-    else got=mine().filter(function(j){return j.state!=='Stopped'||!bash});
+    else got=mine().filter(function(j){return j.state!=='Stopped'}); /* stopped jobs are not waited for (bash; csh's dowait loops only while one runs) */
     var J=got.filter(Boolean);
     queue(function(){return waitJobs(J)});
     queue(function(){
@@ -1748,7 +1748,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}signal(r.job,n,true);any=true;continue}
     if(!/^-?\d+$/.test(w)){if(v7){err('usage: kill [ -signo ] pid ...');queue(function(){STATUS=2});return}err(bash?'bash: kill: '+w+': arguments must be process or job IDs':'kill: Arguments should be jobs or process id\'s.');if(csh)return;bad=true;continue}
     var hit=liveJobs().filter(function(j){return j.pids.indexOf(+w)>=0})[0];
-    if(v7&&n>15){err(w+': Invalid argument');bad=true;continue}
+    if(v7&&(n>15||n<0)){err(w+': Invalid argument');bad=true;continue}
     if(!hit){err(bash?'bash: kill: ('+w+') - No such process':w+': No such process');bad=true;continue}
     signal(hit,n);any=true;
   }
