@@ -423,7 +423,7 @@ function plain(s){return String(s).replace(/\u0003([^\u0004]*)(\u0004|$)/g,'$1')
 function typeLine(text,cls,cb,opt){
   opt=opt||{};
   return queue(function(){return new Promise(function(res0){
-    var gen=GEN,burst=1,job=ASIDE&&ASIDE.job,res=res0;
+    var gen=GEN,burst=1,side=ASIDE,job=ASIDE&&ASIDE.job,res=res0; /* side: whose line this is, even when its turn comes later */
     text=typeof text==='function'?text():text; /* a function = text worked out when its turn comes (ping) */
     if(cls==='err')STATUS=1;
     var to=cls!=='err'?SINK:ERRSINK!==GLASS?ERRSINK:null; /* a pipe or a file; errors still go to the glass, unless 2>file or 2>&1 */
@@ -438,7 +438,7 @@ function typeLine(text,cls,cb,opt){
     res=function(){GL.n--;if(job)GL.bg--;glassNext();res0()};
     if(gone()){res();return}
     text=UP(text);
-    var d=document.createElement('div'),host=d,above=ASIDE&&bufNode?bufNode.parentNode:null; /* an aside's line goes in above the one being typed in */
+    var d=document.createElement('div'),host=d,above=side&&bufNode?bufNode.parentNode:null; /* an aside's line goes in above the one being typed in */
     d.className='line'+(cls?' '+cls:'')+(opt.row?' row':'');
     /* indent: left margin for the whole line; hang: extra margin for wrapped continuation lines only */
     if(opt.indent||opt.hang){d.style.paddingLeft=((opt.indent||0)+(opt.hang||0))+'ch';if(opt.hang)d.style.textIndent=(-opt.hang)+'ch'}
@@ -1466,7 +1466,7 @@ function startJob(text){ /* in a step of the shell: text & */
   if(liveJobs().length>=JOBMAX){noFork();return} /* the fork fails, as it does past the process limit */
   var cmds=pipeText(text),one=andOr(text).length<2,ids=newPids(one?cmds.length:1);
   var job={num:TABLE.reduce(function(m,j){return j.owner===SHID&&!j.kept?Math.max(m,j.num):m},0)+1,owner:SHID,
-    pids:ids,cmds:one?cmds:[text.trim().replace(/\s+/g,' ')],state:'Running',code:0,sig:0,wd:ST.cwd,start:now(),wakers:[],resume:[],noted:true,born:RUNS,
+    pids:ids,cmds:one?cmds:[text.trim().replace(/\s+/g,' ')],state:'Running',code:0,sig:0,wd:ST.cwd,start:now(),wakers:[],resume:[],noted:true,born:RUNS,parent:ASIDE&&ASIDE.job||null,
     control:!!control()&&!SCRIPTS&&!SHID};
   job.text=job.cmds.join(' | ');
   job.done=new Promise(function(r){job.fin=r});
@@ -1563,7 +1563,8 @@ function sigDo(n){ /* what it does to a job that has not set it aside: stop, con
   return /^(STOP|TSTP|TTIN|TTOU)$/.test(x)?'stop':x==='CONT'?'cont':/^(CHLD|URG|WINCH)$/.test(x)||x==='IO'&&!PROFILE.bash||!n?'none':'end';
 }
 function cored(n){return !PROFILE.bash&&/^(QUIT|ILL|TRAP|IOT|EMT|FPE|BUS|SEGV|SYS)$/.test((SIG[n]||{}).name)} /* Debian keeps no core (ulimit -c 0); 4.3BSD and V7 do */
-function signal(job,n){ /* send signal n to the job */
+function signal(job,n,group){ /* send signal n to the job; group: to its process group, as kill %n and the tty do, which takes in the jobs started inside it */
+  if(group)TABLE.filter(function(j){for(var p=j.parent;p;p=p.parent)if(p===job)return !j.control;return false}).forEach(function(j){signal(j,n)}); /* without job control of their own, they are in its group */
   var d=sigDo(n);
   if(job.over||d==='none')return;
   if((n===2||n===3)&&!job.control)return; /* started without job control: & set INT and QUIT aside */
@@ -1644,11 +1645,11 @@ function bgJob(job){ /* bg: a stopped job goes on in the background (and stops a
 }
 function waitJobs(L){ /* in a step: until each has ended; ^C stops the waiting, not the jobs */
   return new Promise(function(r){
-    var live=L.filter(function(j){return !j.over}),left=live.length;
-    function done(){var i=wakers.indexOf(stop);if(i>=0)wakers.splice(i,1);r()}
+    var live=L.filter(function(j){return !j.over}),left=live.length,W=wakeList(); /* a job's own wait: the foreground's ^C does not end it */
+    function done(){var i=W.indexOf(stop);if(i>=0)W.splice(i,1);r()}
     function stop(){left=-1;done()}
     if(!left){r();return}
-    wakers.push(stop);
+    W.push(stop);
     live.forEach(function(j){j.done.then(function(){if(left>0&&!--left)done()})}); /* only the jobs still running count down */
   });
 }
@@ -1744,7 +1745,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
   var any=false,bad=false;
   for(var k=0;k<W.length;k++){
     var w=W[k];
-    if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}signal(r.job,n);any=true;continue}
+    if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}signal(r.job,n,true);any=true;continue}
     if(!/^-?\d+$/.test(w)){if(v7){err('usage: kill [ -signo ] pid ...');queue(function(){STATUS=2});return}err(bash?'bash: kill: '+w+': arguments must be process or job IDs':'kill: Arguments should be jobs or process id\'s.');if(csh)return;bad=true;continue}
     var hit=liveJobs().filter(function(j){return j.pids.indexOf(+w)>=0})[0];
     if(v7&&n>15){err(w+': Invalid argument');bad=true;continue}
@@ -2345,7 +2346,7 @@ function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt *
     prompt();
     return;
   }
-  if(FGJOB)signal(FGJOB,2); /* a job brought back with fg is the foreground's */
+  if(FGJOB)signal(FGJOB,2,true); /* a job brought back with fg is the foreground's */
   GEN++;SINK=null;STDIN=null;STATUS=130;
   wakers.slice().forEach(function(w){w()});
   resumeHeld();
