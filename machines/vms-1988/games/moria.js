@@ -475,7 +475,7 @@ function* $help(topic){
       var M=$hmatch(node,W[i]);
       if(!M.length){
         yield* out('');
-        yield* out('Sorry, no documentation on '+at.map(function(n){return n.name}).concat(W.slice(0,i+1)).join(' ').toUpperCase());
+        yield* out('Sorry, no documentation on '+cur.map(function(n){return n.name}).concat(W.slice(0,i+1)).join(' ').toUpperCase());
         if(node.subs.length)yield* list(node,2*at.length||2);
         cur=at;return;
       }
@@ -2089,7 +2089,7 @@ var $HLB=["1 HELP",
 "+---------------------------+------+-----+-----+------+------+----+--------+",
 "",
 "2 Metal_Armor",
-"L+---------------------------+------+-----+-----+------+------+----+--------+",
+"+---------------------------+------+-----+-----+------+------+----+--------+",
 "|name                       |SYMBOL| COST| WGT |TO HIT|TO DAM| AC | DAMAGE |",
 "+---------------------------+------+-----+-----+------+------+----+--------+",
 "|Metal Scale Mail           |  [   | 430 | 250 | -2   |  0   | 13 |   1d4  |",
