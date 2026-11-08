@@ -33,10 +33,11 @@ P.command({names:['ps'],path:'/bin',
     'x    also list processes with no terminal at all.'],bugs:[
     'it shows what other people are doing.']},
   run:function(a){
-    var fl=a.join('').replace(/-/g,''),T=table(),R=[];
+    var fl=a.join('').replace(/-/g,''),T=table(),R=[],me=String(P.pidNow()||P.newPid()),tty=P.profile.csh?'02':'0';
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
-    R.push([String(P.pidNow()||P.newPid()),P.profile.csh?'02':'0','0:00',('ps '+a.join(' ')).trim()]);
-    function tt(p,i){return p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[1]==='?'?'I':'S').padEnd(4)} /* Berkeley's TT and STAT: this ps runs, the rest sleep, idle when they have no terminal */
+    P.jobs().forEach(function(j){if(String(j.pid)!==me)R.push([String(j.pid),tty,'0:00',j.cmd,j.stopped])}); /* the jobs started with & */
+    R.push([me,tty,'0:00',('ps '+a.join(' ')).trim()]);
+    function tt(p,i){return p[1].slice(0,2).padEnd(2)+' '+(i===R.length-1?'R':p[4]?'T':p[1]==='?'?'I':'S').padEnd(4)} /* Berkeley's TT and STAT: this ps runs, the rest sleep (or are stopped), idle when they have no terminal */
     if(P.profile.csh&&/u/.test(fl)){ /* the long form, and everyone's name on it */
       P.say(['USER       PID %CPU %MEM   SZ  RSS TT STAT  TIME COMMAND'].concat(R.map(function(p,i){
         var mine=p[1]==='02',k=parseInt(p[0],10)||1;

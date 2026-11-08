@@ -109,7 +109,7 @@ function lex(t){ /* the words of an expression, as csh's lexer makes them: < > &
   });
   return {W:W,R:R};
 }
-function cexp(W,k,brace){ /* 4.3BSD csh's exp() over words W from k: {n, k after it}. Operators of one level group from the right, as its
+function cexp(W,k,brace,ig0){ /* 4.3BSD csh's exp() over words W from k: {n, k after it}. Operators of one level group from the right, as its
                        recursive descent has them: 10 - 3 - 2 is 9. Throws {csh:message} as its errors do.
                        brace(at,end): the status of the { command } in words at to end */
   function bad(m){throw {csh:'@: '+m}}
@@ -170,7 +170,9 @@ function cexp(W,k,brace){ /* 4.3BSD csh's exp() over words W from k: {n, k after
     var p1=e3a(ig),w=W[k];
     if(w===undefined||!/^[<>]/.test(w))return p1;
     k++;var eq=W[k]==='=';if(eq)k++;
-    var a=num(p1),b=num(e3(ig)),c=w.charAt(0)==='<'?(eq?a<=b:a<b):(eq?a>=b:a>b);
+    var p2=e3(ig);
+    if(ig)return '1'; /* only read, as 4.3BSD's exp3 does when it ignores */
+    var a=num(p1),b=num(p2),c=w.charAt(0)==='<'?(eq?a<=b:a<b):(eq?a>=b:a>b);
     return String(+c);
   }
   function e2c(ig){
@@ -184,7 +186,7 @@ function cexp(W,k,brace){ /* 4.3BSD csh's exp() over words W from k: {n, k after
   var e2b=level(e2c,['&'],function(o,a,b){return a&b}),e2a=level(e2b,['^'],function(o,a,b){return a^b}),e2=level(e2a,['|'],function(o,a,b){return a|b});
   function e1(ig){var p1=e2(ig);if(W[k]!=='&&')return p1;k++;var p2=e1(ig||!p1);return +(p1&&p2)}
   function e0(ig){var p1=e1(ig);if(W[k]!=='||')return p1;k++;var p2=e0(ig||!!p1);return +(p1||p2)}
-  var n=e0(false);
+  var n=e0(!!ig0);
   return {n:n,k:k};
 }
 var NEED={};
@@ -209,6 +211,11 @@ function test(t,as,then){ /* then(true or false) for the expression in t, or not
   },function(e,n,any,last){if(e)said(e,as);else then(!!n,any,last)});
 }
 P.cshWhile=function(t,then){test(t,'while',then)}; /* while ( expr ): the loop asks before each time round */
+P.cshWhileRead=function(t){ /* typed at the prompt, dowhile reads the expression without working it out (exp0 with ignore) before it reads the
+                               loop: false once an error there has been said, at the while line */
+  try{var L=lex(t),r=cexp(L.W,0,null,true);if(r.k<L.W.length)throw {csh:'@: Expression syntax'};return true}
+  catch(e){said(e,'while');return false}
+};
 builtin(['if'],function(){ /* the one-line form: if (expr) command */
   var s=P.source(),m=/^\s*if\s*\(/.exec(s),end=m?closing(s,m[0].length):-1,cmd=end<0?'':s.slice(end+1).trim();
   if(end<0||/^then\b/.test(cmd)){P.typeLine('if: Expression syntax.','err');return}
@@ -267,13 +274,8 @@ builtin(['@'],function(){ /* @ name = expr, @ name[n] = expr, @ name op= expr, @
     }while((p=unq(W[v++]))!==undefined);
   },function(e,r,any,last){if(e)said(e);else if(!any)P.status(0);else P.status(last)},function(){restore(P.shvars,keepV);restore(P.shwords,keepW)});
 });
-builtin(['rehash','jobs','nice','sync'],function(){});
-builtin(['fg','bg'],function(a,raw){P.typeLine(raw.trim().split(/\s+/)[0]+': No current job.','err')});
-builtin(['kill'],function(a){
-  var w=a.filter(function(x){return x.charAt(0)!=='-'});
-  if(!w.length){P.typeLine('kill: Too few arguments.','err');return}
-  w.forEach(function(x){P.typeLine(/^%/.test(x)?'kill: '+x+': No such job.':/^\d+$/.test(x)?'kill: '+x+': No such process':'kill: Arguments should be jobs or process id\'s.','err')});
-});
+builtin(['rehash','nice','sync'],function(){}); /* jobs, fg, bg, kill and wait: shell.js, with the engine's jobs */
+builtin(['end'],function(){P.typeLine('end: Not in while/foreach.','err')}); /* doend, with no loop: one the loop read takes its own end */
 builtin(['limit'],function(){
   P.say(['cputime         unlimited','filesize        unlimited','datasize        6144 kbytes','stacksize       512 kbytes','coredumpsize    unlimited','memoryuse       6819 kbytes']);
 });
