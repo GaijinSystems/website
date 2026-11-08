@@ -240,13 +240,15 @@ builtin(['break'],function(){P.loop('break')});
 builtin(['continue'],function(){P.loop('continue')});
 builtin(['shift'],function(){var A=P.args();if(A.length>1)A.splice(1,1)});
 builtin(['read'],function(a,raw,words){
-  var N=words.slice(1);
-  P.ask(null,function(line){
+  var N=words.slice(1),S=P.stdin();
+  if(S){got(S.length?S.shift():null);return} /* a pipe or < : its next line */
+  P.ask(null,got);
+  function got(line){
     if(line===null){P.status(1);return}
     var parts=line.trim().split(/\s+/);
     N.forEach(function(k,i){P.env[k]=i===N.length-1?parts.slice(i).join(' '):parts[i]||''});
     P.status(0);
-  });
+  }
 });
 function testExpr(w){
   function one(i){

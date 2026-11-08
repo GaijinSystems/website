@@ -71,16 +71,21 @@ V.input=function(raw){
    the terminal takes a line, and with HX it ends; with anything else it carries on (CMS User's Guide, GC20-1819,
    Section 2: Virtual Machine Interruptions; Command and Macro Reference, GC20-1818: Immediate Commands). While that line
    is read the EXEC goes on, typing above it, as Release 6 does under Hercules; a read of its own waits for the line */
+/* At every attention CP types an exclamation point where the carriage is and starts a new line, or nothing with TERMINAL
+   ATTN OFF (DMKCNS: "restore, exclamation, idles, CR, idles", the exclamation alone for a teletype); a line being typed
+   in is cancelled, and the read is up again (DMSCIT reissues it) */
 P.onInterrupt=function(trap){
   release();
+  var bang=V.term&&!V.term.attn?'':'!';
+  if(trap&&V.asking==='prog'){var kb=document.getElementById('kb');V.typed=!!(kb&&kb.value);V.asking=false;return bang} /* a program's read: see V.progRead */
   if(!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking&&V.execs.length){
     V.attn=true;
     P.queue(function(){if(V.attn&&V.execs.length&&!(V.side&&V.side.live()))V.side=P.aside(V.carryOn)},true); /* once the read is up */
-    return null;
+    return bang;
   }
   V.asking=false;
   if(!V.attn){V.stack=[];V.pend=[]}
-  return null;
+  return bang;
 };
 /* the line typed after an attention to a running EXEC. HX ends every EXEC, and CMS answers CMS; HT stops the typing until
    the ready message or RT; HO, SO, RO, TS, TE and HB are Immediate commands too, with nothing here to do; anything else,
@@ -647,11 +652,11 @@ C.FORMAT=function(a,o){
   var done=function(){out('DMSFOR732I \''+d.disk.cyl+'\' CYLINDERS FORMATTED ON DISK \''+m+'('+cuu+')\'')};
   if(o[0]==='RECOMP'){done();return 0}
   out('DMSFOR603R FORMAT WILL ERASE ALL FILES ON DISK \''+m+'('+cuu+')\'. DO YOU WISH TO CONTINUE? (YES|NO)');
-  V.read(function(l){
+  V.progRead(function(l){
     if(l===null||l===P.INT)return;
     if(up(l.trim())!=='YES'){out('DMSFOR705I DISK REMAINS UNCHANGED');return}
     out('DMSFOR605R ENTER DISK LABEL:');
-    V.read(function(x){
+    V.progRead(function(x){
       if(x===null||x===P.INT)return;
       var label=up(x.trim()).slice(0,6);
       out('DMSFOR733I FORMATTING DISK \''+m+'\'');
@@ -662,8 +667,8 @@ C.FORMAT=function(a,o){
         done();
         V.access(cuu,m,null,true);
       });
-    },true);
-  },true);
+    });
+  });
   return 0;
 };
 
@@ -707,14 +712,14 @@ V.sort=function(a){
   if(!x){err('DMSSRT002E FILE \''+a[0]+' '+a[1]+' '+a[2]+'\' NOT FOUND');return 28}
   if(x.f.prot&&!V.mayRead()){err('DMSSRT104S ERROR \'3\' READING FILE \''+fid(x.f,x.mode)+'\' FROM DISK');return 100}
   out('DMSSRT604R ENTER SORT FIELDS:');
-  V.ask(function(l){
+  V.progRead(function(l){
     if(l===null||l===P.INT)return;
     var n=l.trim().split(/\s+/).map(Number);
     if(n.length<2||n.some(isNaN)){err('DMSSRT063E NO SORT LIST ENTERED');V.rc=24;return}
     var s=n[0]-1,e=n[1],L=x.f.lines.map(V.text).slice().sort(function(p,q){var u=p.slice(s,e),v=q.slice(s,e);return u<v?-1:u>v?1:0});
     if(!rw('SRT',a[5]))return;
     V.write('SRT',a[5].charAt(0),V.file(a[3],a[4],L,{recfm:x.f.recfm,lrecl:x.f.lrecl}));
-  },true);
+  },false,true);
   return 0;
 };
 

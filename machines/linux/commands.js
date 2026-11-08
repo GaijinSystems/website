@@ -576,6 +576,7 @@ function procs(){ /* user, pid, ppid, vsz, rss, tty, stat, start, time, command 
     [P.st.user,656,655,21308,3428,'?','S',l,'0:00','(sd-pam)'],[P.st.user,662,553,8084,4864,'ttyS0','S',l,'0:00','-bash']];
   return R;
 }
+P.procs=function(){return procs().map(function(r){return {pid:r[1],mine:r[0]===P.st.user,cmd:r[9]}})}; /* for kill and $$ */
 function comm(c){return c.replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1')} /* the command's name, as ps and top show it */
 function self(c){return [P.st.user,P.pidNow()||P.newPid(),662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
 function bgRows(me){return P.jobs().filter(function(j){return j.pid!==me}).map(function(j){return [P.st.user,j.pid,662,5476,1792,'ttyS0',j.stopped?'T':'S',hm(j.start),'0:00',j.cmd]})} /* what was started with &: sleeping, or stopped */

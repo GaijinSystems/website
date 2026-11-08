@@ -13,6 +13,7 @@ case:      sensitive
 root password: nedry
 mail notice: You have mail.
 csh:       yes
+signals:   irix
 not found: %s: Command not found.
 offline:   the t1 is fine. it is your terminal that is 9600 baud.
 
