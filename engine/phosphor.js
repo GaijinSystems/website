@@ -1375,9 +1375,10 @@ function keepFiles(){ /* false when something more than before could not be kept
   for(;;){
     var v=any?{v:1,keep:keep,gone:gone}:null;
     if(PH.save(FKEY,v))break;
-    if(!big.length){ /* the browser is full: nothing could be kept, and no older save is left to bring back what has gone since */
-      if(!PH.save(FKEY,any?{v:1,keep:{},gone:gone}:null))PH.save(FKEY,null);
-      full=true;out=out.concat(Object.keys(keep),Object.keys(gone));break;
+    if(!big.length){ /* the browser is full: nothing but the removals could be kept, and no older save is left to bring back what has gone since */
+      var kept=PH.save(FKEY,any?{v:1,keep:{},gone:gone}:null);
+      if(!kept)PH.save(FKEY,null);
+      full=true;out=out.concat(Object.keys(keep),kept?[]:Object.keys(gone));break;
     }
     drop(size/2);full=true;
   }
