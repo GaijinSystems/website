@@ -1018,9 +1018,10 @@ function Adventure(resume){
   }
   function slot(n){return 'adventure/'+P.fold(n)} /* a save's key: its file name, as this machine's file system has it (VMS and TOPS-20 know no case) */
   function* restore(name){ /* the wait, and the wizard who can waive it */
-    var G=P.saved(slot(name))||P.saved('adventure/'+name); /* or as it was typed: a save from before, or from 4.3BSD */
+    var k=slot(name),G=P.saved(k);
+    if(!G){k='adventure/'+name;G=P.saved(k)} /* or as it was typed: a save from before, or from 4.3BSD */
     if(!G){write("adventure: can't open file\n");exit()}
-    if(!fits(G)){rspeak(202);P.save(slot(name),null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
+    if(!fits(G)){rspeak(202);P.save(k,null);exit()} /* another version's, or spoiled: as the C does with a wrong one */
     var delay=Math.floor(Date.now()/60000)-Math.floor(G.when/60000); /* whole clock minutes, as datime() counts */
     if(delay<latency){
       write('This adventure was suspended a mere '+delay+' minute'+(delay===1?'':'s')+' ago.');
@@ -1037,7 +1038,7 @@ function Adventure(resume){
     }
     unpack(G);
     saved=-1;
-    P.save(slot(name),null); /* do not re-use the save */
+    P.save(k,null); /* do not re-use the save */
   }
 
   /* ---------- the main loop; each label is the one in the C, and so in the FORTRAN ---------- */

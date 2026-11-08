@@ -1039,7 +1039,7 @@ cmd(['read_mail','rdm'],function(a){
       else if(x==='last'||x==='l')N.push(live().pop());
       else if(x==='current'||x==='c')N.push(cur);
       else if((m=x.match(/^(\d+)(?::(\d+))?$/))){ /* past the last, one number is enough to say so */
-        var lo=m[2]?Math.max(+m[1],1):+m[1],hi=Math.min(m[2]?+m[2]:lo,L.length+1); /* a range starts at 1 at the least */
+        var lo=m[2]&&+m[2]>=1?Math.max(+m[1],1):+m[1],hi=Math.min(m[2]?+m[2]:lo,L.length+1); /* a range starts at 1 at the least */
         if(lo>L.length||lo<1){typed[lo]=m[1];N.push(lo)}else for(var n=lo;n<=hi;n++)N.push(n);
       }
       else{err('read_mail: Invalid message specifier. '+x);return null}
