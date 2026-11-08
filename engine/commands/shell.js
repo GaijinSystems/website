@@ -31,18 +31,19 @@ P.command({names:['man'],core:true,help:'the manual',
   }});
 
 /* aliases, on the machines whose shell had them: from the == aliases == section, plus any set this session */
-function aliasRow(a){if(P.profile.csh)return a.from.join(' ')+'\t('+a.to+')';var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
+function aliasRow(a){if(P.profile.csh)return a.from.join(' ')+'\t'+((a.n!==undefined?a.n:a.to.split(/\s+/).filter(Boolean).length)===1?a.to:'('+a.to+')'); /* 4.3BSD's plist: ( ) only round more than one word */var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q}
 P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted command is not a request for help */
   man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
     'with no argument, lists every alias. with a name, shows that one alias.',
     '',
     "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]},
-  run:function(a,raw){
+  run:function(a,raw,words){
     var rest=raw.replace(/^\s*\S+\s*/,'').trim(),m; /* the command keeps its case */
     if(!rest){
       if(!P.aliases.length){P.typeLine('no aliases.');return}
       P.say(P.aliases.slice().sort(function(a,b){return a.from.join(' ')<b.from.join(' ')?-1:1}).map(aliasRow));return; /* alphabetical */
     }
+    if(P.profile.bash){bashAlias(words.slice(1));return}
     if(rest.indexOf('=')<0&&rest.split(/\s+/).indexOf('-h')>=0){P.typeLine('usage: '+P.man.alias.syn);return}
     var nm,to;
     if(!P.profile.csh&&(m=rest.match(/^([^=]+?)\s*=\s*(.*)$/))){nm=P.fold(m[1]);to=P.unquote(m[2]).trim()} /* csh's alias is always name, then the words: an = in them is theirs */
@@ -55,8 +56,24 @@ P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted comm
     if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
     var from=nm.split(/\s+/);
     if(from[0]==='alias'){P.typeLine('alias: too dangerous to alias that.','err');return}
-    P.aliases=P.setAlias(P.aliases,from,to);
+    P.aliases=P.setAlias(P.aliases,from,to,P.profile.csh&&words?words.length-2:undefined); /* csh: how many words it is, for the listing */
   }});
+function bashAlias(W){ /* bash 5.2's alias builtin: each word is name=value, which sets it, or a name, which prints it; the rest fail one by one */
+  if(W[0]==='--')W=W.slice(1);
+  W.forEach(function(x){
+    var k=x.indexOf('=');
+    if(k>0){
+      var nm=x.slice(0,k),to=x.slice(k+1).trim();
+      if(/[\s\/$`='"\\|&;()<>]/.test(nm)){P.typeLine("bash: alias: `"+nm+"': invalid alias name",'err');return}
+      if(nm==='alias'){P.typeLine('alias: too dangerous to alias that.','err');return}
+      if(!to){P.typeLine('usage: alias name=\'command\'','err');return}
+      P.aliases=P.setAlias(P.aliases,[nm],to);
+      return;
+    }
+    var hit=P.aliases.filter(function(y){return y.from.join(' ')===x})[0];
+    if(hit)P.typeLine(aliasRow(hit));else P.typeLine('bash: alias: '+x+': not found','err');
+  });
+}
 
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
@@ -75,8 +92,18 @@ P.command({names:['exit','logout'],help:'log out',
     if(P.subshell())return; /* a stage of a pipeline is its own process, and only that process exits */
     if(P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* exit in a script ends the script */
     if(P.unsu())return; /* out of su, back to who you were */
+    if(P.stoppedWarn())return; /* There are stopped jobs. */
     P.logout();
   }});
+
+/* the jobs started with &: jobs, fg, bg (with job control: bash and csh), wait and kill (all of them; V7's kill is /bin/kill) */
+function jc(name){return function(a,raw,words){P.jobCmd(name,a,raw,words)}}
+function ctl(p){return p.bash||p.csh}
+P.command({names:['jobs'],noHelpFlag:true,enabled:ctl,run:jc('jobs')});
+P.command({names:['fg'],noHelpFlag:true,enabled:ctl,run:jc('fg')});
+P.command({names:['bg'],noHelpFlag:true,enabled:ctl,run:jc('bg')});
+P.command({names:['wait'],noHelpFlag:true,run:jc('wait')});
+P.command({names:['kill'],noHelpFlag:true,run:jc('kill')});
 
 P.command({names:['sound'],core:true,terminal:true,help:'keyclicks on or off',
   man:{what:'keyclicks on or off',syn:'sound [ on | off ]',desc:[

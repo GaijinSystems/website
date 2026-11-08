@@ -7,8 +7,16 @@ Phosphor.setup(function(P){
 'use strict';
 var V=P.vm=P.vm||{};
 var up=V.up;
-function out(s){P.typeLine(s)}
-function err(s){V.em(s,'err')}
+/* what an EXEC types goes through V.pend, a line at a time: an attention (^C) drops the queued steps that would type
+   them, but not the lines, and when the EXEC carries on they are typed first. So nothing it worked out ahead is lost,
+   as on Release 6, where the attention only interrupts the typing (CMS User's Guide, GC20-1819, Virtual Machine
+   Interruptions: the program resumes execution) */
+V.pend=[];
+function next(){var f=V.pend.shift();if(f)f()}
+function emit(f){V.pend.push(f);P.queue(next)}
+V.flush=function(){for(var n=V.pend.length;n>0;n--)P.queue(next)}; /* the lines an attention left untyped */
+function out(s){emit(function(){P.typeLine(s)})}
+function err(s){emit(function(){V.em(s,'err')})}
 V.stack=[];V.level=0;
 V.execs=[]; /* the EXECs running, the outermost first */
 V.globals=[1,1,1,1,1,1,1,1,1,1];
@@ -54,7 +62,7 @@ function done(S){V.level=Math.max(0,V.level-1);V.rc=S.rc;var i=V.execs.indexOf(S
 V.resume=function(){
   var L=V.execs.slice().reverse();
   if(!L.length||!L.every(function(S){return S.waiting}))return false;
-  V.rc=0;
+  V.rc=0;V.flush();
   L.forEach(function(S){
     P.queue(function(){after(S);run(S)});
     P.queue(function(){done(S)});
@@ -64,7 +72,7 @@ V.resume=function(){
 /* after an attention to a running EXEC, the line typed not HX: every EXEC carries on where it was, the innermost first; a
    command it was running when the attention came is over */
 V.carryOn=function(){
-  V.rc=0;
+  V.rc=0;V.flush();
   V.execs.slice().reverse().forEach(function(S){
     P.queue(function(){if(S.waiting)after(S);run(S)});
     P.queue(function(){done(S)});
@@ -190,7 +198,7 @@ function stmt(S,raw){
     var all=T.indexOf('ALL')>0,L=[];
     while(S.pc<S.lines.length&&!/^&END\b/i.test(S.lines[S.pc])){L.push(S.lines[S.pc]);S.pc++}
     S.pc++; /* no &END: the rest of the file, and no complaint */
-    if(w==='&BEGTYPE')P.say(L.map(function(l){return all?l:l.slice(0,72)}));
+    if(w==='&BEGTYPE')L.forEach(function(l){l=all?l:l.slice(0,72);emit(function(){P.say([l])})});
     else if(w==='&BEGSTACK'){if(T.indexOf('LIFO')>0)V.stack=L.reverse().concat(V.stack);else V.stack=V.stack.concat(L)}
     else if(w==='&BEGEMSG')L.forEach(function(l){err('DMS'+l)});
     else V.closeSpool('00D',L,S.fn,'EXEC');

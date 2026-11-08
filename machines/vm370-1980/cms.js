@@ -16,7 +16,7 @@ function err(s){if(!(V.nomsg&&/^DMS...002E/.test(s)))V.em(s,'err')}
 /* ---------- the session: IPL, the first line, the ready message ---------- */
 V.cmsVersion='CMS VERSION 6.0 - 10/19/79 14.12'; /* the id given when the CMS nucleus was built, before installation */
 V.ipl=function(){ /* CMS comes up: A and S accessed, the settings as they start, and the profile waits for the first line */
-  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;V.execs=[];V.level=0;V.abended=false;V.attn=false;V.ht=false;
+  V.state='cms';V.cpMode=false;V.cpReady=false;V.first=true;V.stack=[];V.edRead=null;V.execs=[];V.pend=[];V.level=0;V.abended=false;V.attn=false;V.ht=false;
   V.acc={};V.syn={};V.synStd=true;
   V.opt={blip:false,rdymsg:'LMSG',impex:true,impcp:true,abbrev:true,protect:true};
   if(V.devs['191'])V.access('191','A',null,true);
@@ -41,7 +41,7 @@ V.input=function(raw){
   var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
   V.asking=false;
   if(V.attn&&V.state!=='cms')V.attn=false;
-  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
+  if(!(V.edRead&&V.state==='cms')&&!V.attn){V.level=0;V.execs=[];V.pend=[];V.abended=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -79,7 +79,7 @@ P.onInterrupt=function(trap){
     return null;
   }
   V.asking=false;
-  if(!V.attn)V.stack=[];
+  if(!V.attn){V.stack=[];V.pend=[]}
   return null;
 };
 /* the line typed after an attention to a running EXEC. HX ends every EXEC, and CMS answers CMS; HT stops the typing until
@@ -104,7 +104,7 @@ function attention(raw){
     else if(w==='RT')V.ht=false;
     else if(!/^(HO|SO|RO|TS|TE|HB)$/.test(w))V.stack.push(l);
   });
-  if(hx){V.abend();V.execs=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
+  if(hx){V.abend();V.execs=[];V.pend=[];V.level=0;if(on)h.stop();release();P.queue(function(){return on&&h.end()});P.queue(function(){V.ready(0)});return}
   if(on){release();P.queue(function(){return h.end()})}else V.carryOn();
   P.queue(function(){
     if(V.state!=='cms'||V.cpMode||V.attn)return;

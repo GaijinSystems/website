@@ -44,7 +44,8 @@
    Differences from the source: the files are records in this browser's storage (moria/files) in place of RMS files in
    the image's directory, and the first run's installation (HOURS.DAT, MORIA.DAT, the MASTER file and the scores, which
    the source makes and then stops) is done before anyone plays. The terminal is a VT100. The $ shell escape comes back
-   at once. HELP is VMS HELP on the help library's text, recovered from MORIAHLP.HLB (see $help below). The pauses the
+   at once. HELP is VMS HELP on the help library's text, recovered from MORIAHLP.HLB, its blank lines placed as in Moria UB 5.00's
+   MORIAHLP.HLP, whose only notice is the DISCLAIMER above, in the same words (see $help below). The pauses the
    source makes before each read, which its readme says to remove for VMS 4.0 and later, are removed. Out-of-range CASE selectors and
    array indexes are not trapped (the source was built with checking off). Reals are single precision, as VAX F_floating.
 */
@@ -401,7 +402,11 @@ function $zeros(hi){return new Array(hi+2).fill(0)}
    The library's text is recovered from the copy of MORIAHLP.HLB that survives, which lost every NUL byte in a transfer:
    the records are whole, but the empty ones (blank lines) went with them. Each 512-byte block's header still counts
    its records, so the number of blank lines in every block is exact; where in its block each one stood is taken from
-   the text's own layout (before a paragraph, a heading, a subtopic, and at the end of a module). ARMOR is the copy
+   MORIAHLP.HLP, the help source of Moria UB 5.00 (Nick B Triantos and William Palter, SUNY Buffalo, 1988; from the
+   Moria 4.8 text, with the same notices: github.com/dungeons-of-moria/moria-ub, and vms50.tar.Z at ftp.funet.fi),
+   whose topics but two (LOCATION and PRINT, reworded) have the same text, and whose blank lines fit every block's
+   count; WEAPONS and ARMOR, which it lacks, follow the text's own layout (before a paragraph, a heading, a subtopic,
+   and at the end of a module). No undamaged copy of 4.8's own library or source has been found. ARMOR is the copy
    the library's index points to. HELP as on VAX/VMS: the topic's keywords and text, "Additional information
    available:" and its subtopics, "Topic?" and "<topic> Subtopic?", Return to go up a level, ^Z to leave, "?" for
    the last text again, abbreviations and * matching every topic they fit, and a screen at a time (/PAGE). */
@@ -1243,8 +1248,8 @@ var $HLB=["1 HELP",
 "male counterparts.  No adjustments to stats or abilities are made",
 "because of the sex of a character.",
 "",
-"2 Stats",
 "",
+"2 Stats",
 "STR - Strength",
 "",
 "     Strength is important in fighting with weapons, or  hand  to",
@@ -1788,8 +1793,8 @@ var $HLB=["1 HELP",
 "character appearing on your map.  See the section on commands for",
 "further help.",
 "",
-"Features :",
 "",
+"Features :",
 "  .  A floor space, or hidden trap. 1  Entrance to General Store.",
 "  #  A wall.                        2  Entrance to Armory.",
 "  '  An open door.                  3  Entrance to Weapon Smith.",
@@ -1798,8 +1803,8 @@ var $HLB=["1 HELP",
 "  <  A staircase up.                6  Entrance to Magic Shop.",
 "  >  A staircase down.              :  Obstructing rubble.",
 "  ;  A loose floor stone.              An open pit. (Blank)",
-"Objects  :",
 "",
+"Objects  :",
 "  !  A flask or potion.             ?  A scroll.",
 "  \"  An amulet.                     [  Hard armor.",
 "  $  Money (Can be imbedded).       \\  A hafted weapon.",
@@ -1811,8 +1816,8 @@ var $HLB=["1 HELP",
 "  /  A pole-arm.                    ~  Misc.",
 "  =  A ring.                        ,  Food.",
 "  s  A skeleton.",
-"Monsters :",
 "",
+"Monsters :",
 "  a  Giant Ant.                     A  Giant Ant Lion.",
 "  b  Giant Bat.                     B  Giant Beetle.",
 "  c  Giant Centipede.               C  Gelatinous Cube.",
