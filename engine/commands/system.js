@@ -223,10 +223,9 @@ P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<
 P.command({names:['rm'],path:'/bin',
   man:function(pr){ /* Debian's rm (machines/linux) takes -f and -R as well */
     var rest='you can only remove your own files, in your own home folder or in /tmp. unless the site says otherwise, what you remove stays removed at your next visit in this browser; /tmp starts empty.';
-    if(pr.bash)return {what:'remove files',syn:'rm [ -r ] file ...',desc:['removes each file named. '+rest,'',
+    return {what:'remove files',syn:'rm [ -r ] file ...',desc:pr.bash?['removes each file named. '+rest,'',
       '-f, --force   ignore nonexistent files and arguments, never prompt',
-      '-r, -R, --recursive   remove directories and their contents recursively']};
-    return {what:'remove files',syn:'rm [ -r ] file ...',desc:[
+      '-r, -R, --recursive   remove directories and their contents recursively']:[
     'removes each file named. -r also removes folders and everything in them. '+rest]};
   },
   run:function(a){

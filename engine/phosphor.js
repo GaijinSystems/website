@@ -1111,9 +1111,9 @@ function row(l,v){var d=Math.max(2,20-l.length);return l+' \u0003'+'.'.repeat(d)
 /* ---------- commands: built-ins from engine/commands, text commands from the content ---------- */
 var CMDS=Object.create(null),PATHS={},NOH={},HELP=[];
 var MAN=Object.create(null);
-function page(names,what,syn,desc,bugs){
+function page(names,what,syn,desc,bugs,sec){
   var F=function(L){return (L||[]).map(function(l){return Array.isArray(l)?[PROFILE.fill(l[0])].concat(l.slice(1)):PROFILE.fill(l)})};
-  var p={names:names.join(', '),what:what,syn:syn,desc:F(desc),bugs:F(bugs)};
+  var p={names:names.join(', '),what:what,syn:syn,desc:F(desc),bugs:F(bugs),sec:sec}; /* sec: the manual section, when the page names one (1 if not) */
   names.forEach(function(n){MAN[n]=p});
   return p;
 }
@@ -1136,7 +1136,7 @@ PH.defs.forEach(function(d){
   if(d.path)PATHS[names[0]]=d.path; /* where its program file shows up in the file tree */
   if(d.help&&!d.hidden)HELP.push([names[0],d.help]);
   var man=typeof d.man==='function'?d.man(PROFILE):d.man; /* a page may differ by machine: given the profile */
-  if(man)page(names,man.what||'',man.syn||names[0],own?(man.desc||[]).concat(['',TERMSAYS]):man.desc,man.bugs);
+  if(man)page(names,man.what||'',man.syn||names[0],own?(man.desc||[]).concat(['',TERMSAYS]):man.desc,man.bugs,man.sec);
 });
 /* Text commands (== command: NAME ==). They cannot take the name of a core command while
    it is running; switch it off first ("commands: -mail") and yours takes its place.
@@ -1165,7 +1165,7 @@ Object.keys(PROFILE.man).forEach(function(k){ /* == man: NAME == sections */
 function manPage(n){ /* body text is indented 5 with a real margin, so wrapped lines stay indented */
   var p=MAN[n],I=5;
   function at(t,hang){return [t,'',{indent:I,hang:hang||0}]}
-  var L=[n.toUpperCase()+'(1)','','NAME',at(p.names+(p.what?' - '+p.what:''),p.what?p.names.length+3:0),
+  var L=[n.toUpperCase()+'('+(p.sec||1)+')','','NAME',at(p.names+(p.what?' - '+p.what:''),p.what?p.names.length+3:0),
     '','SYNOPSIS',at(p.syn,p.syn.indexOf(' ')+1)];
   function block(title,lines){
     if(!lines.length)return;
