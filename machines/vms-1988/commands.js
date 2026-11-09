@@ -310,12 +310,31 @@ P.fallback=function(word,raw){
   return true;
 };
 /* real DCL HELP stands in for the terminal's: a list, and the topic you ask for */
-var TOPICS={DIRECTORY:'Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.',TYPE:'Prints a file. TYPE README.TXT.',COPY:'COPY from to. Makes a new version of to.',DELETE:'DELETE FILE.TXT;1. The version number is required.',PURGE:'Deletes all but the newest version of each file.',RENAME:'RENAME old new.',CREATE:'CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].',EDIT:'EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.',SET:'SET DEFAULT [.NAME] or [-] to move about.',SHOW:'SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.',RUN:'Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.',LOGOUT:'Ends your session.',MAIL:'Reads your mail.',ABOUT:'Who owns this machine.',CONNECT:'Plugs the terminal into another machine.',SOUND:'Keyclicks on or off.',FILL:'A bigger screen, on or off.',EFFECTS:'Tube effects. EFFECTS AUTO, FULL or LITE.',SOURCE:'Where to get this terminal.'};
+var TOPICS={ /* each: its lines, as HELP prints them */
+  DIRECTORY:['Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.','','Format:','','  DIRECTORY [file-spec ...]','',
+    '/DATE      Includes the creation date of each file.','/SIZE      Includes the size of each file, in blocks used.'],
+  TYPE:['Prints a file. TYPE README.TXT.','','Format:','','  TYPE file-spec ...'],
+  COPY:['COPY from to. Makes a new version of to.','','Format:','','  COPY input-file-spec output-file-spec'],
+  DELETE:['DELETE FILE.TXT;1. The version number is required.','A wildcard may stand for the name, the type or the version: DELETE *.TMP;*.','','Format:','','  DELETE file-spec;version ...'],
+  PURGE:['Deletes all but the newest version of each file.','With no file-spec, PURGE purges every file in the default directory.','','Format:','','  PURGE [file-spec]'],
+  RENAME:['RENAME old new.','','Format:','','  RENAME input-file-spec output-file-spec'],
+  CREATE:['CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].','','Format:','','  CREATE file-spec','  CREATE/DIRECTORY directory-spec','',
+    '/DIRECTORY Creates a new directory or subdirectory.'],
+  EDIT:['EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.','QUIT leaves without writing the file. HELP lists these commands.','','Format:','','  EDIT file-spec'],
+  SET:['SET DEFAULT [.NAME] or [-] to move about.','','Format:','','  SET option','',
+    'DEFAULT    SET DEFAULT directory-spec','PASSWORD   Not allowed for this account.','PROMPT, TERMINAL, VERIFY and NOVERIFY are accepted, and change nothing here.'],
+  SHOW:['SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.','SHOW DAYTIME is SHOW TIME. SHOW SYMBOL name displays a symbol.','','Format:','','  SHOW option'],
+  WRITE:['Writes a line to your terminal.','','Format:','','  WRITE SYS$OUTPUT text'],
+  RUN:['Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.','','Format:','','  RUN file-spec'],
+  '@':['Executes a command procedure. The file type is .COM unless you give one.','','Format:','','  @file-spec'],
+  LOGOUT:'Ends your session.',MAIL:'Reads your mail.',ABOUT:'Who owns this machine.',
+  CONNECT:['Plugs the terminal into another machine.','With no name, lists the machines on the line.','','Format:','','  CONNECT [name]'],
+  SOUND:'Keyclicks on or off.',FILL:'A bigger screen, on or off.',EFFECTS:'Tube effects. EFFECTS AUTO, FULL or LITE.',SOURCE:'Where to get this terminal.'};
 P.command({names:['help'],noHelpFlag:true,terminal:true,run:function(a,raw,w){
   var t=up(w[1]||'');
   function topic(q){
     var k=Object.keys(TOPICS).filter(function(x){return x.indexOf(q)===0})[0];
-    P.say(k?['',k,'','  '+TOPICS[k]]:['','  Sorry, no documentation on '+q]);
+    P.say(k?['',k,''].concat([].concat(TOPICS[k]).map(function(l){return l&&'  '+l})):['','  Sorry, no documentation on '+q]);
   }
   if(t){topic(t);return}
   var names=Object.keys(TOPICS).filter(function(k){return k!=='CONNECT'||P.allowed.length>1}),L=['','  Information available:',''];

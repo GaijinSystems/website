@@ -4,8 +4,10 @@
 'use strict';
 
 P.command({names:['help'],core:true,terminal:true,
-  man:{what:'list the commands',syn:'help',desc:[
-    'lists the commands, alphabetically, with a few words about each, and apart from them the ones the terminal answers itself. man name says more about any of them.']},
+  man:function(pr){return {what:'list the commands',syn:'help',desc:[
+    'lists the commands, alphabetically, with a few words about each, and apart from them the ones the terminal answers itself. man name says more about any of them.',
+    '',
+    'name '+(pr.bash?'--help':'-h')+' prints the synopsis of a command that has a manual page.']}},
   run:function(){
     var H=P.help(),man=P.has(P.cmds,'man'),split=!P.profile.noUnix; /* the other machines' help is all the terminal's */
     H.sort(function(a,b){return a[0].toLowerCase()<b[0].toLowerCase()?-1:1}); /* alphabetical */
@@ -36,10 +38,16 @@ function aliasRow(a){
   var q=a.to.indexOf("'")>=0?'"':"'";return 'alias '+a.from.join(' ')+'='+q+a.to+q;
 }
 P.command({names:['alias'],core:true,noHelpFlag:true, /* -h inside a quoted command is not a request for help */
-  man:{what:'list or set aliases',syn:"alias [ name[='command'] ]",desc:[
-    'with no argument, lists every alias. with a name, shows that one alias.',
+  man:function(pr){ /* csh's alias name wordlist; bash's any number of name=value and name */
+    if(pr.csh)return {what:'list or set aliases',syn:'alias [ name [ wordlist ] ]',desc:[
+      'with no argument, lists every alias. with a name, prints what that alias stands for.',
+      '',
+      "alias name wordlist assigns the wordlist as the alias of name, for this session; it is forgotten at logout. any extra words are passed through, and !* in the wordlist (typed \\!*) stands for them. commands may be joined with ; inside quotes: alias ll 'ls -l; pwd'."]};
+    return {what:'list or set aliases',syn:pr.bash?'alias [name[=value] ...]':"alias [ name[='command'] ]",desc:[
+    pr.bash?'with no argument, lists every alias. each name=value sets an alias, and each name alone shows that one alias; -- ends the options.':'with no argument, lists every alias. with a name, shows that one alias.',
     '',
-    "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]},
+    "alias name='command' sets an alias for this session; it is forgotten at logout. the longest matching alias wins, and any extra words are passed through. commands may be joined with ; inside the quotes."]};
+  },
   run:function(a,raw,words){
     var rest=raw.replace(/^\s*\S+\s*/,'').trim(),m; /* the command keeps its case */
     if(!rest){
@@ -105,8 +113,10 @@ P.command({names:['clear'],core:true,help:'clear the screen',
   run:function(){P.clear()}});
 
 P.command({names:['exit','logout'],help:'log out',
-  man:{what:'log out',syn:'exit',desc:[
-    'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason.']},
+  man:{what:'log out',syn:'exit [ n ]',desc:[
+    'ends the session. the terminal runs its self-test and waits at login: for a new name. any name will do, within reason.',
+    '',
+    'in a shell script, or in ( ), exit ends only that, and n, if given, is its exit status.']},
   run:function(a){
     if(P.subExit(a))return; /* ( ... exit 3 ): the subshell ends there, with that status */
     if(P.subshell())return; /* a stage of a pipeline is its own process, and only that process exits */

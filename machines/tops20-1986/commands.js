@@ -414,14 +414,27 @@ var HLP={
   HELP:['HELP topic prints HLP:topic.HLP. HELP ? lists the topics.','At the @ prompt, ? shows what can come next and ESCAPE finishes a word.'],
   ADVENTURE:['Colossal Cave, by Will Crowther and Don Woods. Type ADVENTURE.','Commands are one or two words. Only the first five letters count.'],
   DUNGEON:['Dungeon, the FORTRAN translation of MIT\'s Zork. Type DUNGEON.','Treasures go in the trophy case. SAVE and RESTORE keep a game in this browser.'],
-  MM:['MM reads your mail. HEADERS, READ, NEXT, DELETE, EXIT.'],
+  MM:['MM reads your mail. HEADERS, READ, NEXT, DELETE, EXIT.','TYPE is READ, QUIT is EXIT, and HELP or ? lists the commands.'],
   FINGER:['FINGER lists who is on. FINGER name says more about one of them.'],
   ABOUT:['ABOUT: who owns this machine.'],
   SOURCE:['SOURCE: where to get this terminal.'],
   CONNECT:['CONNECT <DIR> moves you to a directory you own.','CONNECT on its own lists the other machines on the line; CONNECT name plugs into one.'],
   SOUND:['SOUND ON or SOUND OFF: the keyclicks.'],
   FILL:['FILL: the monitor fills the window. FILL again puts it back.'],
-  EFFECTS:['EFFECTS AUTO, FULL or LITE: how hard the tube works.']
+  EFFECTS:['EFFECTS AUTO, FULL or LITE: how hard the tube works.'],
+  DIRECTORY:['@DIRECTORY (OF FILES) filespec,...','Lists the files and their generations. * and % are wildcards, and a generation of * means all of them.','With no filespec, *.*.*: everything in the connected directory.'],
+  VDIRECTORY:['@VDIRECTORY (OF FILES) filespec,...','DIRECTORY with each file\'s length in pages and the date and time it was written.'],
+  TYPE:['@TYPE (FILE) filespec,...','Prints files on your terminal. With no file type given, TYPE README finds README.TXT.'],
+  DELETE:['@DELETE (FILES) filespec,...','Marks files deleted: UNDELETE restores them, until EXPUNGE. With no generation, the newest; .* deletes them all.'],
+  UNDELETE:['@UNDELETE (FILES) filespec,...','Restores deleted files.'],
+  EXPUNGE:['@EXPUNGE (DIRECTORY) <directory>','Removes the deleted files for good. With no directory, the connected one.'],
+  COPY:['@COPY (FROM) filespec (TO) filespec','Makes a new generation of the second file. COPY TTY: filespec takes what you type, until CTRL/Z.'],
+  RENAME:['@RENAME (EXISTING FILE) filespec (TO BE) filespec','Gives a file a new name. A * in the new name keeps that part of the old one.'],
+  SYSTAT:['@SYSTAT argument','Displays information about the jobs on the system.','SYSTAT ? lists the arguments the EXEC recognizes: ALL, DIRECTORY, HEADER, LINE, NO, ORIGIN, PROGRAM, STATE, SYSTEM, TIME, WHAT, WHERE, WHO, a user name or a job number. Here every one of them gives the whole list.'],
+  INFORMATION:['@INFORMATION (ABOUT) keyword','INFORMATION ? lists the keywords. Those with an answer here: AVAILABLE, DIRECTORY, DISK-USAGE, JOB-STATUS, LOGICAL-NAMES, MAIL, SYSTEM-STATUS, TERMINAL-MODE, VERSION, and the BATCH-, MOUNT-, OUTPUT- and RETRIEVAL-REQUESTS queues.'],
+  LOGIN:['@LOGIN user-name password','With no password on the line, LOGIN asks for it.'],
+  R:['@R (PROGRAM) program-name arguments','Runs a program from SYS:, passing it the rest of the line.'],
+  RUN:['@RUN (PROGRAM) filespec arguments','Runs the program in that file, passing it the rest of the line.']
 };
 function helpTopics(){return Object.keys(HLP).filter(function(k){return !(k==='CONNECT'&&P.allowed.length<2)&&!(k==='ABOUT'&&!P.profile.about.length)}).sort()}
 function helpOn(t){

@@ -63,10 +63,13 @@ P.setup(function(){
     file:['determine file type','file [-bcdEhiklLNnprsSvzZ0] [file ...]'],du:['estimate file space usage','du [OPTION]... [FILE]...'],ln:['make links between files','ln [OPTION]... TARGET LINK_NAME'],
     date:['print or set the system date and time','date [OPTION]... [+FORMAT]'],whoami:['print effective user name','whoami [OPTION]...'],clear:['clear the terminal screen','clear [-Ttype] [-V] [-x]'],
     printenv:['print all or part of environment','printenv [OPTION]... [VARIABLE]...'],stty:['change and print terminal line settings','stty [-F DEVICE | --file=DEVICE] [SETTING]...'],
-    sh:['command interpreter (shell)','sh [-aCefnuvxIimqVEb] [+aCefnuvxIimqVEb] [-o option_name] [command_file [argument ...]]'],
+    sh:['command interpreter (shell)','sh [-aCefnuvxIimqVEb] [+aCefnuvxIimqVEb] [-o option_name] [command_file [argument ...]] or sh -c command_string'],
     vi:["Vi IMproved, a programmer's text editor",'vi [options] [file ..]'],'true':['do nothing, successfully','true [ignored command line arguments]'],
     'false':['do nothing, unsuccessfully','false [ignored command line arguments]'],test:['check file types and compare values','test EXPRESSION'],expr:['evaluate expressions','expr EXPRESSION']};
   Object.keys(GNU).forEach(function(k){if(P.has(P.man,k)){P.man[k].what=GNU[k][0];P.man[k].syn=GNU[k][1]}});
+  if(P.cmds.bash)P.man.bash={names:'bash',what:'GNU Bourne-Again SHell',syn:'bash [options] [command_string | file]',bugs:[],desc:[ /* the bash above, which is sh's */
+    'runs the commands in a file, one line at a time, with any words after it as $1, $2 and on. with no file, it does nothing: you are in bash already.','',
+    '-c   the commands are read from the first argument, command_string.'].map(P.fill)};
 });
 function cmd(names,where,what,syn,desc,run,o){
   P.command(Object.assign({names:[].concat(names),path:where||undefined,man:{what:what,syn:syn,desc:[].concat(desc)},run:run},o||{}));
@@ -131,7 +134,12 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
     if(back)P.typeLine(P.st.cwd);
   },{core:true,help:'change directory'});
 /* bash's own list is the engine's (for !n and the arrows): -c, -d, -s and -p change a copy and put it back */
-cmd('history','','display the command history','history [-c] [-d offset] [n]','lists the commands typed so far, numbered. with n, only the last n. -c clears the list, -d offset deletes one entry. !n runs number n again, and !! the last one.',function(a){
+cmd('history','','display the command history','history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]',['lists the commands typed so far, numbered. with n, only the last n. -c clears the list, -d offset deletes one entry. !n runs number n again, and !! the last one.','',
+  '-c   clear the history list by deleting all of the entries',
+  '-d offset   delete the history entry at position offset. negative offsets count back from the end of the history list',
+  '-a, -n, -r, -w   append to, read from, or write the history file. it is not kept here, so they change nothing',
+  '-p   perform history expansion on each arg and display the result without storing it in the history list',
+  '-s   append the args to the history list as a single entry'],function(a){
   var H=P.hist(),USAGE='history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]';
   function bad(m,st){err('bash: history: '+m);if(st===2)err(USAGE);P.queue(function(){P.status(st)})} /* after the error lines, which set 1 as they go out */
   var o=a[0]||'';
@@ -401,7 +409,12 @@ function as(who,line,sudo,login){ /* one command line as another user, then back
   },true);
 }
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
-  'asks for the password of the user named, root if none is, and starts a shell as that user. -c runs one command instead.',function(a){
+  ['asks for the password of the user named, root if none is, and starts a shell as that user. -c runs one command instead.','',
+  '-c, --command command   pass command to the shell with the -c option',
+  '-g, --group group   specify the primary group. this option is available to the root user only',
+  '-G, --supp-group group   specify a supplementary group. this option is available to the root user only',
+  '-, -l, --login   start the shell as a login shell, in the user\'s home directory',
+  '-s, --shell shell   run the specified shell instead of the default; here it is always bash'],function(a){
   var A=[],who=null,login=false,run=null,grp=false,m,i;
   a.forEach(function(x){ /* -lc id is -l -c id */
     if(!/^-[^-]./.test(x)){A.push(x);return}
@@ -444,8 +457,14 @@ cmd('su','/usr/bin','run a command with substitute user and group ID','su [optio
   if(piped){tried(String([].concat(piped)[0]||''));return}
   P.ask('Password: ',tried,false,true);
 });
-cmd('sudo','/usr/bin','execute a command as another user','sudo [-u user] command [arg ...]',
-  'runs a command as the superuser or another user, after asking for your own password, if the security policy says you may.',function(a,raw){
+cmd('sudo','/usr/bin','execute a command as another user','sudo -K | -k | -V or sudo [-u user] [-i | -s] [command [arg ...]]',
+  ['runs a command as the superuser or another user, after asking for your own password, if the security policy says you may.','',
+  '-i, --login   run the target user\'s shell as a login shell, or the command given',
+  '-K   remove every cached credential for the user',
+  '-k   invalidate the user\'s cached credentials',
+  '-s, --shell   run a shell as the target user, or the command given',
+  '-u user, --user=user   run the command as a user other than the default target user (usually root)',
+  '-V   print the sudo version string'],function(a,raw){
   if(!a.length){P.say(['usage: sudo -h | -K | -k | -V','usage: sudo -v [-ABkNnS] [-g group] [-h host] [-p prompt] [-u user]','usage: sudo [-ABbEHkNnPS] [-u user] [VAR=value] [-i | -s] [command [arg ...]]']);P.status(1);return}
   if(a[0]==='-V'){P.typeLine('Sudo version 1.9.16p2');return}
   if(a[0]==='-k'||a[0]==='-K')return;
@@ -487,7 +506,8 @@ cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','l
 
 /* ---------- cat, rm and mkdir, with GNU's messages; the work is the engine's ---------- */
 function why(n){return !n?'No such file or directory':n.type==='d'?'Is a directory':'Permission denied'}
-cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [OPTION]... [FILE]...','prints each file in turn, or its standard input. -n numbers the lines.',function(a){
+cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [OPTION]... [FILE]...',['prints each file in turn, or its standard input. -n numbers the lines. with no file, or when file is -, it reads standard input.','',
+  '-n, --number   number all output lines'],function(a){
   var o=opts(a),num=o.has('n','number'),k=0,bad=false,cont=false;
   function put(L){ /* a last line with no newline stays open, and the next file goes on in it without a number of its own */
     var R=num?L.map(function(l,i){return i||!cont?String(++k).padStart(6)+'\t'+l:l}):L;R.open=L.open;if(L.length)cont=!!L.open;P.say(R)}
@@ -535,7 +555,8 @@ P.setup(function(){
     delete up.kids[key];return true;
   }
 });
-cmd('mkdir','/usr/bin','make directories','mkdir [OPTION]... DIRECTORY...','makes each directory named. -p makes any parents that are missing too, and does not mind if it is there already.',function(a){
+cmd('mkdir','/usr/bin','make directories','mkdir [OPTION]... DIRECTORY...',['makes each directory named. -p makes any parents that are missing too, and does not mind if it is there already.','',
+  '-p, --parents   no error if existing, make parent directories as needed'],function(a){
   var o=opts(a),par=o.has('p','parents');
   if(!o.ops.length){err('mkdir: missing operand');err("Try 'mkdir --help' for more information.");P.status(1);return}
   o.ops.forEach(function(x){
@@ -692,17 +713,20 @@ function columns(names){
 cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
   'lists information about the files named, or the current directory, sorted by name.','',
   '-a, --all   do not ignore entries starting with .',
-  '-A          like -a, without . and ..',
-  '-d          list directories themselves, not their contents',
-  '-F          append a mark to entries: / for a directory, * for a program, @ for a link',
-  '-h          with -l, print sizes like 1K 234M 2G',
+  '-A, --almost-all   like -a, without . and ..',
+  '-d, --directory   list directories themselves, not their contents',
+  '-F, --classify   append a mark to entries: / for a directory, * for a program, @ for a link',
+  '-g, -n, -o   like -l; here they list the owner and group as -l does',
+  '-h, --human-readable   with -l, print sizes like 1K 234M 2G',
   '-l          use a long listing format',
-  '-r          reverse order while sorting',
+  '-r, --reverse   reverse order while sorting',
   '-R, --recursive   list subdirectories recursively',
   '-S          sort by file size, largest first',
   '-t          sort by time, newest first',
   '-1          list one file per line',
-  '--color     accepted; this terminal has one colour, and it is green'],function(a){
+  '--color[=WHEN], --colour[=WHEN]   accepted; this terminal has one colour, and it is green',
+  '--group-directories-first   accepted, and changes nothing here',
+  '-b -B -c -C -D -f -G -H -i -I -k -L -m -N -p -q -Q -s -T -u -U -v -w -x -X -Z   accepted, and change nothing here'],function(a){
   var o=opts(a),all=o.has('a','all'),almost=o.has('A','almost-all'),long=/[lgno]/.test(o.f),hum=o.has('h','human-readable'),self=o.has('d','directory'),
       mark=o.has('F','classify'),one=o.has('1'),rev=o.has('r','reverse'),byT=o.has('t'),byS=o.has('S'),rec=o.has('R','recursive'),files=[],dirs=[],bad=0;
   var unknown=Object.keys(o.L).filter(function(k){return !/^(all|almost-all|human-readable|directory|classify|reverse|recursive|color|colour|group-directories-first)$/.test(k)})[0];
@@ -779,7 +803,8 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
 /* ---------- the system ---------- */
 cmd('uname','/usr/bin','print system information','uname [OPTION]...',[
   'prints facts about the machine and the kernel it runs. with no option, the same as -s.','',
-  '-a   all of the below, in this order','-s   the kernel name','-n   the network node hostname','-r   the kernel release','-v   the kernel version','-m   the machine hardware name','-o   the operating system'],function(a){
+  '-a, --all   all of the below, in this order, except -p and -i, which are unknown','-s   the kernel name','-n   the network node hostname','-r   the kernel release','-v   the kernel version','-m   the machine hardware name',
+  '-p   the processor type (non-portable)','-i   the hardware platform (non-portable)','-o   the operating system'],function(a){
   var o=opts(a),all=o.has('a','all'),V={s:'Linux',n:P.st.hostname,r:D.krel,v:D.kbuild,m:'x86_64',p:'unknown',i:'unknown',o:'GNU/Linux'},R=[];
   var bad=o.f.replace(/[asnrvmpio]/g,'').charAt(0);
   if(bad){err("uname: invalid option -- '"+bad+"'");err("Try 'uname --help' for more information.");P.status(1);return}
@@ -788,7 +813,13 @@ cmd('uname','/usr/bin','print system information','uname [OPTION]...',[
   });
   P.typeLine(R.join(' '));
 });
-cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-i|-I|-f|-d|-s] [name]','prints the name of this machine. -f prints its full name, -d its domain, -I its addresses, -i the address its name resolves to. only root may change it.',function(a){
+cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-A|-d|-f|-i|-I|-s] [name]',['prints the name of this machine. -f prints its full name, -d its domain, -I its addresses, -i the address its name resolves to. only root may change it.','',
+  '-A, --all-fqdns   display all FQDNs of the machine',
+  '-d, --domain   display the name of the DNS domain',
+  '-f, --fqdn   display the FQDN (Fully Qualified Domain Name)',
+  '-i, --ip-address   display the network address(es) of the host name',
+  '-I, --all-ip-addresses   display all network addresses of the host',
+  '-s, --short   display the short host name'],function(a){
   var o=opts(a);
   if(o.ops.length){err('hostname: you must be root to change the host name');return}
   if(o.has('I','all-ip-addresses'))P.typeLine(D.ip4+' '+D.ip6+' ');
@@ -797,14 +828,16 @@ cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-i|-I
   else if(o.has('d','domain'))P.typeLine(P.st.domain);
   else P.typeLine(P.st.hostname);
 });
-cmd('hostnamectl','/usr/bin','control the system hostname','hostnamectl [OPTIONS...] COMMAND ...','with no command, describes the machine: its name, what it runs on, and the kernel.',function(a){
+cmd('hostnamectl','/usr/bin','control the system hostname','hostnamectl [OPTIONS...] COMMAND ...',['with no command, describes the machine: its name, what it runs on, and the kernel.','',
+  'status   show system hostname and related information. if no command is specified, this is the implied default. any other command would change something, and is refused'],function(a){
   if(a[0]&&a[0]!=='status'){err('Could not set property: Interactive authentication required.');return}
   lines([' Static hostname: '+P.st.hostname,'       Icon name: computer-vm','         Chassis: vm','      Machine ID: 3f9c2e4b7a1d48e6b5c0d9a2e7f1c843','         Boot ID: '+bootId(),
     '    Product UUID: 0d6e5c1a-9b2f-4e7d-8a3c-61f4b2d9e0a5','  Virtualization: kvm','Operating System: Debian GNU/Linux 13 (trixie)','          Kernel: Linux '+D.krel,'    Architecture: x86-64',
     ' Hardware Vendor: QEMU','  Hardware Model: Standard PC _i440FX + PIIX, 1996_','Firmware Version: 1.16.3-debian-1.16.3-2','   Firmware Date: Tue 2014-04-01']);
 });
 function bootId(){var s=String(BOOT.getTime()*7919),h='';for(var i=0;h.length<32;i++)h+='0123456789abcdef'.charAt((s.charCodeAt(i%s.length)*(i+3))%16);return h}
-cmd('uptime','/usr/bin','tell how long the system has been running','uptime [options]','prints the time now, how long the system has been running, how many users are logged on, and the system load averages for the past 1, 5 and 15 minutes. -p prints only how long, in words.',function(a){
+cmd('uptime','/usr/bin','tell how long the system has been running','uptime [options]',['prints the time now, how long the system has been running, how many users are logged on, and the system load averages for the past 1, 5 and 15 minutes. -p prints only how long, in words.','',
+  '-p, --pretty   show uptime in pretty format','-s, --since   system up since, in yyyy-mm-dd HH:MM:SS format'],function(a){
   var o=opts(a);
   if(o.has('p','pretty')){
     var m=Math.floor(since()/6e4),d=Math.floor(m/1440),h=Math.floor(m%1440/60),W=[];
@@ -833,7 +866,11 @@ function memRows(){
   var M=D.mem,cache=M.Buffers+M.Cached+M.SReclaimable;
   return [['Mem:',M.MemTotal,M.MemTotal-M.MemFree-cache,M.MemFree,M.Shmem,cache,M.MemAvailable],['Swap:',0,0,0]];
 }
-cmd('free','/usr/bin','display amount of free and used memory in the system','free [options]','prints how much memory there is, how much is in use, and how much is free, in kibibytes, or -m mebibytes, -g gibibytes, -h whatever reads best.',function(a){
+cmd('free','/usr/bin','display amount of free and used memory in the system','free [options]',['prints how much memory there is, how much is in use, and how much is free, in kibibytes, or -m mebibytes, -g gibibytes, -h whatever reads best.','',
+  '-k, --kibi   display the amount of memory in kibibytes. this is the default',
+  '-m, --mebi   display the amount of memory in mebibytes',
+  '-g, --gibi   display the amount of memory in gibibytes',
+  '-h, --human   show all output fields automatically scaled to shortest three digit unit and display the units of print out'],function(a){
   var o=opts(a),k=o.has('h','human')?'h':o.has('g','gibi')?'g':o.has('m','mebi')?'m':'k';
   function v(x){return k==='h'?(x?humanI(x*1024):'0B'):String(k==='g'?Math.floor(x/1048576):k==='m'?Math.floor(x/1024):x)}
   lines(['               total        used        free      shared  buff/cache   available'].concat(memRows().map(function(r){
@@ -848,7 +885,8 @@ function humanI(b){ /* procps: 1.9Gi, 318Mi */
 var DISKS=[['udev',977320,0,'/dev'],['tmpfs',201496,612,'/run'],['/dev/vda1',20437588,1678344,'/'],['tmpfs',1007488,0,'/dev/shm'],['tmpfs',5120,0,'/run/lock'],
   ['tmpfs',1024,0,'/run/credentials/systemd-journald.service'],['tmpfs',1007488,8,'/tmp'],['/dev/vda15',126678,11872,'/boot/efi'],['tmpfs',201496,4,'/run/user/1001'],
   ['tmpfs',1024,0,'/run/credentials/serial-getty@ttyS0.service']];
-cmd('df','/usr/bin','report file system space usage','df [OPTION]... [FILE]...','shows, for each mounted file system, its size, how much is used and how much is left, in 1K blocks, or with -h in sizes that read easily.',function(a){
+cmd('df','/usr/bin','report file system space usage','df [OPTION]... [FILE]...',['shows, for each mounted file system, its size, how much is used and how much is left, in 1K blocks, or with -h in sizes that read easily.','',
+  '-h, --human-readable   print sizes in powers of 1024 (e.g., 1023M)'],function(a){
   var o=opts(a),h=o.has('h','human-readable');
   var R=DISKS.map(function(d){
     var avail=d[3]==='/'?d[1]-d[2]-1048576:d[1]-d[2],pct=d[2]?Math.ceil(100*d[2]/(d[2]+avail)):0;
@@ -873,7 +911,10 @@ function ipAddr(brief,only){
   return L.filter(function(x,i){return !only||only===(i?'ens3':'lo')}).reduce(function(a,b){return a.concat(b)},[]);
 }
 cmd('ip','/usr/bin','show / manipulate routing, network devices, interfaces and tunnels','ip [ OPTIONS ] OBJECT { COMMAND | help }',[
-  'shows the network: ip addr its addresses, ip link its interfaces, ip route where packets go. -br makes it brief. changing any of it needs root.'],function(a){
+  'shows the network: ip addr its addresses, ip link its interfaces, ip route where packets go. -br makes it brief. changing any of it needs root.','',
+  '-br, -brief   print only basic information in a tabular format for better readability',
+  'address, link, neighbour, route   the objects it knows; each may be shortened, as ip a, ip l, ip n and ip r',
+  'show [dev name]   the command, and the default. with ip address, dev name shows only that interface, lo or ens3. add, del, set, change, replace, flush and append are refused'],function(a){
   var br=a.indexOf('-br')>=0||a.indexOf('-brief')>=0,w=a.filter(function(x){return x.charAt(0)!=='-'}),ob=w[0]||'',verb=w[1]||'show',dev=w.indexOf('dev')>=0?w[w.indexOf('dev')+1]:null;
   if(!ob){P.say(['Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }','       ip [ -force ] -batch filename','where  OBJECT := { address | link | route | rule | neigh | ... }','       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] | -br[ief] | -c[olor] ... }']);P.status(255);return}
   if(dev&&dev!=='lo'&&dev!=='ens3'){err('Device "'+dev+'" does not exist.');P.status(1);return}
@@ -910,7 +951,12 @@ function comm(c){return c.replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').rep
 function self(c){return [P.st.user,P.pidNow()||P.newPid(),662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
 function bgRows(me){return P.jobs().filter(function(j){return j.pid!==me}).map(function(j){return [P.st.user,j.pid,662,5476,1792,'ttyS0',j.stopped?'T':'S',hm(j.start),'0:00',j.cmd]})} /* what was started with &: sleeping, or stopped */
 cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]',[
-  'lists processes. with no options, those on your terminal. ps aux lists everyone\'s, with the user, cpu, memory and start time of each; ps -ef the same in the System V style.'],function(a,raw,w){
+  'lists processes. with no options, those on your terminal. ps aux lists everyone\'s, with the user, cpu, memory and start time of each; ps -ef the same in the System V style.','',
+  'a   with x, lift the BSD-style "only yourself" restriction too: every process',
+  'u   display user-oriented format',
+  'x   lift the BSD-style "must have a tty" restriction: all your own processes',
+  '-A, -e   select all processes',
+  '-f   do full-format listing'],function(a,raw,w){
   var f=a.join(' '),bsd=a.length&&a[0].charAt(0)!=='-',x=bsd?a[0]:'',every=/a.*x|x.*a/.test(x)||/(^|\s)-\w*[eA]/.test(f),mine=self('ps '+a.join(' ')),R=procs().concat(bgRows(mine[1]),[mine]);
   var T=P.st.user;
   if(!every)R=R.filter(function(r){return r[5]==='ttyS0'&&r[0]===T||bsd&&/x/.test(x)&&r[0]===T});
@@ -983,7 +1029,15 @@ function unit(x){
   return UNITS.filter(function(u){return u[0]===n})[0];
 }
 cmd(['systemctl'],'/usr/bin','Control the systemd system and service manager','systemctl [OPTIONS...] COMMAND [UNIT...]',[
-  'asks systemd about the services it runs, and tells it what to do with them. status shows one, or the whole machine; list-units lists them. starting, stopping and enabling need root.'],function(a,raw,w){
+  'asks systemd about the services it runs, and tells it what to do with them. status shows one, or the whole machine; list-units lists them. starting, stopping and enabling need root.','',
+  'list-units, list   list units that systemd currently has in memory. the default command',
+  'status [UNIT...]   show runtime status information about the whole system or about one or more units',
+  'show UNIT...   here the same as status',
+  'is-active UNIT...   check whether the units are active (i.e. running)',
+  'start, stop, restart, try-restart, reload, reload-or-restart, kill, enable, disable, mask, unmask, edit UNIT...   need root. root\'s are obeyed and change nothing here',
+  'daemon-reload   reload the systemd manager configuration; needs root',
+  'reboot, poweroff, halt, suspend   shut down and reboot, power off or halt the system, or suspend it; they need root',
+  'hibernate, hybrid-sleep   hibernate the system; they fail, as there is no swap space'],function(a,raw,w){
   var o=opts(a),verb=o.ops[0]||'list-units',names=o.ops.slice(1);
   if(verb==='status'&&!names.length){
     var st=stamp(BOOT);
@@ -1043,7 +1097,13 @@ function power(v){
     '[  OK  ] Finished '+T[0]+'.','[  OK  ] Reached target '+T[1]+'.','['+s+'] reboot: '+T[2]]);
 }
 ['reboot','poweroff','halt','shutdown'].forEach(function(v){
-  cmd(v,'/usr/sbin',(v==='shutdown'?'Halt, power off or reboot the machine':v==='reboot'?'Reboot the machine':v==='halt'?'Halt the machine':'Power off the machine'),v+' [OPTIONS...]','asks systemd to stop the machine. only an administrator may.',function(a){
+  cmd(v,'/usr/sbin',(v==='shutdown'?'Halt, power off or reboot the machine':v==='reboot'?'Reboot the machine':v==='halt'?'Halt the machine':'Power off the machine'),v+' [OPTIONS...]'+(v==='shutdown'?' [TIME] [WALL...]':''),['asks systemd to stop the machine. only an administrator may.'].concat(v!=='shutdown'?[]:['',
+    'the first argument may be a time string: "hh:mm" in the 24h clock, "+m" (or m) minutes from now, or "now". with none, "+1" is implied. what follows it is a wall message for the other users.','',
+    '-H, --halt   halt the machine',
+    '-P, --poweroff   power the machine off (the default)',
+    '-r, --reboot   reboot the machine',
+    '-h   the same as --poweroff',
+    '-c   cancel a pending shutdown']),function(a){
     if(v!=='shutdown'||P.st.user!=='root'){power(v==='shutdown'?'poweroff':v);return}
     var r='poweroff',when=null,m,now=P.now();
     for(var i=0;i<a.length;i++){
@@ -1065,7 +1125,11 @@ function power(v){
   });
 });
 cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journalctl [OPTIONS...] [MATCHES...]',[
-  'prints the system journal, oldest first. ordinary users see only their own entries; the system\'s are for the groups adm and systemd-journal.'],function(a){
+  'prints the system journal, oldest first. ordinary users see only their own entries; the system\'s are for the groups adm and systemd-journal.','',
+  '-k, --dmesg   show only kernel messages',
+  '-n, --lines   show the most recent journal events and limit the number of events shown, 10 by default: -n 5',
+  '-q, --quiet   suppresses all informational messages',
+  '-u, --unit=UNIT   show messages for the specified systemd unit'],function(a){
   var o=opts(a),t=new Date(BOOT.getTime()+48e3),h=P.st.hostname,pfx=jstamp(t)+' '+h+' systemd[655]: ';
   if(!o.has('q','quiet'))lines(['Hint: You are currently not seeing messages from other users and the system.',"      Users in groups 'adm', 'systemd-journal' can see all messages.",'      Pass -q to turn off this notice.']);
   if(o.has('u','unit')||o.has('k','dmesg')||o.L.unit){P.typeLine('-- No entries --');return}
@@ -1139,10 +1203,20 @@ function apt(a,get){
   err(E+'Invalid operation '+verb);P.status(100);
 }
 cmd('apt','/usr/bin','command-line interface','apt [-h] [-o=config_string] [-c=config_file] [-t=target_release] [-a=architecture] {list | search | show | update | install pkg... | remove pkg... | upgrade | full-upgrade | edit-sources | {-v | --version} | {-h | --help}}',
-  ['installs, removes and lists packages. listing and searching are for anyone; changing what is installed takes root.'],function(a){apt(a,false)});
-cmd('apt-get','/usr/bin','APT package handling utility -- command-line interface','apt-get [options] {update | upgrade | install pkg... | remove pkg... | ...}',['the older, steadier apt, for scripts. as apt, it needs root to change anything.'],function(a){apt(a,true)});
+  ['installs, removes and lists packages. listing and searching are for anyone; changing what is installed takes root.','',
+  'list [--installed | --upgradable] [pattern]   list the packages whose names match the glob pattern: all of them, the ones installed, or the upgradable ones',
+  'search word   search for the word in the names and descriptions of the packages',
+  'show pkg...   show information about the given packages',
+  'policy [pkg...]   show the installed and candidate versions of the packages, and where they come from',
+  'update, upgrade, full-upgrade, dist-upgrade, install, reinstall, remove, purge, autoremove, satisfy, autoclean, clean, source, build-dep, edit-sources, modernize-sources   change the system or its package lists, and are refused here, for root too'],function(a){apt(a,false)});
+cmd('apt-get','/usr/bin','APT package handling utility -- command-line interface','apt-get [options] {update | upgrade | dist-upgrade | full-upgrade | install pkg... | reinstall pkg... | remove pkg... | purge pkg... | source pkg... | build-dep pkg... | satisfy dependencies... | clean | autoclean | autoremove | ...}',['the older, steadier apt, for scripts. as apt, it needs root to change anything.'],function(a){apt(a,true)});
 cmd('apt-cache','/usr/bin','query the APT cache','apt-cache [options] {search regex | show pkg... | policy [pkg...] | ...}',['asks the package lists what there is, without changing anything.'],function(a){apt(a,2)});
-cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['installs and removes single packages, and with -l lists what is installed.'],function(a,raw,w){
+cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['installs and removes single packages, and with -l lists what is installed.','',
+  '-i, --install package-file...   install the package; refused here, for root too',
+  '-l, --list [package-name-pattern]   list packages matching given pattern',
+  '-P, --purge package...   purge an installed or already removed package; refused here',
+  '-r, --remove package...   remove an installed package; refused here',
+  '--version   display dpkg version information'],function(a,raw,w){
   var o=opts(a);
   if(o.has('l','list')){
     var pat=o.ops[0]?P.globRe(o.ops[0]):null,L=PKGS.filter(function(p){return !pat||pat.test(p[0])});

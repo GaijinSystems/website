@@ -4,7 +4,7 @@
 (function(P){
 'use strict';
 function cmd(name,what,syn,desc,run,where){
-  P.command({names:[name],path:where||'/usr/bin',man:{what:what,syn:syn,desc:[desc]},run:run});
+  P.command({names:[name],path:where||'/usr/bin',man:{what:what,syn:syn,desc:[].concat(desc)},run:run});
 }
 var count=0,seen=null;
 P.setup(function(){P.setPrompt(function(){ /* csh's \!: the next history event, so an empty line keeps the number */
@@ -14,7 +14,9 @@ P.setup(function(){P.setPrompt(function(){ /* csh's \!: the next history event, 
   return P.st.hostname+' '+count+'% ';
 })});
 
-cmd('uname','print the name of the system','uname [ -snrvma ]','prints what this machine calls itself. -a prints all of it.',function(a){
+cmd('uname','print the name of the system','uname [ -snrvma ]',['prints what this machine calls itself. -a prints all of it.','',
+  '-s   print the system name (the default).','-n   print the nodename, the name the system is known by on the network.','-r   print the operating system release.',
+  '-v   print the operating system version.','-m   print the machine hardware name.','-a   print all the above information.'],function(a){
   var f=a.join(''),all={s:'IRIX',n:P.st.hostname,r:'4.0.5',v:'06151813',m:'IP17'},o=[];
   ['s','n','r','v','m'].forEach(function(k){if(/a/.test(f)||f.indexOf(k)>=0)o.push(all[k])});
   P.typeLine((o.length?o:['IRIX']).join(' '));

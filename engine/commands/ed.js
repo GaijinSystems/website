@@ -313,6 +313,8 @@ P.command({names:['ed'],path:'/bin',
     'g/pattern/command   do a command on every matching line; v on every other.',
     'm t j k   move, copy, join, mark.   u   undo.   =   line number.',
     'w r e f   write, read, edit, filename.   q   quit.   Q   quit regardless.',
+    'W   write, adding to the end of the file.   E   edit regardless.   P   the same as p.',
+    's/old/new/p   also prints the changed line; n and l after it print it numbered or showing the invisible.',
     'on later systems only: n prints with numbers, h explains the last ? and H always explains.'],bugs:[
     'there is no prompt. there is no help. when you are wrong it says ?, and it is your job to know why.']},
   run:function(a){Ed(a[0])}});

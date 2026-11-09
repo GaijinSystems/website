@@ -204,8 +204,8 @@ P.program(function(S){
       '',
       'FILL             BIGGER SCREEN',
       'SOUND ON|OFF     KEYCLICKS',
-      'EFFECTS          TUBE EFFECTS',
-      'CONNECT          OTHER MACHINES',
+      'EFFECTS [MODE]   TUBE: AUTO, FULL, LITE',
+      'CONNECT [NAME]   OTHER MACHINES',
       'SOURCE           WHERE THIS COMES FROM',
       'RESET            THE RESET BUTTON'
     ];
