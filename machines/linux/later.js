@@ -59,19 +59,15 @@ game('games/nethack.js','nethack',{what:'Exploring The Mazes of Menace',syn:'net
    Seventh Edition's, 4.3BSD's, the VAX/VMS ones and TOPS-20's Dungeon. Debian's own fortune stays the fortune. Where two
    systems had the same program it is here once, as 4.3BSD built it; where they had different programs of one name,
    4.3BSD's keeps the name and V7's is v7name. Manual pages in section 6. */
-var LG='/usr/local/games',SEC6=[];
-function local(files,name,man){
-  SEC6.push(name);
-  P.later(files,{names:[name],path:LG,man:man,hidden:true,noHelpFlag:true});
-}
-/* a program file that names itself as one of 4.3BSD's commands: here it is installed as v7name */
-var AS={'v7-1979/games/backgammon.js':'v7backgammon','v7-1979/games/banner.js':'v7banner','v7-1979/games/hangman.js':'v7hangman'},command=P.command;
+var LG='/usr/local/games';
+function local(files,name,man){game(files,name,Object.assign({sec:6},man),{path:LG,noHelpFlag:true})}
+/* a program file of V7's that names itself as one of 4.3BSD's commands: here it is installed as v7name */
+var command=P.command;
 P.command=function(def){
-  var s=document.currentScript,f=s&&s.getAttribute('src')||'';
-  Object.keys(AS).forEach(function(k){if(f.slice(-k.length-1)==='/'+k)def=Object.assign({},def,{names:[AS[k]]})});
-  return command(def);
+  command(def);
+  var m=/\/v7-1979\/games\/(backgammon|banner|hangman)\.js$/.exec(def.from||'');
+  if(m)def.names=['v7'+m[1]];
 };
-P.setup(function(){SEC6.forEach(function(n){if(P.has(P.man,n))P.man[n].sec=6})});
 var B='../bsd-1987/',V='../v7-1979/games/',S='../shared/',VMS='../vms-1988/games/',CS=V+'cstdio.js';
 /* 4.3BSD */
 local(B+'rogue.js','rogue',{what:'Exploring The Dungeons of Doom',syn:'rogue [ -r ] [ save_file ] [ -s ] [ -d ]',desc:[

@@ -220,10 +220,11 @@ V.help=function(l){
   var W=V.words(l).slice(1),w=W[0]||'',L=null;
   var Y=V.disks['MAINT 19E'];
   function get(fn,ft){var f=Y.get(fn,ft);return f?f.lines:null}
+  function cp(x){return get(V.cpName(x)||x,'HELPCP')} /* a CP command's own file */
   if(!w)L=get('HELP','HELPMENU');
   else if(/^(CMS|CP|EDIT|EXEC|READER|TERMINAL|MAIL)$/.test(w)&&!W[1])L=get(w==='MAIL'?'READER':w,'HELPMENU');
-  else if(w==='CP')L=get(V.cpName(W[1])||W[1],'HELPCP'); /* HELP CP name: the CP command's own file */
-  else{var n=V.cmsName(w)||w;L=get(n,'HELPCMS')||(W[1]?get(W[1],'HELPCMS'):null)||get(V.cpName(w)||w,'HELPCP')}
+  else if(w==='CP')L=cp(W[1]); /* HELP CP name */
+  else{var n=V.cmsName(w)||w;L=get(n,'HELPCMS')||(W[1]?get(W[1],'HELPCMS'):null)||cp(w)}
   if(!L){V.em('DMSHLP002E FILE \''+w+' HELPCMS\' NOT FOUND','err');return 28}
   P.say(L);
   return 0;

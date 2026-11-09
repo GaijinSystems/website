@@ -376,14 +376,15 @@ cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... 
   var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));
 });
 cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION...] [SECTION] PAGE...','prints the manual page for each page named. a section number, if given, is checked for the games in /usr/local/games, whose pages are in section 6; for the rest it is accepted and changes nothing here.',function(a){
-  var w=a.filter(function(x){return !/^\d\w*$/.test(x)&&x.charAt(0)!=='-'}),sec=a.filter(function(x){return /^\d\w*$/.test(x)})[0];
+  var w=[],sec;
+  a.forEach(function(x){if(/^\d\w*$/.test(x))sec=sec||x;else if(x.charAt(0)!=='-')w.push(x)});
   if(!w.length){P.say(['What manual page do you want?',"For example, try 'man man'."]);P.status(1);return}
   w.forEach(function(x,i){
     if(i)P.typeLine('');
-    var p=P.has(P.man,x)?P.man[x]:null;
+    var has=P.has(P.man,x),p=has?P.man[x]:null;
     if(p&&p.sec&&sec&&String(p.sec)!==sec.charAt(0))p=null; /* a page with its own section: man 1 rogue looks in section 1 */
-    if(p){var L=P.manPage(x);if(p.sec)L[0]=x.toUpperCase()+'('+p.sec+')';P.say(L)}
-    else{err('No manual entry for '+x+(sec&&P.has(P.man,x)?' in section '+sec:''));P.status(16)}
+    if(p)P.say(P.manPage(x));
+    else{err('No manual entry for '+x+(sec&&has?' in section '+sec:''));P.status(16)}
   });
 },{core:true,help:'the manual'});
 function homeOf(u){return u==='root'?'/root':'/home/'+u}
