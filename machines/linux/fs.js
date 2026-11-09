@@ -69,6 +69,11 @@ Phosphor.setup(function(P){
     startrek:[178392,9,11,2],empire:[109880,9,11,40],monster:[358216,9,13,9],moria:[631064,9,14,55],conquest:[296104,9,16,28]};
   Object.keys(LOCAL).forEach(function(g){var f='/usr/local/games/'+g,x=LOCAL[g];if(P.find(f,true))sys(f,'f',{bin:true,size:x[0],date:new Date(2025,10,x[1],x[2],x[3])})});
   sys('/usr/local/games','d',{date:new Date(2025,10,9,16,28)});
+  /* the games' own files, where their Unix builds look for them: quiz's quiz.k (quiz -i), and conquest's gamcron, its hours; kept from the guest */
+  sys('/usr/local/games/lib/quiz.k','d',{prot:true,date:new Date(2025,10,8,16,9)});
+  sys('/usr/local/games/lib/conquest/gamcron','f',{prot:true,size:972,date:new Date(2025,10,9,16,28)});
+  sys('/usr/local/games/lib/conquest','d',{date:new Date(2025,10,9,16,28)});
+  sys('/usr/local/games/lib','d',{date:new Date(2025,10,9,16,28)});
 
   var V=['/boot/vmlinuz-'+D.krel,'/boot/initrd.img-'+D.krel];
   sys(V[0],'f',{bin:true,size:11829952,date:UPG,mode:'-rw-r--r--'});

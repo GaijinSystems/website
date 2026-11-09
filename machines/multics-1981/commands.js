@@ -430,17 +430,35 @@ cmd(['list','ls'],function(a,name){
       err('list: Use of star convention resulted in no match.  '+pat);return;
     }
     var segs=L.filter(function(n){return n.type==='f'}),dirs=L.filter(function(n){return n.type==='d'}),R=[];
-    function names(n,first,ind){var N=o.pr?[namesOf(n)[0]]:namesOf(n);R.push(first+N[0]);N.slice(1).forEach(function(x){R.push(' '.repeat(ind)+x)})}
+    var tot=segs.reduce(function(a2,n){return a2+(n.mbx?0:recs(n))},0);
+    if(o.tt&&(o.bf||o.nhe)){ /* the totals, abbreviated on one line */
+      say([(segT?(segs.length?'Segs='+segs.length+',lths='+tot+';':'Segs=0;'):'')+(dirT?'Dirs='+dirs.length+';':'')]);
+      return;
+    }
+    /* the columns, as list.pl1 lays them out: the date modified, the mode, the length, the names. -brief, -mode, -length
+       and -name leave only the names and those asked for; -dtm adds the date to the default columns */
+    var only=o.bf||o.mode||o.len||o.nm,cMode=!only||o.mode,cLen=!only||o.len,cDate=!!o.dtm;
+    function entry(n){
+      var C=[],d=n.date||P.systemDate;
+      if(cDate)C.push(mdy(d)+'  '+hhmm(d));
+      if(cMode)C.push((n.mbx?'':mfmt(n)).padEnd(3));
+      var line=C.join('  ');
+      if(cLen&&n.type!=='d')line+=(line?' ':'')+String(n.mbx?0:recs(n)).padStart(4); /* a directory has no length column */
+      var ind=(cDate?18:0)+(cMode?5:0)+(cLen&&n.type!=='d'?5:0);
+      if(ind===5)ind=cMode?7:6;else if(!ind)ind=2;
+      var N=o.pr?[namesOf(n)[0]]:namesOf(n);
+      R.push((line?line+'  ':'')+N[0]);
+      N.slice(1).forEach(function(x){R.push(' '.repeat(ind)+x)});
+    }
     if(segT&&(segs.length||!dirT)){
-      var tot=segs.reduce(function(a2,n){return a2+recs(n)},0);
-      if(!o.nhe&&!o.bf)R.push('','Segments = '+segs.length+', Lengths = '+tot+'.');
-      if(!o.tt&&segs.length){R.push('');segs.forEach(function(n){names(n,(n.mbx?'':mfmt(n)).padEnd(4)+String(n.mbx?0:recs(n)).padStart(4)+'  ',10)})}
+      if(!o.nhe)R.push('','Segments = '+segs.length+', Lengths = '+tot+'.');
+      if(!o.tt&&segs.length){if(!o.nhe)R.push('');segs.forEach(entry)}
     }
     if(dirT&&(dirs.length||!segT)){
-      if(!o.nhe&&!o.bf)R.push('','Directories = '+dirs.length+'.');
-      if(!o.tt&&dirs.length){R.push('');dirs.forEach(function(n){names(n,mfmt(n).padEnd(5),7)})}
+      if(!o.nhe)R.push('','Directories = '+dirs.length+'.');
+      if(!o.tt&&dirs.length){if(!o.nhe)R.push('');dirs.forEach(entry)}
     }
-    R.push('');
+    if(!o.nhe)R.push('');
     say(R);
   });
   charge(2);
@@ -528,27 +546,27 @@ cmd(['create_dir','cd'],function(a){
 });
 
 /* ---------- delete, delete_dir ---------- */
-function targets(cmdName,p,filter,what){ /* the entries a path or star name means; reports and returns null if none */
+function targets(cmdName,p,filter,what,quiet){ /* the entries a path or star name means; reports and returns null if none (quiet: not that it is not there, nor that nothing matched) */
   var r=path(p);
   if(r.err){bad(cmdName,r.err,r.shown);return null}
   var d=node(r.dir);
   if(isStar(r.name)){
     if(!can(d,'s')){bad(cmdName,'Incorrect access to directory containing entry.',r.shown);return null}
     var L=starMatch(d,r.name,filter);
-    if(!L.length){bad(cmdName,'No '+what+' match the star name.',r.shown);return null}
+    if(!L.length){if(!quiet)bad(cmdName,'No '+what+' match the star name.',r.shown);return null}
     return L.map(function(n){return {n:n,d:d,shown:r.shown.slice(0,r.shown.lastIndexOf('>'))+'>'+namesOf(n)[0]}});
   }
-  if(!r.n){bad(cmdName,'Entry not found.',r.shown);return null}
+  if(!r.n){if(!quiet)bad(cmdName,'Entry not found.',r.shown);return null}
   return [{n:r.n,d:d,shown:r.shown}];
 }
 function unlink(t){namesOf(t.n).forEach(function(x){delete t.d.kids[x]})}
 cmd(['delete','dl'],function(a){
-  var o=ctl('delete',a,{bf:'-brief,-bf',lg:'-long,-lg',qy:'-query,-qy',force:'-force'});
+  var o=ctl('delete',a,{bf:'-brief,-bf',lg:'-long,-lg',force:'-force'}); /* -brief: no word of a segment that is not there (delete.pl1) */
   if(o.bad)return;
   if(!o.rest.length){err('delete: Usage: delete paths {-control_args}');return}
   o.rest.forEach(function(p){
     P.queue(function(){
-      var T=targets('delete',p,function(n){return n.type==='f'},'segments');
+      var T=targets('delete',p,function(n){return n.type==='f'},'segments',o.bf);
       if(!T)return;
       T.forEach(function(t){
         if(t.n.type==='d'){bad('delete',t.shown+' is a directory. Use delete_dir.');return}
@@ -770,11 +788,13 @@ cmd(['who'],function(a){
   var U=whoAll(),inter=U.filter(function(u){return u[2]}).length;
   var sel=o.rest.length?U.filter(function(u){return o.rest.some(function(x){var p=x.split('.');return (!p[0]||p[0]==='*'||p[0]===u[0])&&(!p[1]||p[1]==='*'||p[1]===u[1])})}):U;
   if(o.rest.length&&!sel.length){out('who: User not logged in.'+' '+o.rest.join(' '));return}
+  var key=a.filter(function(x){return /^-(name|nm|project|pj)$/.test(x)}).pop(); /* sorted by login time, or by the last of -name and -project (who.pl1) */
+  if(key){var k=/^-(name|nm)$/.test(key)?0:1;sel=sel.map(function(u,i){return [u,i]}).sort(function(x,y){return x[0][k]<y[0][k]?-1:x[0][k]>y[0][k]?1:x[1]-y[1]}).map(function(x){return x[0]})}
   var R=[];
   if(o.lg){
     R.push('','Multics '+VERSION+'; '+site(),'Load = '+load()+' out of 125.0 units; users = '+U.length+', '+inter+' interactive, '+(U.length-inter)+' daemons.',
       'Absentee users = 0 background; Max background absentee users = 3','System up since '+dt(BOOTED),'Last shutdown was at '+dt(new Date(BOOTED.getTime()-(41*60+7)*6e4)),'','    Login at      TTY  Load   User ID','');
-    sel.forEach(function(u,i){var t=new Date(S.login.getTime()-(i*37+13)*6e4);if(u[3])t=S.login;R.push(mdy(t)+'  '+hm(t)+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
+    sel.forEach(function(u){var t=new Date(S.login.getTime()-(U.indexOf(u)*37+13)*6e4); /* each user's own login time, whatever the order */if(u[3])t=S.login;R.push(mdy(t)+'  '+hm(t)+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
     R.push('');
   }else{
     if(!o.rest.length&&!o.bf)R.push('','Multics '+VERSION+', load '+load()+'/125.0; '+U.length+' users, '+inter+' interactive, '+(U.length-inter)+' daemons.','Absentee users 0/3');
@@ -810,7 +830,8 @@ afn(['day_name'],function(){return DAYN[P.now().getDay()]});
 afn(['month_name'],function(){return MONTHS[P.now().getMonth()]});
 afn(['year'],function(){return String(P.now().getFullYear())});
 afn(['user'],function(a){
-  var k=a[0]||'name',d=S.login;
+  if(!a.length)throw new CPErr('user: Expected argument missing.'); /* the key is required: user.pl1 reports error_table_$noarg */
+  var k=a[0],d=S.login;
   var V={name:S.person,project:S.project,login_date:mdy(d),login_time:hm(d),term_type:'ASCII',term_id:'none',
     process_type:'interactive',anonymous:'false',absentee:'false',brief_bit:'false',preemption_time:hhmm(new Date(d.getTime()+36e5))};
   if(!P.has(V,k))throw new CPErr('user: Invalid keyword. '+k);
@@ -1016,6 +1037,11 @@ function printMail(cmdName){
 }
 cmd(['print_mail','prm'],function(){printMail('print_mail')});
 cmd(['mail','ml'],function(a){
+  if(a.length&&a.every(function(x){return x==='-brief'||x==='-bf'})){ /* mail -brief: how many messages, and nothing for none (mail.pl1) */
+    var n=messages().length;
+    if(n)out(n+' message'+(n===1?'':'s')+'.');
+    return;
+  }
   if(a.length){sendMail(a,'mail');return}
   printMail('mail');
 });
@@ -1106,7 +1132,7 @@ function sendMail(a,cmdName){
           if(l.trim()==='\\f')out(cmdName+': The editor is not available on this terminal; sending as typed.');
           to.forEach(function(x){
             if(x===GUEST.person+'.Guest'&&S.person===GUEST.person)MAIL.extra.push({from:uid().slice(0,-2),date:P.now(),subject:subject,body:B.slice()});
-            out('Mail delivered to '+x+'.');
+            if(!o.bf)out('Mail delivered to '+x+'.');
           });
           return;
         }

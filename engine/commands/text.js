@@ -55,7 +55,7 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
-  var n=P.find(a[0],true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true);
+  var n=P.find(a[0],true,false,true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true,false,true); /* a symbolic link moves as itself */
   if(n&&!n.prot&&(P.immutable(from)||P.immutable(to)&&there!==n)){P.notPermitted('mv',a[0],named(to,a));return}
   if(n&&!n.prot&&there&&there!==n&&there.type!=='d'&&(there.prot||!P.mayAlter(there))&&P.canWrite(from)){P.typeLine('mv: cannot unlink '+a[1],'err');return} /* a locked file, or someone else's, in the way */
   if(!n||n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
@@ -69,33 +69,71 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
 });
 cmd('chmod','change who may do what to a file','chmod mode file ...',['mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.','',
-  'a symbolic mode has the form [who] op permission. who is a combination of u (user\'s permissions), g (group), o (others) and a (all, the same as ugo, and the default). op is + to add the permission, - to take it away, or = to set exactly that. permission is any combination of r (read), w (write) and x (execute): go-w, u=rwx, a+r.'],function(a){
-  if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
-  a.slice(1).forEach(function(x){
-    var n=P.find(x,true);
-    if(n&&!n.prot&&P.isImmutable(n)){P.notPermitted('chmod',x);return}
-    if(!n||n.prot||!P.mayChmod(n,x)){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
-    var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
-    if(/^[0-7]{3}$/.test(a[0])){
-      m=t+a[0].split('').map(function(c){c=+c;return (c&4?'r':'-')+(c&2?'w':'-')+(c&1?'x':'-')}).join('');
-    }
-    else{
-      var sy=a[0].match(/^([ugoa]*)([-+=])([rwx]*)$/),b=m.slice(1).split('');
-      if(!sy){P.typeLine('chmod: invalid mode','err');return}
-      (sy[1]||'a').replace('a','ugo').split('').forEach(function(w){
-        var at={u:0,g:3,o:6}[w];
-        ['r','w','x'].forEach(function(bit,i){
-          var on=sy[3].indexOf(bit)>=0;
-          if(sy[2]==='+'&&on)b[at+i]=bit;
-          else if(sy[2]==='-'&&on)b[at+i]='-';
-          else if(sy[2]==='=')b[at+i]=on?bit:'-';
-        });
-      });
-      m=m.charAt(0)+b.join('');
-    }
-    n.mode=m;
+  'a symbolic mode has the form [who] op permission. who is a combination of u (user\'s permissions), g (group), o (others) and a (all, the same as ugo). with no who, it is a, but leaving alone what the umask (022) takes away. op is + to add the permission, - to take it away, or = to set exactly that. permission is any combination of r (read), w (write) and x (execute), X (execute, for a folder or a file someone may already execute), s (set the user or group id) and t (sticky): go-w, u=rwx, a+r. several, separated by commas, are done in turn: u+x,g-w.'],function(a){
+  /* V7's, 4.3BSD's and System V's newmode(): an octal mode, or [ugoa][+-=][rwxXst] clauses after commas; 4.3BSD's -R and -f, and GNU's.
+     What it says when it cannot: V7 and System V "can't access" (stat) and "can't change" (chmod); 4.3BSD's Perror ("Not owner" for EPERM);
+     GNU's "cannot access" and "changing permissions of". A folder on the way that may not be searched is EACCES before the file is looked for */
+  var gnu=P.profile.bash,bsd=P.profile.perror&&!gnu,W=a.slice(),rec=false,quiet=false;
+  while(W.length>1&&/^-[Rf]+$/.test(W[0])){rec=rec||/R/.test(W[0]);quiet=quiet||/f/.test(W[0]);W.shift()}
+  if(W.length<2){
+    if(gnu){P.typeLine(W.length?"chmod: missing operand after '"+W[0]+"'":'chmod: missing operand','err');P.typeLine("Try 'chmod --help' for more information.",'err')}
+    else P.typeLine(bsd?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');
+    return;
+  }
+  var spec=W[0];
+  if(newMode(spec,'-rw-r--r--')===null){
+    if(gnu){P.typeLine("chmod: invalid mode: '"+spec+"'",'err');P.typeLine("Try 'chmod --help' for more information.",'err')}
+    else P.typeLine('chmod: invalid mode','err');
+    return;
+  }
+  function say(t){if(!quiet)P.typeLine(t,'err');else P.status(1)}
+  function one(x,n){
+    if(P.isImmutable(n)){if(!quiet)P.notPermitted('chmod',x);return}
+    if(!P.mayChmod(n,x)){say(gnu?"chmod: changing permissions of '"+x+"': Operation not permitted":bsd?'chmod: '+x+': Not owner':"chmod: can't change "+x);return}
+    n.mode=newMode(spec,P.modeOf(n));
+    if(rec&&n.type==='d'&&!n.prot)Object.keys(n.kids).sort().forEach(function(k){var c=n.kids[k];if(c.parent===n&&c.type!=='s')one(x.replace(/\/+$/,'')+'/'+k,c)});
+  }
+  W.slice(1).forEach(function(x){
+    var n=P.shut(x)?null:P.find(x,true),why=n?'':P.shut(x)?'Permission denied':'No such file or directory';
+    if(!n){say(gnu?"chmod: cannot access '"+x+"': "+why:bsd?'chmod: '+x+': '+why:"chmod: can't access "+x);return}
+    if(n.prot&&!P.mayChmod(n,x)){say(gnu?"chmod: changing permissions of '"+x+"': Operation not permitted":bsd?'chmod: '+x+': Not owner':"chmod: can't change "+x);return}
+    one(x,n);
   });
 });
+function newMode(spec,m){ /* the mode string m after spec, or null when spec is no mode */
+  var t=m.charAt(0),b=m.slice(1).split('').map(function(c,i){return /[rwxst]/.test(c)&&!(i%3===2&&/[ST]/.test(c))}),sp=[/[sS]/.test(m.charAt(3)),/[sS]/.test(m.charAt(6)),/[tT]/.test(m.charAt(9))];
+  if(/^[0-7]{1,4}$/.test(spec)){
+    var v=parseInt(spec,8);
+    b=b.map(function(x,i){return !!(v&(256>>i))});
+    if(spec.length===4)sp=[!!(v&2048),!!(v&1024),!!(v&512)];
+  }
+  else{
+    var C=spec.split(',');
+    for(var j=0;j<C.length;j++){
+      var c=/^([ugoa]*)((?:[-+=][rwxXst]*)+)$/.exec(C[j]);
+      if(!c)return null;
+      var who=(c[1]||'a').replace(/a/g,'ugo'),um=!c[1],ops=c[2].match(/[-+=][rwxXst]*/g);
+      ops.forEach(function(o){
+        var op=o.charAt(0),p=o.slice(1),anyx=b[2]||b[5]||b[8];
+        'ugo'.split('').forEach(function(u,ui){
+          if(who.indexOf(u)<0)return;
+          ['r','w','x'].forEach(function(bit,bi){
+            var at=ui*3+bi,on=p.indexOf(bit)>=0||bit==='x'&&p.indexOf('X')>=0&&(t==='d'||anyx);
+            if(um&&ui>0&&bit==='w')return; /* the umask, 022 */
+            if(op==='+'&&on)b[at]=true;else if(op==='-'&&on)b[at]=false;else if(op==='=')b[at]=on;
+          });
+          var k=ui<2?(p.indexOf('s')>=0):(p.indexOf('t')>=0&&ui===2);
+          if(ui<2||p.indexOf('t')>=0||op==='='){if(op==='+'&&k)sp[ui]=true;else if(op==='-'&&k)sp[ui]=false;else if(op==='='&&ui<2)sp[ui]=k}
+        });
+      });
+    }
+  }
+  return t+b.map(function(on,i){
+    var c=on?'rwx'.charAt(i%3):'-';
+    if(i===2&&sp[0])c=on?'s':'S';else if(i===5&&sp[1])c=on?'s':'S';else if(i===8&&sp[2])c=on?'t':'T';
+    return c;
+  }).join('');
+}
 
 cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function(pr){ /* -s on all; -h at Berkeley and GNU; -q -o -F and - for GNU's */
   var gnu=pr.bash,bsd=pr.perror&&!gnu,sys5=pr.csh&&!pr.perror;
@@ -354,11 +392,42 @@ cmd('tail','print the last lines','tail [ -n ] [ file ... ]',function(pr){
 },function(a){
   var n=count(a,10);P.input(operands(a),function(L){var R=n?L.slice(-n):[];R.open=!!L.open&&R.length>0;P.say(R)});
 });
-cmd('tr','change characters','tr string1 string2','changes each character of string1 into the matching one of string2. ranges like a-z work.',function(a,raw,words){
-  function span(s){return s.replace(/(.)-(.)/g,function(m,x,y){var o='';for(var c=x.charCodeAt(0);c<=y.charCodeAt(0);c++)o+=String.fromCharCode(c);return o})}
-  if(words.length<3&&!P.profile.perror){P.typeLine('usage: '+P.man.tr.syn);return}
-  var from=span(words[1]||''),to=span(words[2]||'');
-  P.input([],function(L){var R=L.map(function(l){return l.split('').map(function(c){var i=from.indexOf(c);return i<0?c:to.charAt(Math.min(i,to.length-1))}).join('')});R.open=L.open;P.say(R)});
+cmd('tr','change characters','tr [ -cds ] [ string1 [ string2 ] ]',function(pr){
+  var D=['copies its input, changing each character of string1 into the matching one of string2. ranges like a-z work.'];
+  if(pr.bash)return [null,D.concat(['','-c, -C, --complement   use the complement of string1','-d, --delete   delete characters in string1, do not translate','-s, --squeeze-repeats   replace each sequence of a repeated character that is listed in the last specified string with a single occurrence of that character',
+    'the strings may hold \\n, \\t and \\\\, and the classes [:alpha:], [:digit:], [:lower:], [:upper:], [:alnum:], [:space:] and [:punct:].'])];
+  return [null,D.concat(['','-c   complements the characters in string1: all the characters not in it.','-d   deletes the characters in string1 instead.','-s   squeezes each run of a character in string2 (or in string1, given alone) into one.'])];
+},function(a,raw,words){
+  /* V7's tr, 4.3BSD's and System V's: -c -d -s, which GNU's (Debian) has too, as --complement, --delete and --squeeze-repeats */
+  var gnu=P.profile.bash,W=words.slice(1),o='';
+  while(W.length&&(/^-[cdsC]+$/.test(W[0])||/^--(complement|delete|squeeze-repeats)$/.test(W[0]))){var x=W.shift();o+=x.charAt(1)==='-'?{complement:'c',delete:'d','squeeze-repeats':'s'}[x.slice(2)]:x.slice(1)}
+  if(W[0]==='--')W.shift();
+  var c=/[cC]/.test(o),d=/d/.test(o),sq=/s/.test(o);
+  if(gnu){
+    var bad=!W.length?'tr: missing operand':d&&!sq&&W.length>1?"tr: extra operand '"+W[1]+"'":!d&&!sq&&W.length<2?"tr: missing operand after '"+W[0]+"'":d&&sq&&W.length<2?"tr: missing operand after '"+W[0]+"'":W.length>2?"tr: extra operand '"+W[2]+"'":'';
+    if(bad){P.typeLine(bad,'err');if(/extra/.test(bad)&&d&&!sq)P.typeLine('Only one string may be given when deleting without squeezing repeats.','err');else if(/after/.test(bad))P.typeLine(d?'Two strings must be given when both deleting and squeezing repeats.':'Two strings must be given when translating.','err');P.typeLine("Try 'tr --help' for more information.",'err');return}
+  }
+  else if(W.length<(o?1:2)&&!P.profile.perror){P.typeLine('usage: '+P.man.tr.syn);return}
+  var CL={alpha:'A-Za-z',digit:'0-9',lower:'a-z',upper:'A-Z',alnum:'0-9A-Za-z',space:' \t',punct:'!-/:-@[-`{-~'};
+  function span(s){
+    if(gnu)s=s.replace(/\[:(\w+):\]/g,function(m,k){return CL[k]||m}).replace(/\\(.)/g,function(m,x){return x==='n'?'\n':x==='t'?'\t':x});
+    return s.replace(/(.)-(.)/g,function(m,x,y){var o='';for(var k=x.charCodeAt(0);k<=y.charCodeAt(0);k++)o+=String.fromCharCode(k);return o});
+  }
+  var from=span(W[0]||''),to=span(W[1]||''),tr=!d&&W.length>1,sqs=sq?(d||W.length<2?(d?to:from):to):'',sqc=sq&&!d&&W.length<2&&c;
+  function in1(ch){return (from.indexOf(ch)>=0)!==c}
+  P.input([],function(L){ /* the input as one stream: a newline is a character like the rest (tr -cd 0-9 takes it away) */
+    var l=L.join('\n')+(L.length&&!L.open?'\n':''),out='',last=null;
+    for(var i=0;i<l.length;i++){
+      var ch=l.charAt(i);
+      if(d&&in1(ch))continue;
+      if(tr&&in1(ch))ch=c?to.charAt(to.length-1):to.charAt(Math.min(from.indexOf(ch),to.length-1));
+      if(sq&&ch===last&&(sqc?from.indexOf(ch)<0:sqs.indexOf(ch)>=0))continue;
+      out+=ch;last=ch;
+    }
+    var R=out?out.split('\n'):[];
+    if(R.length&&R[R.length-1]==='')R.pop();else R.open=R.length>0;
+    P.say(R);
+  });
 });
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
   var app=/a/.test(flags(a)),F=operands(a);
@@ -403,7 +472,17 @@ cmd('cal','print a calendar','cal [ month ] year',function(pr){ /* System V's (I
   for(var q=1;q<=12;q++){O.push('');O=O.concat(month(yr,q,false))}
   P.say(O);
 });
-cmd('sleep','wait a while','sleep seconds','waits. ctrl-c stops it early.',function(a){
+cmd('sleep','wait a while','sleep seconds',function(pr){
+  return [null,pr.bash?['waits for the sum of the times given. each is a number, which may have a fraction, and a suffix: s for seconds (the default), m minutes, h hours, d days. ctrl-c stops it early.']:['waits. ctrl-c stops it early.']];
+},function(a){
+  if(P.profile.bash){ /* GNU's: NUMBER[SUFFIX]..., summed */
+    if(!a.length){P.typeLine('sleep: missing operand','err');P.typeLine("Try 'sleep --help' for more information.",'err');return}
+    var t=0,bad=null;
+    a.forEach(function(x){var m=/^\+?(\d+\.?\d*|\.\d+)([smhd]?)$/.exec(x);if(!m){if(bad===null)bad=x;return}t+=+m[1]*{'':1,s:1,m:60,h:3600,d:86400}[m[2]]});
+    if(bad!==null){P.typeLine("sleep: invalid time interval '"+bad+"'",'err');P.typeLine("Try 'sleep --help' for more information.",'err');return}
+    P.queue(function(){return P.sleep(Math.min(600,t)*1000)});
+    return;
+  }
   if(!a.length){P.typeLine('arg count','err');return}
   if(!/^\d+$/.test(a[0])){P.typeLine('bad character','err');return}
   var s=Math.min(600,+a[0]);
@@ -440,6 +519,13 @@ cmd('stty','set the speed of the line','stty [ speed ]',function(pr){
     'kill c   set kill character to c. ^X works here also.',
     'the rest of version 7\'s options (even, odd, nl, tabs, cr0 to cr3, tty33 and the like) are taken and change nothing.'])];
 },function(a){
+  if(P.profile.bash&&a.some(function(x){return /^(-F|--file(=|$))/.test(x)})){ /* GNU's -F DEVICE: this terminal (its own name, or /dev/tty) is the one it sets */
+    a=a.slice();
+    for(var j=0,dev;j<a.length;j++){var f=/^(?:-F|--file=?)(.*)$/.exec(a[j]);if(f){dev=f[1]||a[j+1];a.splice(j,f[1]||/=$/.test(a[j])?1:2);j--}}
+    if(dev===undefined){P.typeLine("stty: option requires an argument -- 'F'",'err');P.typeLine("Try 'stty --help' for more information.",'err');return}
+    var dn=P.find(dev);
+    if(!dn||!dn.dev||dn.prot||!/^\/dev\/(tty|ttyS0)$/.test(P.norm(dev))){P.typeLine('stty: '+dev+': '+(!dn?'No such file or directory':dn.prot||/^\/dev\/(tty|console)/.test(P.norm(dev))?'Permission denied':'Inappropriate ioctl for device'),'err');return} /* another terminal is not the guest's to open */
+  }
   var T=P.teletype&&P.teletype();
   if(T){ /* V7 on a Teletype Model 33: the modes getty set for it (ANYP ECHO CRMOD XTABS LCASE CR1), told as V7's stty told them;
             lcase, echo, raw, cbreak, erase, kill and ek change the line; speed 0 hangs it up, which logs out */
@@ -483,6 +569,7 @@ cmd('sh','run a shell script','sh file',function(pr){
     '',
     '-c string   runs the commands in string instead.'])];
 },function(a,raw){
+  if(!a.length&&P.stdin()){P.runScript(P.stdin().splice(0));return} /* echo ls | sh: the commands come in on its standard input */
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
   var c=a[0]==='-c'&&/^\s*\S+\s+-c\s+(.*)$/.exec(raw||''); /* sh -c 'a command' */
   if(c){P.runScript([P.unquote(c[1])]);return}
@@ -493,9 +580,47 @@ cmd('sh','run a shell script','sh file',function(pr){
 /* the shell's own: read, shift, break, continue and : */
 function builtin(names,run){P.command({names:names,noHelpFlag:true,run:run})}
 builtin([':'],function(){P.status(0)});
-builtin(['break'],function(){P.loop('break')});
-builtin(['continue'],function(){P.loop('continue')});
-builtin(['shift'],function(){var A=P.args();if(A.length>1)A.splice(1,1)});
+function cshNow(){return P.profile.csh&&!P.bourne.sh()}
+function oldSh(){return !P.profile.bash&&(P.profile.perror||!P.profile.csh)} /* V7's sh, and 4.3BSD's, which is V7's; IRIX's is System V's */
+function shErr(x){P.typeLine(x,'err');P.status(1);P.loop('abort')} /* the Bourne shell's failed(): the rest of the line does not run */
+function stoi(x){var m=/^\d+/.exec(x);if(!m){shErr(x+': bad number');return null}return +m[0]} /* V7's stoi: its leading digits */
+function bashN(name,a,fatal){ /* bash's get_numeric_arg: null after an error (fatal: the line ends, as break's does) */
+  var x=a[0];
+  if(a.length>1){P.typeLine(P.bashAt()+name+': too many arguments','err');P.status(1);if(fatal)P.loop('abort');return null}
+  if(!/^\s*[-+]?\d+\s*$/.test(x)){P.typeLine(P.bashAt()+name+': '+x+': numeric argument required','err');P.status(1);if(fatal)P.loop('abort');return null}
+  return parseInt(x,10);
+}
+function loopN(what,a){ /* break [n], continue [n]: bash's, and the Bourne shell's; csh's take no n, and V7's continue ignores one (xec.c) */
+  if(cshNow()||a[0]===undefined||(what==='continue'&&oldSh())){P.loop(what);return}
+  var n=P.profile.bash?bashN(what,a,true):stoi(a[0]);
+  if(n===null)return;
+  if(P.profile.bash&&n<1){P.typeLine(P.bashAt()+what+': '+a[0]+': loop count out of range','err');P.status(1);P.loop('break',1e9);return} /* bash: out of every loop */
+  P.loop(what,Math.max(n,1)); /* sh: break 0 is break 1 */
+}
+builtin(['break'],function(a){loopN('break',a)});
+builtin(['continue'],function(a){loopN('continue',a)});
+builtin(['shift'],function(a){
+  if(cshNow()){ /* csh's doshift: shift [variable], argv when none */
+    var k=a[0]||'argv';
+    if(k==='argv'){var A=P.args();if(A.length<2){shErr('shift: No more words.');return}A.splice(1,1);P.status(0);return}
+    if(!P.has(P.shvars,k)){shErr(k+': Undefined variable.');return}
+    var w=P.shwords[k],L=(w&&w.s===P.shvars[k]?w.w:P.shvars[k].split(/\s+/).filter(Boolean)).slice();
+    if(!L.length){shErr('shift: No more words.');return}
+    L.shift();P.shvars[k]=L.join(' ');P.shwords[k]={s:P.shvars[k],w:L};P.status(0);return;
+  }
+  var A=P.args(),have=Math.max(A.length-1,0);
+  if(P.profile.bash){ /* bash: shift [n]; more than $# fails and says nothing */
+    var n=a.length?bashN('shift',a,false):1;
+    if(n===null)return;
+    if(n<0){P.typeLine(P.bashAt()+'shift: '+a[0]+': shift count out of range','err');P.status(1);return}
+    if(n>have){P.status(1);return}
+    A.splice(1,n);P.status(0);return;
+  }
+  var m=oldSh()||!a.length?1:stoi(a[0]); /* V7's shift takes no n; System V's takes one */
+  if(m===null)return;
+  if(m>have){shErr('cannot shift');return}
+  A.splice(1,m);P.status(0);
+});
 builtin(['read'],function(a,raw,words){
   var N=words.slice(1),S=P.stdin(),bash=P.profile.bash,o={},ID=/^[A-Za-z_]\w*$/;
   if(bash){ /* bash's options: -r keeps backslashes, -p its prompt (at the terminal), -s does not echo; the rest are taken and set aside */
@@ -567,10 +692,16 @@ builtin(['read'],function(a,raw,words){
     P.status(eof?1:0);
   }
 });
-function testExpr(w){
+function testExpr(w,name){ /* name: the command's, for bash's error; a number bash cannot read is thrown as {bad} */
+  function num(x){
+    if(!P.profile.bash){var v=parseInt(x,10);return isNaN(v)?0:v} /* V7's test.c: atoi, so a word that is not a number is 0 */
+    if(x===undefined||!/^\s*[-+]?\d+\s*$/.test(x))throw {bad:P.bashAt()+name+': '+(x===undefined?'':x)+': integer expression expected'};
+    return parseInt(x,10);
+  }
   function one(i){
     var t=w[i];
     if(t==='!'){var r=one(i+1);return {v:!r.v,i:r.i}}
+    if(P.profile.bash&&/^-[hL]$/.test(t)&&w[i+1]!==undefined){var l=P.find(w[i+1],true,false,true);return {v:!!l&&l.type==='s',i:i+2}} /* bash: a symbolic link (lstat); V7's and 4.3BSD's test had no -h */
     if(/^-[frwdszn]$/.test(t)){
       var x=w[i+1],n=x===undefined?null:P.named(x);
       if(t==='-z')return {v:!x,i:i+2};
@@ -583,7 +714,7 @@ function testExpr(w){
     var op=w[i+1],y=w[i+2];
     if(op==='='||op==='!=')return {v:(t===y)===(op==='='),i:i+3};
     if(/^-(eq|ne|lt|le|gt|ge)$/.test(op||'')){
-      var a=parseInt(t,10),b=parseInt(y,10);
+      var a=num(t),b=num(y);
       return {v:{'-eq':a===b,'-ne':a!==b,'-lt':a<b,'-le':a<=b,'-gt':a>b,'-ge':a>=b}[op],i:i+3};
     }
     return {v:!!t,i:i+1};
@@ -596,11 +727,12 @@ function testExpr(w){
   }
   return r.v;
 }
-cmd('test','check a condition','test expr',['succeeds or fails, and says nothing. -f file, -d folder, -r readable, -w writable, -s not empty, -z or -n a string, = and != strings, -eq -ne -lt -le -gt -ge numbers, ! not, -a and, -o or. a string on its own is true if it is not empty.','','[ expr ], with the ] as its own last word, is the same as test expr.'],function(a,raw,words){P.status(testExpr(words.slice(1))?0:1)},true);
+cmd('test','check a condition','test expr',['succeeds or fails, and says nothing. -f file, -d folder, -r readable, -w writable, -s not empty, -z or -n a string, = and != strings, -eq -ne -lt -le -gt -ge numbers, ! not, -a and, -o or. a string on its own is true if it is not empty.','','[ expr ], with the ] as its own last word, is the same as test expr.'],function(a,raw,words){runTest(words.slice(1),'test')},true);
+function runTest(w,name){try{P.status(testExpr(w,name)?0:1)}catch(e){if(!e||!e.bad)throw e;P.typeLine(e.bad,'err');P.queue(function(){P.status(2)})}}
 builtin(['['],function(a,raw,words){
   var w=words.slice(1);
   if(w[w.length-1]!==']'){P.typeLine('[: missing ]','err');return}
-  P.status(testExpr(w.slice(0,-1))?0:1);
+  runTest(w.slice(0,-1),'[');
 });
 cmd('expr','evaluate an expression','expr arg ...','prints the value. + - * / % and comparisons, spaces between everything.',function(a,raw,words){
   var w=words.slice(1),v=w[0];
@@ -635,10 +767,29 @@ cmd('set','print the shell variables','set',function(pr){ /* the page of csh's s
     '-    the same, when arguments follow it.',
     'arg ...   the first word that is not an option, and those after it, become the positional parameters $1, $2 ... ($# and $@).']];
   return [null,['prints the variables the shell knows about.']];
-},function(){
-  P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> '].concat(P.envRows()));
+},function(a){ /* the Bourne shell's: set [ -flags [ arg ... ] ] (V7's xec.c SYSSET and args.c options): the flags are taken and change nothing here; the args become $1 ... */
+  if(!a.length){P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> '].concat(P.envRows()));return}
+  var r=a.slice();
+  if(r[0].charAt(0)==='-'){
+    var f=r.shift();
+    if(!(f==='--'&&!oldSh())&&/[^xnvtsierku]/.test(f.slice(1))){shErr(f+': bad option(s)');return} /* -- ends the flags on System V's sh */
+  }
+  if(r.length)P.args([P.args()[0]].concat(r));
+  P.status(0);
 });
-cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
+cmd('ln','make a link','ln target [ newname ]',function(pr){
+  var v7=!pr.perror&&!pr.csh,D=['gives a file a second name. they are the same file.'];
+  return v7?[null,D]:['ln [ -s ] target [ newname ]',D.concat(['','-s   makes a symbolic link instead: a name that holds the path of target, which is followed wherever the name is used. target need not exist, and a relative one is taken from the folder the link is in.'])];
+},function(a){
+  var v7=!P.profile.perror&&!P.profile.csh,bsd=P.profile.perror;
+  if(!v7&&a[0]==='-s'&&a.length>1){ /* 4.3BSD's ln -s (symlink(2)), and System V's on IRIX: the new name holds the path as given */
+    var tail=a[1].split('/').pop(),name=a[2]||tail,at=P.norm(name),d=P.find(at);
+    if(d&&d.type==='d'){name=name.replace(/\/+$/,'')+'/'+tail;at=P.norm(name)} /* into a folder: its last name */
+    var ex=P.find(at,true,false,true);
+    if(ex||!P.canWrite(at)){if(!bsd)P.typeLine('ln: cannot create '+name,'err');else if(ex)P.typeLine(name+': File exists','err');else P.oopsW('',name);return} /* 4.3BSD: perror(to) */
+    P.put(at,'s',{sym:a[1],owner:P.st.user,date:P.now(),mode:'lrwxr-xr-x',size:a[1].length}); /* 0777 less the umask */
+    return;
+  }
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.named(a[0]),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}

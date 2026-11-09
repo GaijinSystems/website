@@ -3118,7 +3118,7 @@ function RSTART(f,l){
     t=t.replace(/ /g,'');
     if(t==='')return 0;
     if(e.k==='Z'){if(!/^[0-9a-fA-F]+$/.test(t))throw new RangeError('read');return parseInt(t,16)|0}
-    if(!/^[-+]?[0-9]+$/.test(t))throw new RangeError('read'); /* f2c's runtime stops here, with its complaint */
+    if(!/^[-+]?[0-9]+$/.test(t)){var x=new RangeError('read');x.fmt=f;throw x} /* f2c's runtime stops here, with its complaint */
     return parseInt(t,10)|0;
   };
 }
@@ -13328,6 +13328,11 @@ function step(v){
     try{r=G.next(v)}
     catch(e){
       if(e===STOP){flush();return}
+      if(e instanceof RangeError&&e.fmt&&P.machine==='linux'){ /* Debian's dungeon, built with f2c as its Makefile says: libf2c's own complaint, then abort() */
+        flush();
+        ['fmt: read unexpected character','apparent state: unit 5 (unnamed)','last format: ('+e.fmt.toLowerCase()+')','lately reading sequential formatted external IO','Aborted'].forEach(function(l){P.typeLine(l,'err')});
+        P.queue(function(){P.status(134)});return;
+      }
       if(e instanceof RangeError||e instanceof TypeError){flush();P.typeLine('zork: core dumped','err');return}
       throw e;
     }

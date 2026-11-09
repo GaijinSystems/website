@@ -40,6 +40,10 @@ function value(x){ /* a word as written, in pieces: 'as is', "with $variables", 
     return sq!==undefined?P.unguard(sq):dq!==undefined?P.vars(dq):bs!==undefined?P.unguard(bs):P.vars(bare);
   });
 }
+function tl(w){ /* a bare word's ~ or ~user, which csh's glob works out wherever it globs: set, if's file tests */
+  var m=/^~([\w.-]*)(?=\/|$)/.exec(w||''),h=m&&P.tilde(m[1]);
+  return h?h+w.slice(m[0].length):w;
+}
 function listOf(k){var x=P.shwords[k];return x&&x.s===P.shvars[k]?x.w:null} /* the words set z = ( ) kept, while z is still that */
 function store(k,L){P.shvars[k]=L.join(' ');P.shwords[k]={s:P.shvars[k],w:L}}
 function restore(o,was){Object.keys(o).forEach(function(k){delete o[k]});Object.assign(o,was)}
@@ -64,11 +68,11 @@ builtin(['set'],function(){
         var L=[];
         (m[2].slice(1,-1).match(/(?:"[^"]*"|'[^']*'|\\.|[^\s"'\\])+/g)||[]).forEach(function(x){
           if(/["'\\]/.test(x)){L.push(value(x));return}
-          value(x).split(/\s+/).filter(Boolean).forEach(function(y){L=L.concat(P.glob(y))}); /* no match: the parser has said so */
+          value(tl(x)).split(/\s+/).filter(Boolean).forEach(function(y){L=L.concat(P.glob(y))}); /* no match: the parser has said so */
         });
         store(m[1],L);
       }
-      else P.shvars[m[1]]=value(m[2]||'');
+      else P.shvars[m[1]]=value(tl(m[2]||''));
       t=t.slice(m[0].length);
     }
   }catch(e){said(e);return}
@@ -131,10 +135,10 @@ function cexp(W,k,brace,ig0){ /* 4.3BSD csh's exp() over words W from k: {n, k a
     return f;
   }
   function ftest(t,f){ /* -e -d -f -z -o: is it there, a directory, a file, empty, yours. -r -w -x: may you */
-    var n=P.find(P.glob(f)[0]),at=n&&P.pathOf(n);
+    var n=P.find(P.glob(tl(f))[0]),at=n&&P.pathOf(n);
     if(!n)return false;
     if(t==='r')return !n.prot;
-    if(t==='w')return !n.prot&&P.canWrite(n.type==='d'?at+'/x':at);
+    if(t==='w')return n.type==='d'?!n.prot&&P.canWrite(at+'/x'):n.dev?!n.prot:!n.prot&&!n.parent.prot&&P.mayAlter(n); /* a file: what writing to it allows (its own mode, not its folder's), as writeFile decides */
     if(t==='x')return n.type==='d'||!!n.bin||/x/.test(n.mode||'');
     return t==='d'?n.type==='d':t==='f'?n.type!=='d'&&!n.dev:t==='z'?n.type!=='d'&&P.fsize(n)===0:t==='o'?n.owner===P.st.user:true;
   }
@@ -285,16 +289,19 @@ function place(x){
   var d=P.has(P.paths,x)&&P.paths[x];
   return d?d+'/'+x:(P.env.PATH||'').split(':').map(function(o){return (o||'.')+'/'+x}).filter(function(f){var n=P.find(f);return n&&n.type!=='d'&&n.bin})[0];
 }
-P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
+P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
+  man:{what:'locate a program file including aliases and paths (csh only)',syn:'which [ name ] ...',desc:['takes a list of names and looks for the files which would be executed had these names been given as commands. each argument is expanded if it is aliased, and searched for along the user\'s path.']},run:function(a){
   a.forEach(function(x){
     var al=P.aliases.filter(function(y){return y.from.join(' ')===x})[0],f=al?null:place(x);
     P.typeLine(al?x+':\t aliased to '+al.to:f||'no '+x+' in '+(P.env.PATH||'').split(':').map(function(o){return o||'.'}).join(' '));
   });
 }});
-P.command({names:['whereis'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
+P.command({names:['whereis'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
+  man:{what:'locate source, binary, and or manual for program',syn:'whereis name ...',desc:['locates the binary and manual sections for each name given. the supplied names are first stripped of leading pathname components.']},run:function(a){
   a.forEach(function(x){var f=place(x);P.typeLine(x+':'+(f?' '+f:'')+(P.has(P.man,x)&&!P.own(x)?' /usr/man/man1/'+x+'.1':''))}); /* the terminal's words are not the machine's */
 }});
-P.command({names:['apropos'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(a){
+P.command({names:['apropos'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
+  man:{what:'locate commands by keyword lookup',syn:'apropos keyword ...',desc:['shows which manual sections contain instances of any of the given keywords in their title. each word is considered separately.']},run:function(a){
   if(!a.length){P.typeLine('apropos what?');return}
   a.forEach(function(x){
     var hits=Object.keys(P.man).sort().filter(function(k){return k.indexOf(x)>=0||(P.man[k].what||'').indexOf(x)>=0});
@@ -302,7 +309,8 @@ P.command({names:['apropos'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:
     P.say(hits.map(function(k){return k+' (1)'.padEnd(10)+' - '+P.man[k].what}));
   });
 }});
-P.command({names:['last'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,run:function(){
+P.command({names:['last'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
+  man:{what:'indicate last logins of users and teletypes',syn:'last',desc:['looks back in the wtmp file, which records all logins and logouts, and prints who logged in on which terminal and when, the newest first.']},run:function(){
   var S=P.st;
   function when(d){return P.ctime(d).slice(0,16)}
   P.say([S.user.padEnd(10)+'tty02'.padEnd(26)+when(S.login)+'   still logged in',S.owner.slice(0,8).padEnd(10)+'console'.padEnd(26)+when(P.fileDate)+'   still logged in','','wtmp begins '+when(P.systemDate)]);

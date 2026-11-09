@@ -27,15 +27,17 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     '-F   mark folders with a trailing / and executable files with a trailing *.',
     '-R   recursively list the folders found, each after a blank line and its name, then the folders in it, before the next.'])}},
   run:function(a){
-    /* the ls of V7, 4.3BSD or IRIX (System V's). V7's skips a letter it does not know, -F and -R among them */
-    var bsd=P.profile.perror,v7=!bsd&&!P.profile.csh,sys5=!bsd&&!v7;
-    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),typed=!v7&&/F/.test(fl),blocks=/s/.test(fl),inodes=/i/.test(fl),
-        rec=!v7&&/R/.test(fl),want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
+    /* the ls of V7, 4.3BSD or IRIX (System V's). V7's skips a letter it does not know, -F and -R among them, and takes only its first word
+       as options: any after it are names (ls -l -a: "-a not found") */
+    var bsd=P.profile.perror,v7=!bsd&&!P.profile.csh,sys5=!bsd&&!v7,first=v7&&a.length&&a[0].charAt(0)==='-'?a[0]:'';
+    var fl=v7?first:a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),typed=!v7&&/F/.test(fl),blocks=/s/.test(fl),inodes=/i/.test(fl),
+        rec=!v7&&/R/.test(fl),want=v7?a.slice(first?1:0):a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
     if(!want.length)want=['.'];
-    function plain(name,n){ /* -i the inode, -s the size in kilobytes, -F a mark for what it is */
-      return (inodes?String(P.ino(name)).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/1024)).padStart(4)+' ':'')+name+
-        (!typed?'':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
+    function plain(name,n){ /* -i the inode, -s the size in kilobytes (V7's: in 512-byte blocks, its nblock()), -F a mark for what it is */
+      return (inodes?String(P.ino(name)).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/(v7?512:1024))).padStart(4)+' ':'')+name+
+        (!typed?'':n.type==='s'?'@':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
     }
+    function shut(n){return n.prot||!P.may(n,'r')} /* a folder it cannot read */
     function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
       return !P.profile.perror||P.piped()||!names.length?names:P.inColumns(names);
     }
@@ -43,11 +45,12 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       return bsd&&(dir==='.'||dir==='')?k:dir+(/\/$/.test(dir)?'':'/')+k;
     }
     want.forEach(function(w){
-      var n=P.find(w),shown;
-      if(!n)L.push([w+' not found','err']);
+      var n=P.find(w),shown,l=P.find(w,true,true,true);
+      if(l&&l.type==='s'&&!/\/$/.test(w)&&(long||!n||n.type!=='d'))L.push(long?P.longRow(w,l):plain(w,l)); /* a symbolic link: lstat's, unless it names a folder and there is no -l */
+      else if(!n)L.push([w+' not found','err']);
       else if(self&&n.type==='d')L.push(long?P.longRow(w,n):plain(w,n));
       else if(n.type!=='d'){var abs=P.norm(w),key=abs.split('/').pop(),up=P.find(P.dirOf(abs),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
-      else if(n.prot)L.push([w+' unreadable','err']);
+      else if(shut(n)&&!sys5)L.push([w+' unreadable','err']);
       else dirs.push([v7?w:w.replace(/^~(?=\/|$)/,P.st.home),n]);
     });
     /* -R: after a folder, the folders in it, each in full before the next (4.3BSD's subdirs list, System V's dfirst chain), never . or ..;
@@ -57,18 +60,21 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     var todo=dirs.map(function(d){return {name:d[0],n:d[1],title:want.length>1}}).reverse();
     while(todo.length){
       var d=todo.pop(),n=d.n,name=d.name;
-      if(n.prot){ /* only a folder found on the way down: 4.3BSD's getdir says so in place of the title, System V's after it */
-        L.push('');if(sys5)L.push(name+':');L.push([name+' unreadable','err']);continue;
+      if(shut(n)){ /* 4.3BSD's getdir says so in place of the title (a folder named is said of above); System V's rddir after it, as it
+                      cannot open it: "can not access directory" */
+        if(!sys5){L.push('');L.push([name+' unreadable','err']);continue}
+        if(d.title){if(L.length)L.push('');L.push(name+':')}
+        L.push(['can not access directory '+name,'err']);continue;
       }
       var ents=Object.keys(n.kids).filter(function(k){return all||k.charAt(0)!=='.'}).sort()
         .map(function(k){return [k,n.kids[k]]});
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
       if(bsd&&ents.some(function(e){return name.length+e[0].length+2>1024})){L.push(['ls: filename too long','err']);P.status(1);break}
       if(d.title){if(L.length)L.push('');L.push(name+':')}
-      if(long){
+      if(long||v7&&blocks){ /* V7 gives the total with -s too */
         var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t);
-        ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
       }
+      if(long)ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
       else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])})));
       if(!rec)continue;
       for(var i=ents.length-1;i>=0;i--){
@@ -106,13 +112,25 @@ P.command({names:['cd'],core:true,help:'change directory',
     'a locked folder is a bad directory.']},
   run:function(a){
     var t=a[0]||P.st.home,n=P.find(t);
-    if(!n||n.type!=='d'||n.prot){P.oops('',t,n,t+': bad directory');return}
+    if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){P.oops('',t,n&&!P.may(n,'x')?{prot:true}:n,t+': bad directory');return}
     P.st.cwd=P.pathOf(n);
   }});
 
 P.command({names:['pwd'],core:true,path:'/bin',
   man:{what:'print working directory',syn:'pwd',desc:[
     'prints the full name of the working directory.']},
-  run:function(){P.typeLine(P.st.cwd)}});
+  run:function(a,raw,w){
+    if(P.profile.bash){ /* bash's own pwd: -L the working directory as cd left it (the default), -P with no symbolic links in it */
+      var W=(w||[]).slice(1),phys=false;
+      for(var i=0;i<W.length&&/^-./.test(W[i])&&W[i]!=='--';i++)for(var j=1;j<W[i].length;j++){
+        var c=W[i].charAt(j);
+        if(c==='P')phys=true;else if(c==='L')phys=false;
+        else{P.typeLine('bash: pwd: -'+c+': invalid option','err');P.typeLine('pwd: usage: pwd [-LP]','err');P.queue(function(){P.status(2)});return}
+      }
+      var n=phys&&P.find(P.st.cwd);
+      if(n){P.typeLine(P.pathOf(n));return}
+    }
+    P.typeLine(P.st.cwd);
+  }});
 
 })(window.Phosphor);

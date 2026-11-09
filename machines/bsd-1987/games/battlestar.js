@@ -901,6 +901,7 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
   function restore(){
     var s=P.saved('battlestar/Bstar');
     if(typeof s==='string'){try{s=JSON.parse(s)}catch(e){s=null}}
+    if(s&&s.file&&!P.find(home(),true)){P.save('battlestar/Bstar',null);s=null} /* its file, rm'd */
     if(!good(s)){
       pr(home()+': No such file or directory\n');
       return; /* location stays unset: news() falls over it */
@@ -918,7 +919,11 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
     pr('Saved in '+home()+'.\n');
     var s={WEIGHT:WEIGHT,CUMBER:CUMBER,clock:clock,day:location===dayfile?1:0,rooms:[],inven:inven,wear:wear,injuries:injuries,notes:notes,direction:direction,position:position,time:time,fuel:fuel,torps:torps,carrying:carrying,encumber:encumber,rythmn:rythmn,followfight:followfight,ate:ate,snooze:snooze,meetgirl:meetgirl,followgod:followgod,godready:godready,win:win,wintime:wintime,matchlight:matchlight,matchcount:matchcount,loved:loved,pleasure:pleasure,power:power,ego:ego};
     for(var n=1;n<=NUMOFROOMS;n++)s.rooms.push([location[n].link,location[n].objects]);
-    P.save('battlestar/Bstar',s);
+    s.file=1;
+    if(!P.save('battlestar/Bstar',s))return;
+    var f=P.find(home(),true),size=JSON.stringify(s).length; /* the file that stands for the record, where save.c's fopen(home, "w") puts it: 0666 less the umask */
+    if(f&&f.type==='f'){f.date=P.now();f.size=size}
+    else if(!f&&P.canWrite(P.norm(home())))P.put(P.norm(home()),'f',{owner:P.st.user,date:P.now(),bin:true,size:size,store:'battlestar/Bstar',mode:'-rw-r--r--'});
   }
   /* ---------- misc.c ---------- */
   function card(arr,size){var i=0;for(var k=0;k<size;k++)if(arr[k])i++;return i}

@@ -190,6 +190,10 @@ P.command({names:['connect'],terminal:true,help:'plug into another machine',
     });
   }});
 
+function shellOf(who){ /* the login shell /etc/passwd gives who, which su starts: 'csh', 'sh' (an empty field is /bin/sh), or null */
+  var f=P.find('/etc/passwd',true),r=f&&f.type==='f'&&P.text(f).map(function(l){return l.split(':')}).filter(function(x){return x[0]===who&&x.length>5})[0];
+  return !r?null:/(^|\/)csh$/.test(r[6]||'')?'csh':!r[6]||/(^|\/)sh$/.test(r[6])?'sh':null;
+}
 P.command({names:['su'],path:'/bin',
   man:{what:'become super-user',syn:'su [ userid ]',desc:[
     'asks for the root password, then makes you the super-user, until you exit. userid, if given, must be root, your own name or the owner\'s; it makes no difference which.'],bugs:[
@@ -199,7 +203,7 @@ P.command({names:['su'],path:'/bin',
     if(a[0]&&a[0]!=='root'&&a[0]!==P.st.owner&&a[0]!==P.st.user){P.typeLine('Unknown id: '+a[0]);return}
     if(P.st.user==='root')return;
     P.ask('Password:',function(line){
-      if(word&&line!=null&&line!==P.INT&&P.fold(line)===P.fold(word)){P.su();return} /* case counts where the machine's does */
+      if(word&&line!=null&&line!==P.INT&&P.fold(line)===P.fold(word)){P.su(shellOf(a[0]||'root'));return} /* case counts where the machine's does */
       P.pause(900);
       P.typeLine('Sorry','err');
     },false,true);
@@ -208,9 +212,10 @@ P.command({names:['su'],path:'/bin',
 /* the ways to stop a machine: Berkeley had halt; before that, you synced and threw the switch */
 P.command({names:['halt'],path:'/etc',enabled:function(p){return p.csh},
   man:{what:'stop the processor',syn:'halt [ -n ] [ -q ] [ -y ]',desc:['writes out what is in memory and stops the processor. only the super-user may do it.']},
-  run:function(){
-    if(P.st.user!=='root'){P.typeLine("reboot: can't idle init",'err');return} /* 4.3BSD's halt.c: its first kill(1, SIGTSTP) is refused */
-    P.powerOff(['syncing disks... done','halting']);
+  run:function(a){ /* 4.3BSD's halt.c: -n no sync (RB_NOSYNC), -q no killing first, -y even on a dialup, -l no log; anything else is its usage */
+    for(var i=0;i<a.length;i++)if(!/^-[nqyl]$/.test(a[i])){P.typeLine('usage: halt [ -n ]','err');return}
+    if(P.st.user!=='root'){P.typeLine("reboot: can't idle init",'err');return} /* its first kill(1, SIGTSTP) is refused */
+    P.powerOff((a.indexOf('-n')<0?['syncing disks... done']:[]).concat(['halting'])); /* the kernel's boot() syncs unless RB_NOSYNC */
   }});
 var syncs=0;
 P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<1980},
@@ -223,14 +228,20 @@ P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<
 P.command({names:['rm'],path:'/bin',
   man:function(pr){ /* Debian's rm (machines/linux) takes -f and -R as well */
     var rest='you can only remove your own files, in your own home folder or in /tmp. unless the site says otherwise, what you remove stays removed at your next visit in this browser; /tmp starts empty.';
-    return {what:'remove files',syn:'rm [ -r ] file ...',desc:pr.bash?['removes each file named. '+rest,'',
+    return {what:'remove files',syn:'rm [ -rif ] file ...',desc:pr.bash?['removes each file named. '+rest,'',
       '-f, --force   ignore nonexistent files and arguments, never prompt',
       '-r, -R, --recursive   remove directories and their contents recursively']:[
-    'removes each file named. -r also removes folders and everything in them. '+rest]};
+    'removes each file named. -r also removes folders and everything in them. -i asks about each file first, and removes it only after a y. -f says nothing about files that are not there or cannot be removed. '+rest]};
   },
   run:function(a){
-    var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
-    if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}
+    /* V7's and 4.3BSD's rm.c: -f says nothing of what is not there or cannot go (unless -i too), -i asks of each "rm: remove x? " and
+       goes on only after a y; 4.3BSD's takes -f whenever its standard input is no terminal. Options come first; - ends them */
+    var o='',k=0,bsd=P.profile.perror&&!P.profile.bash;
+    for(;k<a.length&&a[k].charAt(0)==='-'&&a[k].length>1;k++)o+=a[k].slice(1);
+    if(a[k]==='-')k++;
+    if(bsd&&/[^fiRr]/.test(o)){P.typeLine('usage: rm [-rif] file ...','err');return}
+    var f=a.slice(k),rec=/[rR]/.test(o),ask=/i/.test(o),quiet=/f/.test(o)||bsd&&!!P.stdin(),denied=false;
+    if(!f.length){if(P.profile.perror&&!quiet)P.typeLine('usage: rm [-rif] file ...','err');return}
     function lockedIn(n,path,seen,up){ /* the first locked thing at or under n, by name. A link's lock is its target's, not this name's */
       if(n.prot&&n.parent===up&&n.name===path.split('/').pop())return path;
       if(n.type!=='d'||!n.kids||seen.indexOf(n)>=0)return null;
@@ -239,19 +250,28 @@ P.command({names:['rm'],path:'/bin',
       for(var i=0;i<names.length;i++){var r=lockedIn(n.kids[names[i]],path+'/'+names[i],seen,n);if(r)return r}
       return null;
     }
-    f.forEach(function(x){
-      var n=P.find(x,true),at=n&&P.pathOf(n);
-      if(!n){P.typeLine('rm: '+x+' nonexistent','err');return}
-      if(n.type==='d'&&!rec){P.typeLine('rm: '+x+' directory','err');return}
+    function one(x){
+      var n=P.find(x,true,false,true),at=n&&P.pathOf(n);
+      if(!n){if(!quiet)P.typeLine('rm: '+x+' nonexistent','err');return}
+      if(n.type==='d'&&!rec){if(!quiet)P.typeLine('rm: '+x+' directory','err');return}
       var abs=P.norm(x),up=P.find(P.dirOf(abs),true),locked=lockedIn(n,abs,[],up);
       if(n===P.root||locked||!P.canWrite(abs)||P.inUse(at)){
+        if(quiet&&!ask)return;
         denied=denied||!P.canWrite(locked||abs);
         P.typeLine('rm: '+x+' not removed','err');
         return;
       }
       delete up.kids[abs.split('/').pop()]; /* by the name given: a link has its own */
-    });
-    if(denied)P.typeLine('nice try.','dim');
+    }
+    if(!ask){f.forEach(one);if(denied)P.typeLine('nice try.','dim');return}
+    (function next(i){
+      if(i>=f.length){if(denied)P.typeLine('nice try.','dim');return}
+      var x=f[i],n=P.find(x,true,false,true);
+      if(!n||n.type==='d'&&!rec){one(x);next(i+1);return}
+      var S=P.stdin(),q=['rm: remove '+x+'? '];
+      if(S){q.open=true;P.say(q);var l=S.length?S.shift():null;if(l&&/^y/.test(l))one(x);next(i+1);return} /* yes() reads its standard input */
+      P.ask(q[0],function(l){if(l===P.INT)return;if(l&&/^y/.test(l))one(x);next(i+1)});
+    })(0);
   }});
 
 })(window.Phosphor);
