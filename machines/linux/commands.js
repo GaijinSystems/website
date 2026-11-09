@@ -238,12 +238,14 @@ function pfEsc(s,b){ /* the escapes of a format, or of a %b word (b), where \0nn
     if(b&&n==='c')return {s:o,stop:true};
     if((m=(b?/^0([0-7]{0,3})/:/^([0-7]{1,3})/).exec(s.slice(i+1)))){o+=String.fromCharCode(parseInt(m[1]||'0',8)&255);i+=m[0].length;continue}
     if((m=/^x([0-9a-fA-F]{1,2})/.exec(s.slice(i+1)))){o+=String.fromCharCode(parseInt(m[1],16));i+=m[0].length;continue}
-    if((m=/^(u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8})/.exec(s.slice(i+1)))){o+=String.fromCodePoint(parseInt(m[1].slice(1),16));i+=m[0].length;continue}
+    if((m=/^(u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8})/.exec(s.slice(i+1)))){ /* past U+10FFFF bash still writes UTF-8 bytes up to 0x7FFFFFFF, which the terminal shows as no character; past that, nothing */
+      var u=parseInt(m[1].slice(1),16);o+=u<=0x10ffff?String.fromCodePoint(u):u<=0x7fffffff?'\ufffd':'';i+=m[0].length;continue}
     if(P.has(PFESC,n)&&(!b||(n!=='"'&&n!=="'"&&n!=='?'))){o+=PFESC[n];i++;continue}
     o+=c;
   }
   return {s:o,stop:false};
 }
+var INTMAX=2147483647,PFCAP=1<<24; /* widths and precisions are kept to 16 MB of padding: bash would write up to 2 GB */
 function pfQuote(x){ /* %q: bash's sh_backslash_quote, or $'...' for a word with a control character in it */
   if(x==='')return "''";
   if(/[\x00-\x1f\x7f]/.test(x))return "$'"+x.replace(/[\\']/g,'\\$&').replace(/[\x00-\x1f\x7f]/g,function(c){var k={'\x07':'a','\b':'b','\x1b':'E','\f':'f','\n':'n','\r':'r','\t':'t','\v':'v'}[c];return '\\'+(k||('00'+c.charCodeAt(0).toString(8)).slice(-3))})+"'";
@@ -259,6 +261,11 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
     if(!W.length){usage();return}
     var F=W[0],A=W.slice(1),k=0,out='',bad=false,stop=false;
     function arg(){return k<A.length?A[k++]:undefined}
+    function star(){ /* a * width or precision: bash holds it to an int, warning (with the word after it, as bash 5.2 does) */
+      var v=Number(num(arg()));
+      if(Math.abs(v)>INTMAX){if(k<A.length)err(at+'printf: warning: '+A[k]+': Numerical result out of range');v=v<0?-INTMAX:INTMAX}
+      return v;
+    }
     function num(x,conv){ /* an integer word: 'c is its character's code; 0x and 0 prefixes; a word that is not all number is an error, with the part that was */
       if(x===undefined||x==='')return BigInt(0);
       if(/^['"]/.test(x))return BigInt(x.length>1?x.codePointAt(1):0);
@@ -295,15 +302,18 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
     function floOut(v,c,fl,wd,pr){
       var p=pr===null?6:pr,lc=c.toLowerCase(),s;
       function ex(t){return t.replace(/e([+-])(\d)$/,'e$10$2')}
+      function fix(n){return n>100?fix(100)+'0'.repeat(n-100):Math.abs(v).toFixed(n)} /* JavaScript stops at 100 digits; the rest are taken as zeros */
+      function expo(n){return n>100?expo(100).replace('e','0'.repeat(n-100)+'e'):ex(Math.abs(v).toExponential(n))}
       if(!isFinite(v))s=isNaN(v)?'nan':(v<0?'-':'')+'inf';
-      else if(lc==='f')s=Math.abs(v).toFixed(p);
-      else if(lc==='e')s=ex(Math.abs(v).toExponential(p));
+      else if(lc==='f')s=fix(p);
+      else if(lc==='e')s=expo(p);
       else{
         var P0=p||1,X=v?Math.floor(Math.log10(Math.abs(v))):0;
-        if(v&&Number(Math.abs(v).toExponential(P0-1).split('e')[1])!==X)X++;
-        s=P0>X&&X>=-4?Math.abs(v).toFixed(Math.max(0,P0-1-X)):ex(Math.abs(v).toExponential(P0-1));
-        if(fl.indexOf('#')<0)s=s.replace(/\.?0+(e|$)/,'$1').replace(/^(\d+)\.(e|$)/,'$1$2');
+        if(v&&Number(expo(Math.min(P0-1,100)).split('e')[1])!==X)X++;
+        s=P0>X&&X>=-4?fix(Math.max(0,P0-1-X)):expo(P0-1);
+        if(fl.indexOf('#')<0)s=s.replace(/(\.\d*?)0+(e|$)/,'$1$2').replace(/\.(e|$)/,'$1'); /* only zeros after the point go */
       }
+      if(fl.indexOf('#')>=0&&isFinite(v)&&s.indexOf('.')<0)s=s.replace(/e|$/,'.$&'); /* # keeps the point */
       if(c!==lc)s=s.toUpperCase();
       var pre=v<0||Object.is(v,-0)?'-':fl.indexOf('+')>=0?'+':fl.indexOf(' ')>=0?' ':'';
       if(fl.indexOf('0')>=0&&fl.indexOf('-')<0&&wd!==null&&isFinite(v))return pre+s.padStart(wd-pre.length,'0');
@@ -314,8 +324,9 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
       var c=F.charAt(i);
       if(c==='\\'){var e=/^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)?/.exec(F.slice(i))[0];c=pfEsc(e,false).s;i+=e.length-1}
       else if(c==='%'){
-        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([a-zA-Z%])?/.exec(F.slice(i)),cv=m[4];
-        if(!cv||!/[sbqcdiouxXeEfFgG%]/.test(cv)){T.push({bad:F.slice(i,i+m[0].length)});break}
+        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?[hjlLtz]*(.)?/.exec(F.slice(i)),cv=m[4]; /* C's length modifiers are passed over */
+        if(!cv){T.push({bad:"`"+F.slice(i)+"': missing format character"});break}
+        if(!/[sbqcdiouxXeEfFgG%]/.test(cv)){T.push({bad:"`"+cv+"': invalid format character"});break}
         i+=m[0].length-1;
         if(cv!=='%'){T.push({fl:m[1],wd:m[2]===undefined?null:m[2],pr:m[3]===undefined?null:m[3],cv:cv});continue}
       }
@@ -326,11 +337,13 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
       for(var j=0;j<T.length&&!stop;j++){
         var tk=T[j];
         if(tk.s!==undefined){out+=tk.s;continue}
-        if(tk.bad!==undefined){flush();err(at+"printf: `"+tk.bad+"': missing format character");P.queue(function(){P.status(1)});stop=true;bad=null;break}
+        if(tk.bad!==undefined){flush();err(at+'printf: '+tk.bad);P.queue(function(){P.status(1)});stop=true;bad=null;break}
         var fl=tk.fl,wd=tk.wd,pr=tk.pr;cv=tk.cv;
-        if(wd==='*'){took=true;wd=Number(num(arg()));if(wd<0){fl+='-';wd=-wd}}else if(wd!==null)wd=+wd;
-        if(pr==='*'){took=true;pr=Number(num(arg()));if(pr<0)pr=null}else if(pr!==null)pr=+pr||0;
+        if(wd==='*'){took=true;wd=star();if(wd<0){fl+='-';wd=-wd}}else if(wd!==null)wd=+wd;
+        if(pr==='*'){took=true;pr=star();if(pr<0)pr=null}else if(pr!==null)pr=+pr||0;
         var x=arg();if(x!==undefined)took=true;
+        if(wd>INTMAX||pr>INTMAX)continue; /* C's printf refuses a width or precision past INT_MAX, and bash writes nothing for it */
+        if(wd>PFCAP)wd=PFCAP;if(pr>PFCAP&&!/[sbq]/.test(cv))pr=PFCAP;
         var sx=x===undefined?'':x;
         if(cv==='s')out+=strOut(sx,fl,wd,pr);
         else if(cv==='b'){var r=pfEsc(sx,true);out+=strOut(r.s,fl,wd,pr);if(r.stop)stop=true}
