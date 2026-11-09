@@ -11,6 +11,8 @@ badge:     PHOSPHOR-9
 installed: 1979-01-01 00:01
 user:      guest
 homes:     /usr
+# the guest's own: what sh reads at login
+guest files: .profile
 case:      sensitive
 root password: p1green
 backdoor:  ken

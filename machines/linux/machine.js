@@ -11,6 +11,11 @@ user:        guest
 homes:       /home
 case:        sensitive
 shell:       bash
+# the guest's own: what bash reads at login and at exit. A core dump is the dumper's alone (Linux makes it 0600),
+# and the site owner's files in the guest's home are immutable (chattr +i), so that root's rm is refused too
+guest files: .bash_profile, .bash_login, .profile, .bashrc, .bash_logout
+core mode:   -rw-------
+immutable:   yes
 perror:      yes
 not found:   bash: %s: command not found
 mail notice: You have new mail.

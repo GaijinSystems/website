@@ -8,6 +8,8 @@ badge:     PHOSPHOR-9
 installed: 1992-11-20 09:30
 user:      guest
 homes:     /usr/people
+# the guest's own: what csh reads at start, login and logout, and sh at login
+guest files: .cshrc, .login, .logout, .profile
 hostname:  crimson
 case:      sensitive
 root password: nedry
