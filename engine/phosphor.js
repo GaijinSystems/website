@@ -1057,7 +1057,7 @@ function canWrite(abs){ /* your home folder, or a folder anyone may write in; no
   if(ex&&ex!==ROOT&&!mayAlter(ex)&&ex.parent===dir&&ex.name===abs.slice(abs.lastIndexOf('/')+1))return false; /* only its own name: a link the visitor made to it is theirs to remove or rename; writing through it is writeFile's to refuse */
   return mayPut(up,dir);
 }
-function mayChmod(n){return OWNED?isRoot()||n.owner===ST.user:canWrite(pathOf(n))} /* chmod(2) on Unix: the file's owner, or root (EPERM else; its folder does not count); elsewhere, what canWrite allows */
+function mayChmod(n,p){return OWNED?isRoot()||n.owner===ST.user&&named(norm(p))===n:canWrite(pathOf(n))} /* chmod(2) on Unix: the file's owner, or root (EPERM else; its folder does not count, but a locked one on the way, p, keeps it from being reached); elsewhere, what canWrite allows */
 function mayPut(up,dir){ /* the folder part of canWrite (dir: the folder up names): what writeFile asks, once it has seen to the file itself */
   if(!dir||dir.type!=='d'||dir.prot||IMM&&dir.ro)return false;
   var at=pathOf(dir);
@@ -1420,8 +1420,9 @@ function firsts(M){ /* node -> the path it is kept under: its own place, unless 
   return F;
 }
 function val(x){return x===undefined?null:x}
-var ASU=null; /* while the boot home is kept under its own name: the login name whose files are kept as the boot user's */
-function field(n,k){return (k==='owner'||k==='group')&&ASU!==null&&n[k]===ASU?PROFILE.user:n[k]}
+var ASU=null; /* while the boot home is kept under its own name: the login name whose files in it are kept as the boot user's, and the home */
+function inside(n,h){for(var i=0;n&&n!==ROOT&&i<256;i++){if(n===h)return true;n=n.parent}return false}
+function field(n,k){return (k==='owner'||k==='group')&&ASU!==null&&n[k]===ASU.user&&inside(n,ASU.home)?PROFILE.user:n[k]} /* only in the home: elsewhere on the disk a name is its own (bin's /bin/ls) */
 function sig(n){return {n:n,b:n.body,d:+n.date||0,f:FIELDS.map(function(k){return val(field(n,k))})}}
 function same(a,n){return a.n===n&&a.b===n.body&&a.d===(+n.date||0)&&FIELDS.every(function(k,i){return a.f[i]===val(field(n,k))})}
 function was(a){ /* what the file was at boot, as a number */
@@ -1442,7 +1443,7 @@ function ser(n,p,at){ /* at: where it is kept; anywhere else it is a link */
 }
 function keepFiles(){ /* false when something more than before could not be kept: the disk is full */
   if(!KEEP||!BASE)return true;
-  ASU=homeAt()?RP?RP.user:ST.user:null;
+  var H=homeAt();ASU=H?{user:RP?RP.user:ST.user,home:find(H,true)}:null;
   var now=tree(),keep={},gone={},any=false;
   if(LAST&&LAST.size===now.size&&Array.from(now).every(function(e){var a=LAST.get(e[0]);return a&&same(a,e[1])}))return true; /* nothing changed since */
   var at=firsts(now);
@@ -3939,18 +3940,23 @@ function run(raw){
 }
 
 /* ---------- login (after exit/logout) ---------- */
+function accounts(){ /* the names /etc/passwd and /etc/group have, where the machine has them */
+  var A=new Set();
+  ['/etc/passwd','/etc/group'].forEach(function(p){var f=find(p,true);if(f&&f.type==='f')textOf(f).forEach(function(l){var k=l.split(':')[0];if(k)A.add(k.toLowerCase())})});
+  return A;
+}
 function login(name){
   var n=name.trim().toLowerCase();
   if(!n){prompt(PROFILE.loginPrompt,'login');return}
   var usr=find(PROFILE.homes);
   if(PROFILE.backdoor&&n===PROFILE.backdoor){setRoot(false);ST.login=now();welcome();prompt();return}
   PENDROOT=n===PROFILE.rootName&&PROFILE.rootPassword?{name:n,word:PROFILE.rootPassword}:n===PROFILE.alsoRoot?{name:n,word:PROFILE.alsoRootWord}:null;
-  if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)||n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
+  if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)||n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])||n!==ST.user&&n!==PROFILE.user&&accounts().has(n)){prompt('Password:','password');return} /* the system's own accounts (bin, daemon): their password is one no typing gives (*), so login says Login incorrect */
   var h=!PROFILE.home&&usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
   if(h&&n!==ST.user){ /* and what was the last login's in it is the new one's; the site owner's files stay theirs */
     delete usr.kids[ST.user];h.name=n;usr.kids[n]=h;
     var old=ST.user,seen=new Set();
-    (function walk(d){if(seen.has(d))return;seen.add(d);if(d.owner===old)d.owner=n;if(d.group===old)d.group=n;if(d.type==='d')Object.keys(d.kids).forEach(function(k){walk(d.kids[k])})})(h);
+    (function walk(d){if(seen.has(d))return;seen.add(d);if(d.owner===old)d.owner=n;if(d.group===old)d.group=n;if(d.type==='d')Object.keys(d.kids).forEach(function(k){if(d.kids[k].parent===d)walk(d.kids[k])})})(h); /* only what is in it: not what a link in it names */
   }
   ST.user=n;ST.home=PROFILE.home||PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
   welcome();prompt();
