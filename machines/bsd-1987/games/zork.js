@@ -22,7 +22,7 @@ C WRITTEN BY R. M. SUPNIK
    - The save file, DSAVE.DAT, is zork/dsave in this browser's storage, and is checked on the way back in.
    - The carriage control the FORTRAN writes for (a blank first column) is obeyed, as DEC's did, not printed, as f2c's does.
    - The random number generator is machdep.f's. It is seeded with 11, from the date routine that returns 11s: every game has the same dice.
-   - ^C does nothing, as zork.c's signal(2,1) arranged. ^D ends the game, where f2c's runtime stops with an error. A number that is not one, which only the implementers' GDT asks for, stops it as f2c's does.
+   - ^C does nothing, as zork.c's signal(2,1) arranged. ^D ends the game; on Debian, built with f2c, its runtime stops with its error. A number that is not one, which only the implementers' GDT asks for, stops it as f2c's does.
    - The TOPS-20 machine runs this file as DUNGEON: there the game prints its own welcome and first room, with no zork.c in front of it,
      and ^C goes back to the EXEC, as it did on a DEC-20.
  */
@@ -3098,7 +3098,7 @@ function WSTART(f){
   };
 }
 function RSTART(f,l){
-  if(l===null)throw STOP;
+  if(l===null){if(P.machine!=='linux')throw STOP;var z=new RangeError('read');z.fmt=f;z.eof=true;throw z} /* the end of the input: on Debian, f2c's runtime stops with its complaint */
   var pf=parseformat(f),F=pf.F,i=0,at=0,s=String(l);
   return function(){
     for(;;){
@@ -13330,7 +13330,7 @@ function step(v){
       if(e===STOP){flush();return}
       if(e instanceof RangeError&&e.fmt&&P.machine==='linux'){ /* Debian's dungeon, built with f2c as its Makefile says: libf2c's own complaint, then abort() */
         flush();
-        ['fmt: read unexpected character','apparent state: unit 5 (unnamed)','last format: ('+e.fmt.toLowerCase()+')','lately reading sequential formatted external IO','Aborted'].forEach(function(l){P.typeLine(l,'err')});
+        [e.eof?'fmt: end of file':'fmt: read unexpected character','apparent state: unit 5 (unnamed)','last format: ('+e.fmt.toLowerCase()+')','lately reading sequential formatted external IO','Aborted'].forEach(function(l){P.typeLine(l,'err')});
         P.queue(function(){P.status(134)});return;
       }
       if(e instanceof RangeError||e instanceof TypeError){flush();P.typeLine('zork: core dumped','err');return}

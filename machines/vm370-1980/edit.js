@@ -309,16 +309,20 @@ function save(E,auto){
   if(auto)out('SAVED');
   return true;
 }
-/* CMS SUBSET: a few CMS commands from inside the editor, then RETURN goes back to it */
+/* CMS SUBSET: from inside the editor, the CMS commands that are in the nucleus or run in the transient area, and CP's
+   (CP name, or a CP command by itself, as at CMS); RETURN goes back to the editor. A CMS command that needs the user area,
+   where the editor is, is refused: INVALID SUBSET COMMAND, with no code and no ready message, and the ready message is the
+   short one, R; or R(nnnnn); (DMSINT: SUBSET, INSUBMSG, NORTMSG; Command and Macro Reference, EDIT subcommand CMS) */
+var SUBSET=/^(CP|DEBUG|ERASE|FETCH|GENMOD|INCLUDE|LOAD|LOADMOD|START|STATE|STATEW|ACCESS|ASSGN|COMPARE|DISK|DLBL|FILEDEF|GENDIRT|GLOBAL|LISTFILE|MODMAP|OPTION|PRINT|PUNCH|QUERY|READCARD|RELEASE|RENAME|SET|SVCTRACE|SYNONYM|TAPE|TYPE|EXEC|SENTRIES)$/;
 function subset(E){
   read(function(l){
     if(l===null||l===P.INT)return;
     var w=up(l.trim()).split(/\s+/)[0]||'';
     if(w==='RETURN'){out('EDIT:');loop(E);return}
     if(w){
-      var ok=/^(LISTFILE|L|TYPE|T|ERASE|ER|RENAME|REN|COPYFILE|COPY|STATE|QUERY|Q|SET|ACCESS|ACC|RELEASE|REL|CP|PRINT|PR|PUNCH|PU|SENTRIES)$/.test(w);
-      if(!ok)err('DMSINT015E INVALID SUBSET COMMAND');
-      else{var rc=V.command(l,{});V.ready(rc)}
+      var name=V.cmsName(w)||w,cms=V.cmsCmd(name)||V.find(w,'MODULE','*')||V.find(name,'MODULE','*');
+      if(cms&&!SUBSET.test(name)&&!(V.opt.impex&&V.find(w,'EXEC','*')))err('INVALID SUBSET COMMAND');
+      else{V.unknown=false;var rc=V.command(l,{typed:true});if(!(rc===-3&&V.unknown))V.ready(rc,true);V.unknown=false}
     }
     subset(E);
   });

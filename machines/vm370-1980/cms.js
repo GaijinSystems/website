@@ -39,11 +39,11 @@ function clearRun(){V.execs=[];V.pend=[];V.level=0} /* no EXEC running, and none
 function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.4;V.tcpu+=t*.5;return [v,t]} /* most commands take a hundredth of a second, or less */
 function rcs(rc){return rc<0?'-'+z(-rc,4):z(rc,5)} /* a return code as R(...) shows it */
 V.rcs=rcs;
-V.ready=function(rc){
+V.ready=function(rc,brief){ /* brief: the short form, as in CMS subset */
   V.ht=false;V.busy=false; /* HT holds only until the command is done, before its ready message (DMSINT resets it at RESTYP) */
   if(V.abended){V.abended=false;P.typeLine('CMS');return} /* after an abend or HX: CMS, and no ready message */
   var c=cost(),n=P.now();
-  if(V.opt.rdymsg==='SMSG'){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
+  if(V.opt.rdymsg==='SMSG'||brief){P.typeLine(rc?'R('+rcs(rc)+');':'R;');return}
   P.typeLine((rc?'R('+rcs(rc)+'); ':'R; ')+'T='+c[0].toFixed(2)+'/'+c[1].toFixed(2)+' '+V.hms(n));
 };
 
@@ -265,7 +265,7 @@ function command(l,ctx){
   if(!w)return 0;
   ctx=ctx||{};
   /* the terminal's own words, answered here as everywhere */
-  if(V.termWord(w,l))return 0;
+  if(V.termWord(w,l))return V.termRc; /* HELP's own: 28 for a file not found, R(00028) as on Release 6 */
   /* an EXEC of that name, then CMS's own commands and the MODULEs on the disks, then CP */
   if(V.opt.impex&&w!=='EXEC'&&V.find(w,'EXEC','*'))return V.exec(W.concat([]),{line:l});
   var name=V.cmsName(w);
@@ -286,6 +286,7 @@ function osWords(w){
   if(x)x[1].forEach(function(t){P.typeLine(t)});
   return !!x;
 }
+V.cmsCmd=function(n){return P.has(C,n)}; /* a CMS command of CMS's own */
 C.CP=function(a,o,l){
   var rest=l.trim().replace(/^\S+\s*/,'');
   if(!rest){V.cpMode=true;V.cpReady=true;P.typeLine('CP');return 0}
@@ -574,16 +575,17 @@ C.STATE=function(a){
 
 /* ---------- the spool from CMS: PRINT, PUNCH, READCARD ---------- */
 /* the options each takes on Release 6 (DMSPRT, DMSPUN): PRINT's CC, NOCC, UPCASE and LINECOUN n shape the printed
-   page, and change nothing that shows here; PUNCH's HEADER puts the :READ card in front. MEMBER name or * prints or
+   page, and change nothing that shows here; HEX prints each record in hexadecimal; PUNCH's HEADER puts the :READ card in front. MEMBER name or * prints or
    punches the members of a MACLIB or TXTLIB, which a file is when its first record says LIB in columns 4 to 6 */
 function spoolOut(mod,dev,a,o){
   if(a.length<2){err('DMS'+mod+'054E INCOMPLETE FILEID SPECIFIED');return 24}
-  var pun=dev==='00D',hdr=pun,mem=false;
+  var pun=dev==='00D',hdr=pun,mem=false,hex=false;
   for(var i=0;i<o.length;i++){
     var x=o[i];
     if(pun&&(x==='HEADER'||x==='H'))hdr=true;
     else if(pun&&(x==='NOHEADER'||x==='NOH'))hdr=false;
     else if(!pun&&/^(CC|NOCC|UPCASE|UP)$/.test(x));
+    else if(!pun&&x==='HEX')hex=true;
     else if(!pun&&(x==='LINECOUN'||x==='LI')){if(!/^\d\d?$/.test(o[i+1]||'')){err('DMS'+mod+'029E INVALID PARAMETER \''+(o[i+1]||'')+'\' IN THE OPTION \''+x+'\' FIELD');return 24}i++}
     else if(x==='MEMBER'||x==='MEM'){if(o[i+1]===undefined){err('DMS'+mod+'029E INVALID PARAMETER \'\' IN THE OPTION \''+x+'\' FIELD');return 24}mem=true;i++}
     else{err('DMS'+mod+'003E INVALID OPTION \''+x+'\'');return 24}
@@ -600,11 +602,22 @@ function spoolOut(mod,dev,a,o){
       var first=f.lines.length?V.text(f.lines[0]):'';
       err('DMS'+mod+(first.slice(3,6)==='LIB'?'039E NO ENTRIES IN LIBRARY \'':'033E FILE \'')+fid(f,r.mode)+'\''+(first.slice(3,6)==='LIB'?'':' IS NOT A LIBRARY'));rc=32;return;
     }
-    var L=f.lines.map(V.text);
+    var L=hex?printHex(V.records(f).map(V.text)):f.lines.map(V.text);
     if(hdr)L=[V.readCard(f,r.mode,r.disk.label)].concat(L);
     V.closeSpool(dev,L,f.fn,f.ft);
   });
   return rc;
+}
+function printHex(R){ /* PRINT (HEX, as DMSPRT's HEXRTN prints it: RECORD n LENGTH= n, then the record in EBCDIC, ten words of four bytes
+                         to a line, and a line spaced after each record */
+  var L=[];
+  R.forEach(function(t,i){
+    var w=V.hex(t);
+    L.push('RECORD'+String(i+1).padStart(6)+' LENGTH='+String(t.length).padStart(6));
+    for(var k=0;k<w.length;k+=10)L.push(w.slice(k,k+10).join('  '));
+    L.push('');
+  });
+  return L;
 }
 V.readCard=function(f,mode,label){ /* the :READ card the punch puts in front of a file */
   return ':READ  '+f.fn.padEnd(8)+' '+f.ft.padEnd(8)+' '+mode+f.fm+' '+label+' '+V.mdy(f.date)+'  '+String(f.date.getHours()).padStart(2)+':'+V.hms(f.date).slice(3,5);
@@ -861,8 +874,9 @@ V.sort=function(a){
 var TERM=Object.create(null); /* no __proto__ or constructor among them */
 V.termWord=function(w,l){
   var k=w.toLowerCase(),f=TERM[k];
+  V.termRc=0;
   if(!f)return false;
-  if(k==='help'){V.help(l);return true}
+  if(k==='help'){V.termRc=V.help(l);return true}
   if(k==='mail'){V.mail();return true}
   var rest=l.trim().split(/\s+/).slice(1);
   f(rest.map(function(x){return x.toLowerCase()}),l,[k].concat(rest));

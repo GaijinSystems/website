@@ -18,9 +18,16 @@ P.command({names:['help'],core:true,terminal:true,
       man?['',['man name for details, or name '+(P.profile.bash?'--help':'-h')+'.','dim']]:[]));
   }});
 
+function v7(p){return !p.bash&&!p.csh&&!p.noUnix&&!p.dos} /* V7's sh and tools */
 P.command({names:['man'],core:true,help:'the manual',
-  man:{what:'print the manual',syn:'man name',desc:[
-    'prints the manual page for name. with no name, lists the commands, as help does; berkeley\'s man just says how to use it.']},
+  man:function(pr){
+    if(v7(pr))return {what:'print sections of this manual',syn:'man [ option ... ] [ chapter ] title ...',desc:[
+      'prints the section of this manual named title, in the chapter given; with no chapter, in whichever has it. options and chapter may be changed before each title. with no title at all, lists the commands, as help does.','',
+      '-w   print the path names of the manual sections, but do not print the sections themselves.','',
+      'the other options choose a typesetter (-t, -k) or a preprocessor (-e); on this terminal they print the section as it is.']};
+    return {what:'print the manual',syn:'man name',desc:[
+    'prints the manual page for name. with no name, lists the commands, as help does; berkeley\'s man just says how to use it.']};
+  },
   run:function(a){
     if(!a[0]){
       if(P.profile.perror){P.typeLine('Usage: man [ section ] name ...');return}
@@ -29,6 +36,20 @@ P.command({names:['man'],core:true,help:'the manual',
       return;
     }
     var bsd=P.profile.perror,irix=P.profile.csh&&!bsd,sec='',sub='',i;
+    if(v7(P.profile)){ /* V7's man, a shell script (32V's man.sh is the same): a chapter 1-8 and options before each title; titles it has no section for are
+                          not found, the others printed together at the end, or with -w their path names, as cd /usr/man; echo man1/ls.1 */
+      var ch='',w=false,all=[];
+      a.forEach(function(x){
+        if(/^[1-8]$/.test(x))ch=x;
+        else if(x==='-w')w=true;
+        else if(/^-/.test(x))w=false; /* -n -t -k -e: how to print it */
+        else{var p=P.has(P.man,x)?P.man[x]:null,ps=p?String(p.sec||1):'';if(!p||ch&&ps!==ch)P.typeLine(x+' not found','err');else all.push([x,ps])}
+      });
+      if(!all.length)return;
+      if(w){P.typeLine(all.map(function(t){return 'man'+t[1]+'/'+t[0]+'.'+t[1]}).join(' '));return}
+      all.forEach(function(t){P.say(P.manPage(t[0]))});
+      return;
+    }
     if(!bsd&&!irix){if(P.has(P.man,a[0]))P.say(P.manPage(a[0]));else P.typeLine('No manual entry for '+a[0]+'.');return}
     for(i=0;i<a.length;i++){ /* 4.3BSD man.c, which IRIX's man follows: a digit (and a subsection letter), local, new, old or public is a section */
       var w=a[i],s={local:'l',new:'n',old:'o',public:'p'}[w];
@@ -123,7 +144,15 @@ P.command({names:['unalias'],noHelpFlag:true,enabled:function(p){return p.bash},
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
     'prints its arguments, separated by spaces, and ends the line. -n leaves the line open: what comes next goes on in it.']},
-  run:function(a,raw,words){var n=words[1]==='-n';P.typeLine(words.slice(n?2:1).join(' '),null,null,n?{open:true}:null)}});
+  run:function(a,raw,words){
+    var n=words[1]==='-n',t=words.slice(n?2:1).join(' ');
+    if(P.bourne.dash&&P.bourne.dash()){ /* dash's echo: -n and nothing else, and the backslash escapes always; \c ends it all, newline and all */
+      var stop=false;t=t.replace(/\\(0[0-7]{0,3}|[abcfnrtv\\])/g,function(m,x){if(stop)return '';if(x==='c'){stop=true;return '\u0000'}return x.charAt(0)==='0'?String.fromCharCode(parseInt(x,8)&255):{a:'\x07',b:'\b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\'}[x]});
+      if(stop){t=t.slice(0,t.indexOf('\u0000'));n=true}
+      var L=t.split('\n');L.open=n;P.say(L);return;
+    }
+    P.typeLine(t,null,null,n?{open:true}:null);
+  }});
 
 P.command({names:['clear'],core:true,help:'clear the screen',
   man:{what:'clear the screen',syn:'clear',desc:[
@@ -158,13 +187,15 @@ P.command({names:['kill'],noHelpFlag:true,run:jc('kill')});
    its shell's words: bash's help, V7's sh(1), 4.3BSD's csh(1). Only what the machine has, and on csh machines only csh's */
 var SHPAGES={
   bash:{
-    jobs:['display status of jobs','jobs [-lnprs] [jobspec ...]',['lists the active jobs. jobspec restricts output to that job. without options, the status of all active jobs is displayed.','',
-      '-l   lists process IDs in addition to the normal information','-n   lists only processes that have changed status since the last notification','-p   lists process IDs only','-r   restricts output to running jobs','-s   restricts output to stopped jobs']],
+    jobs:['display status of jobs','jobs [-lnprs] [jobspec ...] or jobs -x command [args]',['lists the active jobs. jobspec restricts output to that job. without options, the status of all active jobs is displayed.','',
+      '-l   lists process IDs in addition to the normal information','-n   lists only processes that have changed status since the last notification','-p   lists process IDs only','-r   restricts output to running jobs','-s   restricts output to stopped jobs','',
+      'with -x, command is run after every job specification that appears in args has been replaced with the process id of that job\'s process group leader.']],
     fg:['move job to the foreground','fg [job_spec]',['places the job identified by job_spec in the foreground, making it the current job. if job_spec is not present, the shell\'s notion of the current job is used.']],
     bg:['move jobs to the background','bg [job_spec ...]',['places the jobs identified by each job_spec in the background, as if they had been started with &. if job_spec is not present, the shell\'s notion of the current job is used.']],
-    wait:['wait for job completion and return exit status','wait [id ...]',['waits for each process identified by an id, which may be a process id or a job specification, and reports its termination status. if id is not given, waits for all currently active child processes, and the return status is zero.']],
+    wait:['wait for job completion and return exit status','wait [-fn] [-p var] [id ...]',['waits for each process identified by an id, which may be a process id or a job specification, and reports its termination status. if id is not given, waits for all currently active child processes, and the return status is zero.','',
+      '-n   waits for a single job from the list of ids, or, if no ids are supplied, for the next job to complete, and returns its exit status','-p var   the process or job identifier of the job for which the exit status is returned is assigned to the variable var','-f   waits for each id to terminate, rather than waiting for it to change status']],
     kill:['send a signal to a job','kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]',['sends the processes identified by pid or jobspec the signal named by sigspec or signum. if neither is present, SIGTERM is assumed.','',
-      '-s sig   sig is a signal name','-n sig   sig is a signal number','-l   lists the signal names; with arguments, the names of those signal numbers']],
+      '-s sig   sig is a signal name','-n sig   sig is a signal number','-l   lists the signal names; with arguments, the names of those signal numbers','-L   synonym for -l']],
     unalias:['remove each name from the list of defined aliases','unalias [-a] name [name ...]',['removes each name from the list of defined aliases. -a removes all alias definitions. returns success unless a name is not an existing alias.']],
     read:['read a line from the standard input and split it into fields','read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]',['reads a single line from the standard input. the line is split into fields as with word splitting, and the first word is assigned to the first name, the second word to the second name, and so on, with any leftover words assigned to the last name. only the characters found in $IFS are recognized as word delimiters. the backslash character escapes delimiter characters and newline. if no names are supplied, the line read is stored in the REPLY variable.','',
       '-p prompt   outputs the string prompt without a trailing newline before reading','-r   does not allow backslashes to escape any characters','-s   does not echo input coming from a terminal','the other options are taken and change nothing here.']],
@@ -172,6 +203,7 @@ var SHPAGES={
     break:['exit for, while, or until loops','break [n]',['exits a for, while or until loop. if n is specified, breaks n enclosing loops.']],
     continue:['resume for, while, or until loops','continue [n]',['resumes the next iteration of the enclosing for, while or until loop. if n is specified, resumes the nth enclosing loop.']],
     ':':['null command','',['no effect; the command does nothing. it always succeeds.']],
+    '.':['execute commands from a file in the current shell','. filename [arguments]',['reads and executes commands from filename in the current shell. the entries in $PATH are used to find the directory containing filename; if it is not found there, the current directory is searched. any arguments become the positional parameters while filename is executed. the exit status is that of the last command executed in filename, and fails if filename cannot be read.']],
     let:['evaluate arithmetic expressions','let arg [arg ...]',['evaluates each arg as an arithmetic expression, in 64-bit integers with no check for overflow, though division by 0 is trapped and flagged as an error. shell variables are allowed as operands, and sub-expressions in parentheses are evaluated first. if the last arg evaluates to 0, let returns 1; let returns 0 otherwise.']]},
   sh:{
     wait:['wait for process to terminate','wait [ n ]',['waits for the specified process and reports its termination status. if n is not given then all currently active child processes are waited for. the return code from this command is that of the process waited for.']],
@@ -181,7 +213,8 @@ var SHPAGES={
     shift:['shift the positional parameters','shift',['the positional parameters from $2 ... are renamed $1 ...']],
     break:['exit from a loop','break [ n ]',['exit from the enclosing for or while loop, if any. if n is specified then break n levels.']],
     continue:['resume a loop','continue',['resume the next iteration of the enclosing for or while loop.']],
-    ':':['no effect','',['no effect; the command does nothing. a zero exit code is returned.']]},
+    ':':['no effect','',['no effect; the command does nothing. a zero exit code is returned.']],
+    '.':['read and execute commands from a file','. file',['read and execute commands from file and return. the search path $PATH is used to find the directory containing file.']]},
   csh:{
     jobs:['list the active jobs','jobs [ -l ]',['lists the active jobs; given the -l option lists process id\'s in addition to the normal information.']],
     fg:['bring a job into the foreground','fg [ %job ]',['brings the current or specified job into the foreground, continuing it if it was stopped.']],
@@ -211,7 +244,7 @@ P.command({names:['export'],noHelpFlag:true,enabled:function(p){return !p.bash&&
     var W=words.slice(1);
     if(!W.length){P.say(Object.keys(EXPORTED).sort().map(function(k){return 'export '+k}));return}
     for(var i=0;i<W.length;i++){
-      if(!/^[A-Za-z_]\w*$/.test(W[i])){P.typeLine(W[i]+': is not an identifier','err');P.status(1);return} /* V7's lookup: failed(nam, notid) */
+      if(!/^[A-Za-z_]\w*$/.test(W[i])){P.typeLine(W[i]+': is not an identifier','err');P.status(1);P.loop('abort');return} /* V7's lookup: failed(nam, notid), and the rest of the line goes */
       EXPORTED[W[i]]=true;
     }
   }});

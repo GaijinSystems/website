@@ -572,7 +572,7 @@ cmd(['delete','dl'],function(a){
         if(t.n.type==='d'){bad('delete',t.shown+' is a directory. Use delete_dir.');return}
         if(t.n.mbx){bad('delete',t.shown+' is a mailbox. Use delete_mailbox.');return}
         if(!can(t.d,'m')||t.n.prot){bad('delete','Incorrect access to directory containing entry.',t.shown);return}
-        unlink(t);if(o.lg)out('delete: Deleted segment '+t.shown+'.');
+        unlink(t);if(o.lg)out('Deleted file '+t.shown.replace(/^.*[<>]/,'')); /* delete.pl1: ioa_ "Deleted ^a ^a", thing and the entry name (AG92: "Deleted file <path>") */
       });
       M.changed();
     });
@@ -788,13 +788,15 @@ cmd(['who'],function(a){
   var U=whoAll(),inter=U.filter(function(u){return u[2]}).length;
   var sel=o.rest.length?U.filter(function(u){return o.rest.some(function(x){var p=x.split('.');return (!p[0]||p[0]==='*'||p[0]===u[0])&&(!p[1]||p[1]==='*'||p[1]===u[1])})}):U;
   if(o.rest.length&&!sel.length){out('who: User not logged in.'+' '+o.rest.join(' '));return}
-  var key=a.filter(function(x){return /^-(name|nm|project|pj)$/.test(x)}).pop(); /* sorted by login time, or by the last of -name and -project (who.pl1) */
-  if(key){var k=/^-(name|nm)$/.test(key)?0:1;sel=sel.map(function(u,i){return [u,i]}).sort(function(x,y){return x[0][k]<y[0][k]?-1:x[0][k]>y[0][k]?1:x[1]-y[1]}).map(function(x){return x[0]})}
+  var key=a.filter(function(x){return /^-(name|nm|project|pj)$/.test(x)}).pop(),k=!key?-1:/^-(name|nm)$/.test(key)?0:1; /* sorted by login time, or by the last of -name and -project, -project then by name (who.pl1) */
+  function on(u){return u[3]?S.login:u[2]?new Date(S.login.getTime()-(U.indexOf(u)*37+13)*6e4):new Date(BOOTED.getTime()+(U.indexOf(u)+2)*6e4)} /* each user's own login time, whatever the order: the daemons' at boot */
+  function cmp(x,y){return x<y?-1:x>y?1:0}
+  sel=sel.slice().sort(function(x,y){return k<0?on(x)-on(y):cmp(x[k],y[k])||k===1&&cmp(x[0],y[0])||on(x)-on(y)});
   var R=[];
   if(o.lg){
     R.push('','Multics '+VERSION+'; '+site(),'Load = '+load()+' out of 125.0 units; users = '+U.length+', '+inter+' interactive, '+(U.length-inter)+' daemons.',
       'Absentee users = 0 background; Max background absentee users = 3','System up since '+dt(BOOTED),'Last shutdown was at '+dt(new Date(BOOTED.getTime()-(41*60+7)*6e4)),'','    Login at      TTY  Load   User ID','');
-    sel.forEach(function(u){var t=new Date(S.login.getTime()-(U.indexOf(u)*37+13)*6e4); /* each user's own login time, whatever the order */if(u[3])t=S.login;R.push(mdy(t)+'  '+hm(t)+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
+    sel.forEach(function(u){var t=on(u);R.push(mdy(t)+'  '+hm(t)+'  none  '+(u[2]?'1.0':'0.0')+'   '+u[0]+'.'+u[1])});
     R.push('');
   }else{
     if(!o.rest.length&&!o.bf)R.push('','Multics '+VERSION+', load '+load()+'/125.0; '+U.length+' users, '+inter+' interactive, '+(U.length-inter)+' daemons.','Absentee users 0/3');
@@ -834,7 +836,7 @@ afn(['user'],function(a){
   var k=a[0],d=S.login;
   var V={name:S.person,project:S.project,login_date:mdy(d),login_time:hm(d),term_type:'ASCII',term_id:'none',
     process_type:'interactive',anonymous:'false',absentee:'false',brief_bit:'false',preemption_time:hhmm(new Date(d.getTime()+36e5))};
-  if(!P.has(V,k))throw new CPErr('user: Invalid keyword. '+k);
+  if(!P.has(V,k))throw new CPErr('user: Invalid keyword: '+k); /* user.pl1: "Invalid keyword: ^a" */
   return V[k];
 });
 afn(['string'],function(a){return a.join(' ')});

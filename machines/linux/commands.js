@@ -8,7 +8,7 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
   ip4:'203.0.113.24',ip6:'2001:db8:4f2::24',gw:'203.0.113.1',mac:'52:54:00:3a:7c:1e',cpu:'AMD EPYC-Rome Processor',ncpu:2,
   mem:{MemTotal:2014976,MemFree:1352196,MemAvailable:1689556,Buffers:31220,Cached:409852,Shmem:1124,SReclaimable:25228},
   links:{'/bin':'usr/bin','/sbin':'usr/sbin','/lib':'usr/lib','/lib64':'usr/lib64','/etc/os-release':'../usr/lib/os-release',
-    '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay'},
+    '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay','/usr/bin/python3':'python3.13'},
   loads:loads
 };
 var BOOT=null,OLD=null,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
@@ -19,6 +19,7 @@ P.setup(function(){
     var S=P.st;
     if(S.user==='root'&&S.home==='/'){S.home='/root';if(S.cwd==='/')S.cwd='/root'} /* root logged in at the console: root's home */
     var w=S.cwd===S.home?'~':S.cwd.indexOf(S.home+'/')===0?'~'+S.cwd.slice(S.home.length):S.cwd;
+    pkgSync(); /* what root removed, before a reload too */
     return S.user+'@'+S.hostname+':'+w+(S.user==='root'?'# ':'$ ');
   }
   P.setPrompt(ps1);
@@ -27,11 +28,12 @@ P.setup(function(){
   var bye=P.cmds.exit; /* a login shell says so as it goes */
   if(bye)P.cmds.exit=P.cmds.logout=function(a,raw,w){
     if(RUN&&!P.subshell()&&!P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* in su -c's line: only that shell ends */
+    if(P.bourne.leave(a[0]===undefined?P.lastStatus():parseInt(a[0],10)||0))return; /* dash at the terminal: back to bash, saying nothing */
     if(!P.subshell()&&!P.inScript()){
       var top=STK[STK.length-1];
       if(top&&top.say==='exit'&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
       P.typeLine(top?top.say:'logout');
-      if(top&&!top.base){STK.pop();P.st.user=top.user;P.st.home=top.home;P.st.cwd=top.cwd;P.relock(top.user!=='root');return} /* back to the shell that ran su */
+      if(top&&!top.base){STK.pop();P.st.user=top.user;P.st.home=top.home;P.st.cwd=top.cwd;P.aliases=top.al;P.relock(top.user!=='root');return} /* back to the shell that ran su */
       STK.length=0;
     }
     bye(a,raw,w);
@@ -52,7 +54,14 @@ P.setup(function(){
     }
     if(pos)P.args([P.args()[0]||''].concat(pos));
   };
-  if(P.cmds.sh){var sh=P.cmds.sh;P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;sh(a,raw,w)};P.paths.bash='/usr/bin'} /* bash on its own: you are in one already */
+  var src=P.cmds.source; /* bash's source is its . (with no file, the terminal's own: where to get it); dash has none */
+  if(src&&P.cmds['.'])P.cmds.source=function(a,raw,w){if(w.length<2)src(a,raw,w);else if(P.bourne.dash()){err(P.bashAt()+w[0]+': not found');P.queue(function(){P.status(127)})}else P.cmds['.'](a,raw,w)};
+  P.bourne.on=true; /* /bin/sh is dash: sh at the terminal starts one, which exit or ^D ends; sh file, sh -c and #!/bin/sh scripts run theirs with it */
+  if(P.cmds.sh){var sh=P.cmds.sh;
+    P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;P.bourne.bash(function(){sh(a,raw,w)})}; /* bash on its own: you are in one already */
+    P.cmds.sh=function(a,raw,w){if(!a.length&&!P.stdin()&&!P.subshell()&&!P.inScript()){P.bourne.start();return}P.bourne.run(function(){sh(a,raw,w)})};
+    P.paths.bash='/usr/bin';
+  }
   var GNU={cat:['concatenate files and print on the standard output','cat [OPTION]... [FILE]...'],pwd:['print name of current/working directory','pwd [OPTION]...'],
     echo:['display a line of text','echo [SHORT-OPTION]... [STRING]...'],mkdir:['make directories','mkdir [OPTION]... DIRECTORY...'],rm:['remove files or directories','rm [OPTION]... [FILE]...'],
     rmdir:['remove empty directories','rmdir [OPTION]... DIRECTORY...'],cp:['copy files and directories','cp [OPTION]... SOURCE... DIRECTORY'],mv:['move (rename) files','mv [OPTION]... SOURCE... DIRECTORY'],
@@ -62,7 +71,6 @@ P.setup(function(){
     tee:['read from standard input and write to standard output and files','tee [OPTION]... [FILE]...'],sleep:['delay for a specified amount of time','sleep NUMBER[SUFFIX]...'],
     file:['determine file type','file [file ...]'],du:['estimate file space usage','du [OPTION]... [FILE]...'],ln:['make links between files','ln [OPTION]... [-T] TARGET LINK_NAME'],
     date:['print or set the system date and time','date [OPTION]... [+FORMAT]'],whoami:['print effective user name','whoami [OPTION]...'],clear:['clear the terminal screen','clear [-Ttype] [-x]'],
-    printenv:['print all or part of environment','printenv [OPTION]... [VARIABLE]...'],stty:['change and print terminal line settings','stty [-F DEVICE | --file=DEVICE] [SETTING]...'],
     sh:['command interpreter (shell)','sh [-aCefnuvxIimqVEb] [+aCefnuvxIimqVEb] [-o option_name] [command_file [argument ...]] or sh -c command_string'],
     vi:["Vi IMproved, a programmer's text editor",'vi [file]'],'true':['do nothing, successfully','true [ignored command line arguments]'],
     'false':['do nothing, unsuccessfully','false [ignored command line arguments]'],test:['check file types and compare values','test EXPRESSION'],expr:['evaluate expressions','expr EXPRESSION']};
@@ -70,6 +78,8 @@ P.setup(function(){
   if(P.cmds.bash)P.man.bash={names:'bash',what:'GNU Bourne-Again SHell',syn:'bash [options] [command_string | file]',bugs:[],desc:[ /* the bash above, which is sh's */
     'runs the commands in a file, one line at a time, with any words after it as $1, $2 and on. with no file, it does nothing: you are in bash already.','',
     '-c   the commands are read from the first argument, command_string.'].map(P.fill)};
+  if(P.has(P.man,'sh'))P.man.sh.desc=['dash, the Debian Almquist shell: the commands of a file, or of command_string with -c, read and run with the POSIX grammar, and no more (no [[ ]], arrays, brace expansion or history). each argument is passed to the script: $1, $2 and so on. with no file, at the terminal, it reads commands from there, with its $ prompt, until exit or end of file (^D).',
+    '','-c   read commands from the command_string operand instead of from the standard input.'];
 });
 function cmd(names,where,what,syn,desc,run,o){
   P.command(Object.assign({names:[].concat(names),path:where||undefined,man:{what:what,syn:syn,desc:[].concat(desc)},run:run},o||{}));
@@ -120,7 +130,7 @@ function human(b,suffix){ /* 4.0K, 13K, 1.9G: GNU rounds up */
 }
 
 /* ---------- the shell ---------- */
-var BUILTIN=[':','[','alias','bg','break','cd','command','continue','declare','echo','exit','export','false','fg','help','history','jobs','kill','let','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
+var BUILTIN=['.',':','[','alias','bg','break','cd','command','continue','declare','echo','exit','export','false','fg','help','history','jobs','kill','let','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
 cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
   ['changes the working directory to dir, or to your home directory if there is none. cd - goes back to the one before, and says where that is.','',
   '-L   force symbolic links to be followed: resolve symbolic links in dir after processing instances of .. (the default)',
@@ -143,6 +153,7 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
     var t=W.length?W[0]:P.st.home,back=t==='-';
     if(back){if(OLD===null){err('bash: cd: OLDPWD not set');return}t=OLD}
     var n=P.find(t);
+    if((!n||n.type!=='d'||n.prot||!P.may(n,'x'))&&P.bourne.dash()){err(P.bashAt()+"cd: can't cd to "+t);P.status(2);return} /* dash's */
     if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){err('bash: cd: '+t+': '+(!n&&!P.shut(t)?'No such file or directory':n&&n.type!=='d'?'Not a directory':'Permission denied'));return}
     OLD=P.st.cwd;P.env.OLDPWD=OLD;
     var log=P.norm(t);
@@ -191,9 +202,9 @@ cmd('type','','display information about command type','type [-afptP] name [name
     if(al)P.typeLine(x+' is aliased to `'+al.to+"'");
     else if(BUILTIN.indexOf(x)>=0)P.typeLine(x+' is a shell builtin');
     else if((f=where(x)))P.typeLine(x+' is '+f);
-    else{err('bash: type: '+x+': not found');bad=true}
+    else{if(P.bourne.dash())P.typeLine(x+': not found');else err('bash: type: '+x+': not found');bad=true}
   });
-  if(bad)P.status(1);
+  if(bad)P.status(P.bourne.dash()?127:1);
 });
 cmd('which','/usr/bin','locate a command','which [-a] filename ...','prints the full path of each program that would run for the names given, searching the directories in PATH. aliases and shell builtins are not programs.',function(a){
   var bad=false;
@@ -232,21 +243,25 @@ function exported(){if(!EXP){EXP=Object.create(null);Object.keys(P.env).concat([
 function declared(n){ /* declare -p's line for n, or null when it is not set */
   var V=P.bashVars,k=V.kind(n),v=V.value(n);
   if(!k&&v===null)return null;
-  return 'declare '+(k?'-'+k:exported()[n]?'-x':'--')+' '+n+(v===null?'':'='+v);
+  var f=(k||'')+(exported()[n]&&!/[aA]/.test(k||'')?'x':''); /* bash's order: a A i, then x */
+  return 'declare '+(f?'-'+f:'--')+' '+n+(v===null?'':'='+v);
 }
-function assigns(name,w,decl){ /* declare, typeset and readonly: name=value, name=( ... ), name[i]=value each; -a and -A make arrays. false when one went wrong */
+function assigns(name,w,decl,int){ /* declare, typeset and readonly: name=value, name=( ... ), name[i]=value each; -a and -A make arrays, -i (int true) and +i (false)
+                                        make it an integer or not, before its value is set. false when one went wrong */
   var ok=true,V=P.bashVars;
   w.forEach(function(x){
     var m=x.match(/^([A-Za-z_]\w*)(\[[^\]]*\])?(\+?=[\s\S]*)?$/);
     if(!m||m[2]&&m[3]===undefined){err('bash: '+name+": `"+x+"': not a valid identifier");ok=false;return}
     if(decl&&!V.make(m[1],decl==='A')){err('bash: '+name+': '+m[1]+': cannot convert '+(decl==='A'?'indexed to associative':'associative to indexed')+' array');ok=false;return}
+    if(int!==undefined)V.int(m[1],int);
     if(m[3]!==undefined&&V.asg(x,decl)===false)ok=false;
   });
   return ok;
 }
-cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [name ...]','gives each name the value after its =; -a makes an indexed array, -A an associative one, and name=( ... ) gives an array its elements. -p shows each name as a declare command; with no name, lists the variables. the other attributes are not kept here.',function(a,raw,w){
-  var o='',args=[];
-  w.slice(1).forEach(function(x){if(!args.length&&/^[-+][A-Za-z]+$/.test(x)){if(x.charAt(0)==='-')o+=x.slice(1)}else args.push(x)});
+cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [name ...]','gives each name the value after its =; -a makes an indexed array, -A an associative one, and name=( ... ) gives an array its elements. -p shows each name as a declare command; with no name, lists the variables. -i makes each name an integer: whatever it is set to is worked out as arithmetic first, and += adds; +i takes that away. the other attributes are not kept here.',function(a,raw,w){
+  var o='',off='',args=[];
+  w.slice(1).forEach(function(x){if(!args.length&&/^[-+][A-Za-z]+$/.test(x)){if(x.charAt(0)==='-')o+=x.slice(1);else off+=x.slice(1)}else args.push(x)});
+  var int=o.indexOf('i')>=0?true:off.indexOf('i')>=0?false:undefined;
   var decl=o.indexOf('A')>=0?'A':o.indexOf('a')>=0?'a':null,E=envAll();
   if(o.indexOf('p')>=0){
     var bad=false;
@@ -254,17 +269,18 @@ cmd(['declare','typeset'],'','set variable values and attributes','declare [-aAf
     if(bad)P.status(1);
     return;
   }
+  if(!args.length&&int){P.bashVars.ints().sort().forEach(function(n){var t=declared(n);if(t!==null)P.typeLine(t)});return} /* declare -i: the integers, as declare -p shows them */
   if(!args.length){
     var arr=P.bashVars.names();
     lines(Object.keys(E).concat(arr).filter(function(k,i,L){return L.indexOf(k)===i}).sort().filter(function(k){return arr.indexOf(k)<0||P.bashVars.value(k)!==null}).map(function(k){return k+'='+(arr.indexOf(k)>=0?P.bashVars.value(k):E[k])}));
     return;
   }
-  if(!assigns(w[0],args,decl))P.status(1);
+  if(!assigns(w[0],args,decl,int))P.status(1);
 });
 cmd('readonly','','mark shell variables as unchangeable','readonly [-aAf] [name[=value] ...] or readonly -p','gives each name the value after its =; that it may not be changed is not kept here.',function(a,raw,w){
   if(!assigns('readonly',w.slice(1).filter(function(x){return x.charAt(0)!=='-'}),null))P.status(1);
 });
-cmd('local','','define local variables','local [option] name[=value] ...','makes a variable local to a shell function; there are none here, so it says so.',function(){err('bash: local: can only be used in a function')});
+cmd('local','','define local variables','local [option] name[=value] ...','makes a variable local to a shell function; there are none here, so it says so.',function(){if(P.bourne.dash()){err(P.bashAt()+'local: not in a function');P.status(2);return}err('bash: local: can only be used in a function')});
 /* bash's printf builtin (printf.def): the format's backslash escapes, %s %b %q %c %d %i %o %u %x %X %e %f %g and %%, with flags, widths and
    precisions (* takes them from the words), the format again for words left over, and -v name to set a variable instead */
 var PFESC={a:'\x07',b:'\b',e:'\x1b',E:'\x1b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\','"':'"',"'":"'",'?':'?'};
@@ -442,9 +458,21 @@ cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... 
   if(c.indexOf('/')>=0?!at||at.type==='d':!P.has(P.paths,c)){err("env: '"+c+"': No such file or directory");P.queue(function(){P.status(127)});return}
   var keep=Object.assign({},P.env),q=function(s){return "'"+s.replace(/'/g,"'\\''")+"'"};
   Object.keys(P.env).forEach(function(k){if(!P.has(E,k))delete P.env[k]});
-  Object.keys(E).forEach(function(k){if(!/^(HOME|LOGNAME|USER)$/.test(k)||P.has(keep,k))P.env[k]=E[k]});
+  Object.keys(E).forEach(function(k){P.env[k]=E[k]});
+  var X=exported(),gone=['HOME','LOGNAME','USER'].filter(function(k){return !P.has(E,k)}),was=gone.map(function(k){return X[k]});
+  gone.forEach(function(k){X[k]=false}); /* those the session sets itself are left out of the program's environment as export -n leaves them out */
+  var own=P.ownEnv(true); /* HOME, USER and LOGNAME too: a shell it runs expands what it got, not the session's own */
   P.exec(W.slice(i).map(q).join(' '));
-  P.queue(function(){Object.keys(P.env).forEach(function(k){delete P.env[k]});Object.assign(P.env,keep)},true); /* the program's environment was its own */
+  P.queue(function(){Object.keys(P.env).forEach(function(k){delete P.env[k]});Object.assign(P.env,keep);gone.forEach(function(k,j){X[k]=was[j]});P.ownEnv(own)},true); /* the program's environment was its own */
+});
+cmd('printenv','/usr/bin','print all or part of environment','printenv [OPTION]... [VARIABLE]...',['prints the values of the specified environment VARIABLE(s). if no VARIABLE is specified, prints name and value pairs for them all.','',
+  '-0, --null   end each output line with NUL, not newline','',
+  'exit status: 0 if all variables specified were found, 1 if at least one was not, 2 if a write error occurred.'],function(a,raw,w){
+  var g=gopts('printenv',w.slice(1),'0',['null'],'');
+  if(!g)return P.queue(function(){P.status(2)});
+  var E=envAll(),nul=g.o['0']||g.o['null'],L=g.ops.length?g.ops.filter(function(k){return k.indexOf('=')<0&&P.has(E,k)}).map(function(k){return E[k]}):Object.keys(E).sort().map(function(k){return k+'='+E[k]});
+  if(L.length)nul?P.typeLine(L.join('')):lines(L); /* NUL shows as nothing */
+  if(L.length<g.ops.length)P.queue(function(){P.status(1)});
 });
 cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION...] [SECTION] PAGE...','prints the manual page for each page named. a section number, if given, is checked for the games in /usr/local/games, whose pages are in section 6; for the rest it is accepted and changes nothing here.',function(a){
   var w=[],sec;
@@ -461,23 +489,23 @@ cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION
 function homeOf(u){return u==='root'?'/root':'/home/'+u}
 function known(u){return u==='root'||u===P.st.owner||u===P.st.user||/^[a-z_][a-z0-9_-]*$/.test(u)&&!!P.find('/home/'+u,true)}
 function nest(who,login){ /* a shell started by root, as root or anyone: no password, and exit comes back. Anyone else is kept out of root's files */
-  STK.push({say:login?'logout':'exit',user:P.st.user,home:P.st.home,cwd:P.st.cwd});
+  STK.push({say:login?'logout':'exit',user:P.st.user,home:P.st.home,cwd:P.st.cwd,al:P.aliases}); /* al: the aliases of the shell su was typed in; the new shell's go with it */
   P.st.user=who;P.st.home=homeOf(who);if(login)P.st.cwd=P.st.home;P.relock(who!=='root');
 }
 function as(who,line,sudo,login){ /* one command line as another user, then back, ^C or not */
   var w0=line.trim().split(/\s+/)[0]||'';
   if(sudo&&BUILTIN.indexOf(w0)>=0&&!/^(echo|false|kill|printf|pwd|test|true|\[)$/.test(w0)){err('sudo: '+w0+': command not found');P.status(1);return} /* the shell's own commands are no programs sudo can find; these few are both */
   if(/^(exit|logout)$/.test(w0))return; /* su's shell just ends */
-  var n=STK.length,u=P.st.user,h=P.st.home,c=P.st.cwd,held=P.rootHeld();
+  var n=STK.length,u=P.st.user,h=P.st.home,c=P.st.cwd,al=P.aliases,held=P.rootHeld();
   if(held){P.st.user=who;P.relock(who!=='root')}
-  else{P.su();P.st.home='/root'}
+  else{P.su('bash');P.st.home='/root'}
   if(login)P.st.cwd=homeOf(who); /* su - starts in the user's home */
   RUN++;P.exec(line);
   P.queue(function(){
     RUN--;P.loop(null); /* an exit in the line ended that line only */
     if(STK.length>n)STK.length=n; /* any shell the command started has ended with it */
     if(!held){P.unsu();return}
-    if(P.rootHeld()){P.st.user=u;P.st.home=h;P.st.cwd=c;P.relock(u!=='root')}
+    if(P.rootHeld()){P.st.user=u;P.st.home=h;P.st.cwd=c;P.aliases=al;P.relock(u!=='root')}
   },true);
 }
 cmd('su','/usr/bin','run a command with substitute user and group ID','su [options] [-] [user [argument...]]',
@@ -520,7 +548,7 @@ cmd('su','/usr/bin','run a command with substitute user and group ID','su [optio
       if(piped)return; /* the shell reads the rest of the pipe, finds nothing, and ends */
       if(P.rootHeld()){nest('root',login);return} /* under root already: one more shell */
       STK.push({say:login?'logout':'exit',base:true,from:P.st.user});
-      P.su();P.st.home='/root';if(login)P.st.cwd='/root'; /* su keeps the folder; su - goes to root's */
+      P.su('bash');P.st.home='/root';if(login)P.st.cwd='/root'; /* su keeps the folder; su - goes to root's */
       return;
     }
     P.pause(2200);
@@ -558,6 +586,149 @@ cmd('sudo','/usr/bin','execute a command as another user','sudo -K | -k | -V or 
   },false,true);
 });
 cmd('tty','/usr/bin','print the file name of the terminal connected to standard input','tty [OPTION]...','prints the name of the terminal you are typing on.',function(){P.typeLine('/dev/ttyS0')});
+/* stty: GNU coreutils 9.7's, on the serial console agetty left it (Debian's serial-getty@: --noreset --keep-baud 115200,..., its
+   termio_init and termio_final): 115200 baud, cs8 hupcl cread clocal, icrnl ixon ixoff, opost onlcr, isig icanon echo echoe echok
+   echoke (no iexten, no echoctl). A serial line has no window size: rows 0, columns 0. The settings are kept; the speed is the
+   line's (below 115200 the output comes at that speed), the rest change only what stty reports */
+var TT={speed:115200,rows:0,cols:0,line:0,f:{c:0x400|0x80|0x800|0x30,i:0x100|0x400|0x1000,o:1|4,l:1|2|8|0x10|0x20|0x800},
+  cc:{intr:3,quit:28,erase:127,kill:21,eof:4,eol:0,eol2:0,swtch:0,start:17,stop:19,susp:26,rprnt:18,werase:23,lnext:22,discard:15,min:1,time:0}};
+/* stty.c's mode_info: [name, field, bits, mask, how]. how: S set by sane, U unset by sane, R may be negated (-name) */
+var TMODE=[['parenb','c',0x100,0,'R'],['parodd','c',0x200,0,'R'],['cmspar','c',0x40000000,0,'R'],['cs5','c',0,0x30,''],['cs6','c',0x10,0x30,''],['cs7','c',0x20,0x30,''],['cs8','c',0x30,0x30,''],
+  ['hupcl','c',0x400,0,'R'],['hup','c',0x400,0,'RO'],['cstopb','c',0x40,0,'R'],['cread','c',0x80,0,'SR'],['clocal','c',0x800,0,'R'],['crtscts','c',0x80000000,0,'R'],
+  ['ignbrk','i',1,0,'UR'],['brkint','i',2,0,'SR'],['ignpar','i',4,0,'R'],['parmrk','i',8,0,'R'],['inpck','i',0x10,0,'R'],['istrip','i',0x20,0,'R'],['inlcr','i',0x40,0,'UR'],['igncr','i',0x80,0,'UR'],
+  ['icrnl','i',0x100,0,'SR'],['ixon','i',0x400,0,'R'],['ixoff','i',0x1000,0,'UR'],['tandem','i',0x1000,0,'URO'],['iuclc','i',0x200,0,'UR'],['ixany','i',0x800,0,'UR'],['imaxbel','i',0x2000,0,'SR'],['iutf8','i',0x4000,0,'UR'],
+  ['opost','o',1,0,'SR'],['olcuc','o',2,0,'UR'],['ocrnl','o',8,0,'UR'],['onlcr','o',4,0,'SR'],['onocr','o',0x10,0,'UR'],['onlret','o',0x20,0,'UR'],['ofill','o',0x40,0,'UR'],['ofdel','o',0x80,0,'UR'],
+  ['nl1','o',0x100,0x100,'U'],['nl0','o',0,0x100,'S'],['cr3','o',0x600,0x600,'U'],['cr2','o',0x400,0x600,'U'],['cr1','o',0x200,0x600,'U'],['cr0','o',0,0x600,'S'],
+  ['tab3','o',0x1800,0x1800,'U'],['tab2','o',0x1000,0x1800,'U'],['tab1','o',0x800,0x1800,'U'],['tab0','o',0,0x1800,'S'],['bs1','o',0x2000,0x2000,'U'],['bs0','o',0,0x2000,'S'],
+  ['vt1','o',0x4000,0x4000,'U'],['vt0','o',0,0x4000,'S'],['ff1','o',0x8000,0x8000,'U'],['ff0','o',0,0x8000,'S'],
+  ['isig','l',1,0,'SR'],['icanon','l',2,0,'SR'],['iexten','l',0x8000,0,'SR'],['echo','l',8,0,'SR'],['echoe','l',0x10,0,'SR'],['crterase','l',0x10,0,'RO'],['echok','l',0x20,0,'SR'],['echonl','l',0x40,0,'UR'],
+  ['noflsh','l',0x80,0,'UR'],['xcase','l',4,0,'UR'],['tostop','l',0x100,0,'UR'],['echoprt','l',0x400,0,'UR'],['prterase','l',0x400,0,'URO'],['echoctl','l',0x200,0,'SR'],['ctlecho','l',0x200,0,'SRO'],
+  ['echoke','l',0x800,0,'SR'],['crtkill','l',0x800,0,'SRO'],['flusho','l',0x1000,0,'UR'],['extproc','l',0x10000,0,'UR']];
+var TCC=['intr','quit','erase','kill','eof','eol','eol2','swtch','start','stop','susp','rprnt','werase','lnext','discard'],
+  TCCX=['intr','quit','erase','kill','eof','time','min','swtch','start','stop','susp','eol','rprnt','discard','werase','lnext','eol2']; /* c_cc[] in Linux's order, for -g */
+var TSANE={intr:3,quit:28,erase:127,kill:21,eof:4,eol:0,eol2:0,swtch:0,start:17,stop:19,susp:26,rprnt:18,werase:23,lnext:22,discard:15};
+var TSPEEDS=[0,50,75,110,134,150,200,300,600,1200,1800,2400,4800,9600,19200,38400,57600,115200,230400,460800,500000,576000,921600,1000000,1152000,1500000,2000000,2500000,3000000,3500000,4000000];
+var TBAUD={0:0,50:1,75:2,110:3,134:4,150:5,200:6,300:7,600:8,1200:9,1800:10,2400:11,4800:12,9600:13,19200:14,38400:15,57600:0x1001,115200:0x1002,230400:0x1003,460800:0x1004,500000:0x1005,
+  576000:0x1006,921600:0x1007,1000000:0x1008,1152000:0x1009,1500000:0x100a,2000000:0x100b,2500000:0x100c,3000000:0x100d,3500000:0x100e,4000000:0x100f}; /* Bnnn in c_cflag, for -g */
+/* the combination settings: what each turns on and off (and the characters it sets); [plus, minus] for those that may be negated */
+var TCOMBO={evenp:['parenb -parodd cs7','-parenb cs8'],parity:['parenb -parodd cs7','-parenb cs8'],oddp:['parenb parodd cs7','-parenb cs8'],nl:['-icrnl -onlcr','icrnl -inlcr -igncr onlcr -ocrnl -onlret'],
+  ek:['erase=127 kill=21'],sane:[TMODE.filter(function(m){return /[SU]/.test(m[4])&&!/O/.test(m[4])&&(!m[3]||/S/.test(m[4]))}).map(function(m){return (/U/.test(m[4])&&!m[3]?'-':'')+m[0]}).join(' ')+' sane'],
+  raw:['-ignbrk -brkint -ignpar -parmrk -inpck -istrip -inlcr -igncr -icrnl -ixon -ixoff -iuclc -ixany -imaxbel -iutf8 -opost -isig -icanon -xcase min=1 time=0','brkint ignpar istrip icrnl ixon opost isig icanon'],
+  cbreak:['-icanon','icanon'],pass8:['-parenb -istrip cs8','parenb istrip cs7'],litout:['-parenb -istrip -opost cs8','parenb istrip opost cs7'],decctlq:['-ixany','ixany'],tabs:['tab0','tab3'],
+  lcase:['xcase iuclc olcuc','-xcase -iuclc -olcuc'],crt:['echoe echoctl echoke'],dec:['echoe echoctl echoke -ixany intr=3 erase=127 kill=21']};
+TCOMBO.cooked=[TCOMBO.raw[1],TCOMBO.raw[0]];TCOMBO.LCASE=TCOMBO.lcase;
+function ttyChar(c){return c===0?'<undef>':c===127?'^?':c<32?'^'+String.fromCharCode(c+64):c>127?'M-'+ttyChar(c-128):String.fromCharCode(c)}
+function ttyMode(m){var T=TT.f[m[1]];return m[3]?(T&m[3])===m[2]:(T&m[2])===m[2]}
+function ttyShow(all){ /* display_all and display_changed, wrapped as wrapf does at 80 columns (a serial line has none of its own) */
+  var L=[],col=0,cur='',max=TT.cols||80;
+  function wrapf(s){if(col>0){if(max-col<=s.length){L.push(cur);cur='';col=0}else{cur+=' ';col++}}cur+=s;col+=s.length}
+  function nl(){if(col){L.push(cur);cur='';col=0}}
+  wrapf('speed '+TT.speed+' baud;');
+  if(all)wrapf('rows '+TT.rows+'; columns '+TT.cols+';');
+  wrapf('line = '+TT.line+';');nl();
+  TCC.forEach(function(k){if(all||TT.cc[k]!==TSANE[k])wrapf(k+' = '+ttyChar(TT.cc[k])+';')});
+  if(all||!(TT.f.l&2)){wrapf('min = '+TT.cc.min+'; time = '+TT.cc.time+';')}
+  nl();
+  var prev='';
+  TMODE.forEach(function(m){
+    if(/O/.test(m[4]))return; /* another name for one already shown */
+    if(m[1]!==prev){nl();prev=m[1]}
+    var on=ttyMode(m);
+    if(all){if(on)wrapf(m[0]);else if(/R/.test(m[4]))wrapf('-'+m[0])}
+    else if(on){if(/U/.test(m[4]))wrapf(m[0])}
+    else if(/S/.test(m[4])&&/R/.test(m[4]))wrapf('-'+m[0]);
+  });
+  nl();
+  return L;
+}
+function ttySave(){
+  var cc=[],h=function(x){return x.toString(16)};
+  for(var i=0;i<32;i++)cc.push(h(TCCX[i]?TT.cc[TCCX[i]]:0));
+  return [h(TT.f.i),h(TT.f.o),h((TT.f.c&~0x100f)|TBAUD[TT.speed]),h(TT.f.l)].concat(cc).join(':');
+}
+cmd('stty','/usr/bin','change and print terminal line settings','stty [-F DEVICE | --file=DEVICE] [SETTING]...',['print or change terminal characteristics. with no setting, it prints the line speed, the line discipline and the settings that differ from what stty sane would make them.','',
+  '-a, --all   print all current settings in human-readable form',
+  '-g, --save   print all current settings in a stty-readable form',
+  '-F, --file=DEVICE   open and use the specified DEVICE instead of stdin',
+  'N   set the input and output speeds to N bauds: 0 50 75 110 134 150 200 300 600 1200 1800 2400 4800 9600 19200 38400 57600 115200 and up to 4000000. below 115200 you can watch the output arrive',
+  'ispeed N, ospeed N   set the input or output speed to N',
+  'rows N, cols N, columns N   tell the kernel that the terminal has N rows or columns',
+  'line N   use line discipline N',
+  'size   print the number of rows and columns according to the kernel',
+  'speed   print the terminal speed',
+  'intr, quit, erase, kill, eof, eol, eol2, swtch, start, stop, susp, rprnt, werase, lnext, discard CHAR   set the special character: CHAR is a character, ^c, ^? or ^-, or undef to disable it',
+  'min N, time N   with -icanon, read at least N characters, or time out after N tenths of a second',
+  '[-]parenb [-]parodd [-]cmspar cs5 cs6 cs7 cs8 [-]hupcl [-]hup [-]cstopb [-]cread [-]clocal [-]crtscts   control settings',
+  '[-]ignbrk [-]brkint [-]ignpar [-]parmrk [-]inpck [-]istrip [-]inlcr [-]igncr [-]icrnl [-]ixon [-]ixoff [-]tandem [-]iuclc [-]ixany [-]imaxbel [-]iutf8   input settings',
+  '[-]opost [-]olcuc [-]ocrnl [-]onlcr [-]onocr [-]onlret [-]ofill [-]ofdel nl0 nl1 cr0 cr1 cr2 cr3 tab0 tab1 tab2 tab3 bs0 bs1 vt0 vt1 ff0 ff1   output settings',
+  '[-]isig [-]icanon [-]iexten [-]echo [-]echoe [-]crterase [-]echok [-]echonl [-]noflsh [-]xcase [-]tostop [-]echoprt [-]prterase [-]echoctl [-]ctlecho [-]echoke [-]crtkill [-]flusho [-]extproc   local settings',
+  '[-]evenp [-]parity [-]oddp [-]nl ek sane [-]raw [-]cooked [-]cbreak [-]pass8 [-]litout [-]decctlq [-]tabs [-]lcase [-]LCASE crt dec   combination settings, as stty(1) tells them',
+  'the settings are kept and reported; apart from the speed, this terminal goes on as it was.'],function(a,raw,w){
+  var W=w.slice(1),S=[],style=null,dev=null,bad=function(t){err('stty: '+t);err("Try 'stty --help' for more information.");P.queue(function(){P.status(1)})};
+  for(var i=0;i<W.length;i++){
+    var x=W[i],f=/^(?:-F|--file=?)(.*)$/.exec(x);
+    if(f){dev=f[1]||(/=$/.test(x)?'':W[++i]);if(dev===undefined){bad("option requires an argument -- 'F'");return}continue}
+    if(x==='-a'||x==='--all'){if(style==='g'){err('stty: the options for verbose and stty-readable output styles are');err('mutually exclusive');P.queue(function(){P.status(1)});return}style='a';continue}
+    if(x==='-g'||x==='--save'){if(style==='a'){err('stty: the options for verbose and stty-readable output styles are');err('mutually exclusive');P.queue(function(){P.status(1)});return}style='g';continue}
+    if(/^-[ag]+$/.test(x)&&x.length>2){W.splice.apply(W,[i,1].concat(x.slice(1).split('').map(function(c){return '-'+c})));i--;continue}
+    S.push(x);
+  }
+  if(dev!==null){ /* this terminal (its own name, or /dev/tty) is the one it sets; another is not the guest's to open */
+    var dn=P.find(dev);
+    if(!dn||!dn.dev||dn.prot||!/^\/dev\/(tty|ttyS0)$/.test(P.norm(dev))){err('stty: '+dev+': '+(!dn?'No such file or directory':dn.prot||/^\/dev\/(tty|console)/.test(P.norm(dev))?'Permission denied':'Inappropriate ioctl for device'));P.queue(function(){P.status(1)});return}
+  }
+  else if(P.stdin()){err("stty: 'standard input': Inappropriate ioctl for device");P.queue(function(){P.status(1)});return} /* a pipe is no terminal */
+  if(style&&S.length){err('stty: when specifying an output style, modes may not be set');P.queue(function(){P.status(1)});return}
+  if(style==='g'){P.typeLine(ttySave());return}
+  if(style==='a'||!S.length){P.say(ttyShow(style==='a'));return}
+  var was=JSON.stringify(TT),num=function(v){return /^(0x[0-9a-f]+|0[0-7]*|[1-9]\d*)$/i.test(v)?parseInt(v,/^0x/i.test(v)?16:/^0\d/.test(v)?8:10):NaN};
+  function set(t,inner){ /* one setting: false if there is no such. inner: a combination's own, which may set a character (name=code) */
+    var neg=t.charAt(0)==='-',n=neg?t.slice(1):t,kv=inner&&/^(\w+)=(\d+)$/.exec(t);
+    if(kv){TT.cc[kv[1]]=+kv[2];return true}
+    var m=TMODE.filter(function(m){return m[0]===n})[0];
+    if(m){
+      if(neg&&!/R/.test(m[4]))return false;
+      var T=TT.f[m[1]];
+      TT.f[m[1]]=m[3]?(T&~m[3])|m[2]:neg?T&~m[2]:T|m[2];
+      return true;
+    }
+    var c=TCOMBO[n];
+    if(!c||neg&&!c[1])return false;
+    (neg?c[1]:c[0]).split(' ').forEach(function(s){if(s==='sane'){Object.assign(TT.cc,TSANE,{min:1,time:0})}else set(s,true)});
+    return true;
+  }
+  for(var j=0;j<S.length;j++){
+    var s=S[j];
+    if(TCC.indexOf(s)>=0||s==='min'||s==='time'||/^(ispeed|ospeed|rows|cols|columns|line)$/.test(s)){
+      var v=S[++j];
+      if(v===undefined){TT=JSON.parse(was);bad("missing argument to '"+s+"'");return}
+      if(TCC.indexOf(s)>=0){
+        var ch=v==='^-'||v==='undef'?0:v==='^?'?127:/^\^.$/.test(v)?v.charCodeAt(1)&31:v.length===1?v.charCodeAt(0):num(v);
+        if(isNaN(ch)||ch>255){TT=JSON.parse(was);err("stty: invalid integer argument: '"+v+"'");P.queue(function(){P.status(1)});return}
+        TT.cc[s]=ch;
+      }
+      else{
+        var k=num(v);
+        if(/speed$/.test(s)){if(TSPEEDS.indexOf(+v)<0||!/^\d+$/.test(v)){TT=JSON.parse(was);bad("invalid "+s+" '"+v+"'");return}TT.speed=+v}
+        else if(isNaN(k)){TT=JSON.parse(was);err("stty: invalid integer argument: '"+v+"'");P.queue(function(){P.status(1)});return}
+        else if(s==='rows')TT.rows=k;else if(s==='line')TT.line=k;else if(s==='min'||s==='time')TT.cc[s]=k;else TT.cols=k;
+      }
+      continue;
+    }
+    if(s==='size'){P.typeLine(TT.rows+' '+TT.cols);continue}
+    if(s==='speed'){P.typeLine(String(TT.speed));continue}
+    if(/^\d+$/.test(s)&&TSPEEDS.indexOf(+s)>=0){TT.speed=+s;continue}
+    if(/^[0-9a-f]+(:[0-9a-f]+){35}$/i.test(s)){ /* what -g printed */
+      var g=s.split(':').map(function(x){return parseInt(x,16)}),bd=g[2]&0x100f;
+      TT.f={i:g[0],o:g[1],c:g[2]&~0x100f,l:g[3]};
+      TCCX.forEach(function(k,i){TT.cc[k]=g[4+i]});
+      Object.keys(TBAUD).forEach(function(b){if(TBAUD[b]===bd)TT.speed=+b});
+      continue;
+    }
+    if(!set(s)){TT=JSON.parse(was);bad("invalid argument '"+s+"'");return}
+  }
+  P.baud(TT.speed&&TT.speed<115200?TT.speed:0);
+});
 function idOf(u){ /* what id and groups read for the user u: the numbers in /etc/passwd, the groups in /etc/group (the user's own first). null if there is no such user */
   var pw=P.find('/etc/passwd',true),gr=P.find('/etc/group',true),r=null;
   (pw&&pw.type==='f'?P.text(pw):[]).some(function(l){var f=l.split(':');if(f[0]===u&&f.length>3){r={uid:+f[2],gid:+f[3],G:[]};return true}return false});
@@ -764,12 +935,19 @@ cmd('rmdir','/usr/bin','remove empty directories','rmdir [OPTION]... DIRECTORY..
     for(var p=x.replace(/\/+$/,'');/\/[^\/]/.test(p);){p=p.replace(/\/+[^\/]*$/,'');if(!p||!one(p))break} /* then each folder above it in the name */
   });
 });
-P.setup(function(){ /* cp and mv: GNU's -i -f -n -v, and more than one source into a folder; the rest is the engine's */
+P.setup(function(){ /* cp and mv: GNU's -i -f -n -v, cp's -r, and more than one source into a folder; the rest is the engine's */
   ['cp','mv'].forEach(function(v){
     var run=P.cmds[v];
     if(!run)return;
+    if(P.man[v])P.man[v].desc=(v==='cp'?['copies SOURCE to DEST, or each SOURCE into DIRECTORY. a directory is copied only with -r, and everything in it with it.']:
+      ['renames SOURCE to DEST, or moves each SOURCE into DIRECTORY.']).concat(['',
+      '-f, --force   do not prompt before overwriting',
+      '-i, --interactive   prompt before overwrite',
+      '-n, --no-clobber   do not overwrite an existing file'],v==='cp'?['-p   preserve the mode and the time of last change (and for root the owner too)','-R, -r, --recursive   copy directories recursively']:[],[
+      '-v, --verbose   explain what is being done','',
+      'if you specify more than one of -i, -f, -n, only the final one takes effect'+(v==='cp'?'; -n wins over -i.':'.')]);
     P.cmds[v]=function(a,raw,w){
-      var g=gopts(v,w.slice(1),v==='cp'?'finvpr':'finv',['interactive','force','no-clobber','verbose','recursive'],'');
+      var g=gopts(v,w.slice(1),v==='cp'?'finvprR':'finv',['interactive','force','no-clobber','verbose','recursive'],'');
       if(!g)return;
       var mode=null;
       w.slice(1).forEach(function(x){if(/^-[^-]/.test(x))x.slice(1).split('').forEach(function(c){if(/[fin]/.test(c))mode=c});else if(/^--(interactive|force|no-clobber)$/.test(x))mode={interactive:'i',force:'f','no-clobber':'n'}[x.slice(2)]}); /* the last of them counts */
@@ -785,9 +963,11 @@ P.setup(function(){ /* cp and mv: GNU's -i -f -n -v, and more than one source in
         if(i>=O.length-1)return;
         var src=O[i],to=into(dest,src),there=P.find(to,true,false,true),sn=P.find(src,true,false,true),was=there&&there.date;
         function go(){
-          run([src,dest],raw,[v,src,dest]);
+          var A=[src,dest],dir=v==='cp'&&sn&&sn.type==='d';
+          A.rec=!!(g.o.r||g.o.R||g.o.recursive);A.verb=!!verb;A.keep=!!g.o.p; /* cp -r: the engine's copies the folder, and with -v says each thing it copies */
+          run(A,raw,[v,src,dest]);
           var t=P.find(to,true,false,true);
-          if(verb&&t&&(v==='cp'?sn&&t!==sn&&(!there||t.date!==was):t===sn&&!P.find(src,true,false,true)))P.typeLine((v==='mv'?'renamed ':'')+"'"+src+"' -> '"+to+"'"); /* once it is done */
+          if(verb&&!dir&&t&&(v==='cp'?sn&&t!==sn&&(!there||t.date!==was):t===sn&&!P.find(src,true,false,true)))P.typeLine((v==='mv'?'renamed ':'')+"'"+src+"' -> '"+to+"'"); /* once it is done */
           next(i+1);
         }
         if(there&&sn&&there!==sn&&mode==='n'){next(i+1);return} /* skipped, quietly */
@@ -1445,26 +1625,168 @@ cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journa
 });
 
 /* packages: apt as anyone but root. Each is [name, version, description, installed size in kB if known, 'auto' if installed as a dependency] */
-var PKGS=[['apt','3.0.4','commandline package manager'],['base-files','13.8+deb13u7','Debian base system miscellaneous files'],['bash','5.2.37-2+b10','GNU Bourne Again SHell'],
-  ['coreutils','9.7-3','GNU core utilities'],['cowsay','3.03+dfsg2-8','configurable talking cow'],['cmatrix','2.0-6','simulates the display from "The Matrix"'],['cron','3.0pl1-197','process scheduling daemon'],
-  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)'],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files',316],
+var PKGS=[['apt','3.0.4','commandline package manager',4481],['base-files','13.8+deb13u7','Debian base system miscellaneous files',500],['bash','5.2.37-2+b10','GNU Bourne Again SHell',7196],
+  ['coreutils','9.7-3','GNU core utilities',18457],['cowsay','3.03+dfsg2-8','configurable talking cow',92],['cmatrix','2.0-6','simulates the display from "The Matrix"',75],['cron','3.0pl1-197','process scheduling daemon',249],
+  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)',154],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files',316],
   ['libao-common','1.2.2+20180113-1.2','Cross Platform Audio Output Library (Common files)',23,'auto'],['libao4','1.2.2+20180113-1.2','Cross Platform Audio Output Library',150,'auto'],['libflac14','1.5.0+ds-2','Free Lossless Audio Codec - runtime C library',479,'auto'],['libmodplug1','1:0.8.9.0-3+b2','shared libraries for mod music based on ModPlug',373,'auto'],['libmp3lame0','3.100-6+b3','MP3 encoding library',548,'auto'],['libmpg123-0t64','1.32.10-1','MPEG layer 1/2/3 audio decoder (shared library)',397,'auto'],['libogg0','1.3.5-3+b2','Ogg bitstream library',62,'auto'],['libopus0','1.5.2-2','Opus codec runtime library',3494,'auto'],['libsamplerate0','0.2.2-4+b2','Audio sample rate conversion library',1494,'auto'],['libsndfile1','1.2.2-2','Library for reading/writing audio files',595,'auto'],['libvorbis0a','1.3.7-3','decoder library for Vorbis General Audio Compression Codec',208,'auto'],['libvorbisenc2','1.3.7-3','encoder library for Vorbis General Audio Compression Codec',698,'auto'],
-  ['grep','3.11-4','GNU grep, egrep and fgrep'],['iproute2','6.15.0-1','networking and traffic control tools'],['less','668-1','pager program similar to more'],['librecode3','3.7.15-1','Shared library on which recode is based',1359,'auto'],
-  ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages'],['nethack-common','3.6.7-1+b2','dungeon crawl game - common files',2323,'auto'],['nethack-console','3.6.7-1+b2','dungeon crawl game - text-based interface',2821],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information'],
-  ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines'],['procps','2:4.0.4-9','/proc file system utilities'],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake'],
-  ['sudo','1.9.16p2-3+deb13u2','Provide limited super user privileges to specific users'],['systemd','257.13-1~deb13u1','system and service manager'],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility'],
-  ['unattended-upgrades','2.12','automatic installation of security upgrades'],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities'],['vim-tiny','2:9.1.1230-2+deb13u1','Vi IMproved - enhanced vi editor - compact version']];
+  ['grep','3.11-4','GNU grep, egrep and fgrep',1266],['iproute2','6.15.0-1','networking and traffic control tools',3774],['less','668-1','pager program similar to more',376],['librecode3','3.7.15-1','Shared library on which recode is based',1359,'auto'],
+  ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages',3153],['nethack-common','3.6.7-1+b2','dungeon crawl game - common files',2323,'auto'],['nethack-console','3.6.7-1+b2','dungeon crawl game - text-based interface',2821],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information',1805],
+  ['openssh-server','1:10.0p1-7','secure shell (SSH) server, for secure access from remote machines',3429],['procps','2:4.0.4-9','/proc file system utilities',2395],['sl','5.02-1+b1','Correct you if you type \'sl\' by mistake',60],
+  ['sudo','1.9.16p2-3+deb13u2','Provide limited super user privileges to specific users',6705],['systemd','257.13-1~deb13u1','system and service manager',9944],['tar','1.35+dfsg-3.1','GNU version of the tar archiving utility',3085],
+  ['unattended-upgrades','2.12','automatic installation of security upgrades',317],['util-linux','2.41.5-0+deb13u1','miscellaneous system utilities',4986],['vim-tiny','2:9.1.1230-2+deb13u1','Vi IMproved - enhanced vi editor - compact version',1831],
+  ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)',83,'auto'],['python3-minimal','3.13.5-1','minimal subset of the Python language (default python3 version)',112,'auto'],
+  ['python3.13','3.13.5-2+deb13u5','Interactive high-level object-oriented language (version 3.13)',830,'auto'],['python3.13-minimal','3.13.5-2+deb13u5','Minimal subset of the Python language (version 3.13)',6768,'auto'],
+  ['libpython3.13-minimal','3.13.5-2+deb13u5','Minimal subset of the Python language (version 3.13)',5452,'auto'],['libpython3.13-stdlib','3.13.5-2+deb13u5','Interactive high-level object-oriented language (standard library, version 3.13)',8898,'auto'],
+  ['libpython3-stdlib','3.13.5-1','interactive high-level object-oriented language (default python3 version)',28,'auto'],['python3-apt','3.0.0','Python 3 interface to libapt-pkg',698,'auto'],
+  ['python-apt-common','3.0.0','Python interface to libapt-pkg (locales)',532,'auto'],['python3-dbus','1.4.0-1','simple interprocess messaging system (Python 3 interface)',415,'auto'],
+  ['python3-distro-info','1.13','information about distributions\' releases (Python 3 module)',42,'auto'],['distro-info-data','0.66+deb13u2','information about the distributions\' releases (data files)',19,'auto'],
+  ['lsb-release','12.1-1','Linux Standard Base version reporting utility (minimal implementation)',17,'auto'],['ucf','3.0052','Update Configuration File(s): preserve user changes to config files',148,'auto']];
 PKGS.sort(function(x,y){return x[0]<y[0]?-1:x[0]>y[0]?1:0}); /* dpkg and apt list by name */
 var AVAIL=[['bsdgames','2.17-35','collection of classic textual unix games'],['cowsay-off','3.03+dfsg2-8','configurable talking cow (offensive cows)'],['curl','8.14.1-2+deb13u5','command line tool for transferring data with URL syntax'],
   ['fortunes','1:1.99.1-9','Data files containing fortune cookies'],['git','1:2.47.3-0+deb13u1','fast, scalable, distributed revision control system'],['htop','3.4.1-5','interactive processes viewer'],
-  ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nginx','1.26.3-3+deb13u7','small, powerful, scalable web/proxy server'],
-  ['python3','3.13.5-1','interactive high-level object-oriented language (default python3 version)'],['tmux','3.5a-3','terminal multiplexer']];
-function entry(p){var i=PKGS.indexOf(p)>=0;return p[0]+'/stable'+(i?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(!i?'':p[4]?' [installed,automatic]':' [installed]')} /* a package's line in apt list and apt search */
+  ['nano','8.4-1','small, friendly text editor inspired by Pico'],['nginx','1.26.3-3+deb13u7','small, powerful, scalable web/proxy server'],['tmux','3.5a-3','terminal multiplexer']];
+function entry(p){var i=installed(p);return p[0]+'/stable'+(i?',now ':' ')+p[1]+' '+(ALL.test(p[0])?'all':'amd64')+(residual(p)?' [residual-config]':!i?'':p[4]?' [installed,automatic]':' [installed]')} /* a package's line in apt list and apt search */
 function pkg(n){return PKGS.concat(AVAIL).filter(function(p){return p[0]===n})[0]}
 /* root's apt on this offline box (apt 3.0.4 as it ran on trixie with networking off, these packages installed): what an install of each
    package not installed would bring, and the files it would fetch. f: [what Ign: and Err: name, the file's URL, where apt's error for it comes in its list] */
-var AVX={"bsdgames":{"a":["Installing:","  bsdgames","","Installing dependencies:","  libfl2  wamerican","","Suggested packages:","  mailutils"],"n":3,"dl":"1242 kB","sp":"3864 kB","deps":["libfl2","wamerican"],"sg":"mailutils","f":[["http://deb.debian.org/debian trixie/main amd64 wamerican all 2020.12.07-4","http://deb.debian.org/debian/pool/main/s/scowl/wamerican_2020.12.07-4_all.deb",0],["http://deb.debian.org/debian trixie/main amd64 libfl2 amd64 2.6.4-8.2+b4","http://deb.debian.org/debian/pool/main/f/flex/libfl2_2.6.4-8.2%2bb4_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 bsdgames amd64 2.17-35","http://deb.debian.org/debian/pool/main/b/bsdgames/bsdgames_2.17-35_amd64.deb",2]]},"cowsay-off":{"a":["Installing:","  cowsay-off"],"n":1,"dl":"8392 B","sp":"23.6 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 cowsay-off all 3.03+dfsg2-8","http://deb.debian.org/debian/pool/main/c/cowsay/cowsay-off_3.03%2bdfsg2-8_all.deb",0]]},"curl":{"a":["Installing:","  curl","","Installing dependencies:","  bash-completion  libldap2       librtmp1             libssh2-1t64","  libbrotli1       libnghttp2-14  libsasl2-2           publicsuffix","  libcurl4t64      libnghttp3-9   libsasl2-modules","  libldap-common   libpsl5t64     libsasl2-modules-db","","Suggested packages:","  libsasl2-modules-gssapi-mit        libsasl2-modules-otp","  | libsasl2-modules-gssapi-heimdal  libsasl2-modules-sql","  libsasl2-modules-ldap"],"n":15,"dl":"2459 kB","sp":"7366 kB","deps":["bash-completion","libbrotli1","libcurl4t64","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","publicsuffix"],"sg":"libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql","f":[["http://deb.debian.org/debian trixie/main amd64 bash-completion all 1:2.16.0-7","http://deb.debian.org/debian/pool/main/b/bash-completion/bash-completion_2.16.0-7_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",3],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl4t64 amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl4t64_8.14.1-2%2bdeb13u7_amd64.deb",10],["http://security.debian.org/debian-security trixie-security/main amd64 curl amd64 8.14.1-2+deb13u5","http://security.debian.org/debian-security/pool/updates/main/c/curl/curl_8.14.1-2%2bdeb13u5_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",13],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",14]]},"fortunes":{"a":["Installing:","  fortunes"],"n":1,"dl":"849 kB","sp":"2655 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 fortunes all 1:1.99.1-9","http://deb.debian.org/debian/pool/main/f/fortune-mod/fortunes_1.99.1-9_all.deb",0]]},"git":{"a":["Installing:","  git","","Installing dependencies:","  git-man             libnghttp2-14             libsasl2-2","  libbrotli1          libnghttp3-9              libsasl2-modules","  libcurl3t64-gnutls  libngtcp2-16              libsasl2-modules-db","  liberror-perl       libngtcp2-crypto-gnutls8  libssh2-1t64","  libldap-common      libpsl5t64                patch","  libldap2            librtmp1                  publicsuffix","","Suggested packages:","  gettext-base  git-cvs                            libsasl2-modules-otp","  git-doc       git-mediawiki                      libsasl2-modules-sql","  git-email     git-svn                            ed","  git-gui       libsasl2-modules-gssapi-mit        diffutils-doc","  gitk          | libsasl2-modules-gssapi-heimdal","  gitweb        libsasl2-modules-ldap"],"n":19,"dl":"13.3 MB","sp":"58.2 MB","deps":["git-man","libbrotli1","libcurl3t64-gnutls","liberror-perl","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libngtcp2-16","libngtcp2-crypto-gnutls8","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","patch","publicsuffix"],"sg":"gettext-base git-doc git-email git-gui gitk gitweb git-cvs git-mediawiki git-svn libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql ed diffutils-doc","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",1],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl3t64-gnutls amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl3t64-gnutls_8.14.1-2%2bdeb13u7_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",3],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-16 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-16_1.11.0-1%2bdeb13u1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-crypto-gnutls8 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-crypto-gnutls8_1.11.0-1%2bdeb13u1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",10],["http://deb.debian.org/debian trixie/main amd64 liberror-perl all 0.17030-1","http://deb.debian.org/debian/pool/main/libe/liberror-perl/liberror-perl_0.17030-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 git-man all 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git-man_2.47.3-0%2bdeb13u1_all.deb",13],["http://deb.debian.org/debian trixie/main amd64 git amd64 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0%2bdeb13u1_amd64.deb",14],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",15],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",16],["http://deb.debian.org/debian trixie/main amd64 patch amd64 2.8-2","http://deb.debian.org/debian/pool/main/p/patch/patch_2.8-2_amd64.deb",17],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",18]]},"htop":{"a":["Installing:","  htop","","Suggested packages:","  lm-sensors  lsof  strace"],"n":1,"dl":"171 kB","sp":"434 kB","deps":[],"sg":"lm-sensors lsof strace","f":[["http://deb.debian.org/debian trixie/main amd64 htop amd64 3.4.1-5","http://deb.debian.org/debian/pool/main/h/htop/htop_3.4.1-5_amd64.deb",0]]},"nano":{"a":["Installing:","  nano","","Suggested packages:","  hunspell"],"n":1,"dl":"645 kB","sp":"2907 kB","deps":[],"sg":"hunspell","f":[["http://deb.debian.org/debian trixie/main amd64 nano amd64 8.4-1","http://deb.debian.org/debian/pool/main/n/nano/nano_8.4-1_amd64.deb",0]]},"nginx":{"a":["Installing:","  nginx","","Installing dependencies:","  nginx-common","","Suggested packages:","  fcgiwrap  nginx-doc  ssl-cert"],"n":2,"dl":"725 kB","sp":"1906 kB","deps":["nginx-common"],"sg":"fcgiwrap nginx-doc ssl-cert","f":[["http://security.debian.org/debian-security trixie-security/main amd64 nginx-common all 1.26.3-3+deb13u10","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx-common_1.26.3-3%2bdeb13u10_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 nginx amd64 1.26.3-3+deb13u7","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx_1.26.3-3%2bdeb13u7_amd64.deb",1]]},"python3":{"a":["Installing:","  python3","","Installing dependencies:","  ca-certificates  libncursesw6           libreadline8t64  python3-minimal","  libexpat1        libpython3-stdlib      media-types      python3.13","  libffi8          libpython3.13-minimal  netbase          python3.13-minimal","  libgpm2          libpython3.13-stdlib   openssl          readline-common","","Suggested packages:","  gpm          python3-tk    python3.13-venv  binutils        readline-doc","  python3-doc  python3-venv  python3.13-doc   binfmt-support"],"n":17,"dl":"8118 kB","sp":"27.4 MB","deps":["ca-certificates","libexpat1","libffi8","libgpm2","libncursesw6","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","libreadline8t64","media-types","netbase","openssl","python3-minimal","python3.13","python3.13-minimal","readline-common"],"sg":"gpm python3-doc python3-tk python3-venv python3.13-venv python3.13-doc binutils binfmt-support readline-doc","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libexpat1 amd64 2.9.0-1~deb13u1","http://security.debian.org/debian-security/pool/updates/main/e/expat/libexpat1_2.9.0-1%7edeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libpython3.13-minimal amd64 3.13.5-2+deb13u5","http://deb.debian.org/debian/pool/main/p/python3.13/libpython3.13-minimal_3.13.5-2%2bdeb13u5_amd64.deb",1],["http://security.debian.org/debian-security trixie-security/main amd64 openssl amd64 3.5.7-1~deb13u3","http://security.debian.org/debian-security/pool/updates/main/o/openssl/openssl_3.5.7-1%7edeb13u3_amd64.deb",14],["http://deb.debian.org/debian trixie/main amd64 python3.13-minimal amd64 3.13.5-2+deb13u5","http://deb.debian.org/debian/pool/main/p/python3.13/python3.13-minimal_3.13.5-2%2bdeb13u5_amd64.deb",2],["http://security.debian.org/debian-security trixie-security/main amd64 ca-certificates all 20250419+deb13u1","http://security.debian.org/debian-security/pool/updates/main/c/ca-certificates/ca-certificates_20250419%2bdeb13u1_all.deb",15],["http://deb.debian.org/debian trixie/main amd64 python3-minimal amd64 3.13.5-1","http://deb.debian.org/debian/pool/main/p/python3-defaults/python3-minimal_3.13.5-1_amd64.deb",3],["http://deb.debian.org/debian trixie/main amd64 media-types all 13.0.0","http://deb.debian.org/debian/pool/main/m/media-types/media-types_13.0.0_all.deb",4],["http://deb.debian.org/debian trixie/main amd64 netbase all 6.5","http://deb.debian.org/debian/pool/main/n/netbase/netbase_6.5_all.deb",5],["http://deb.debian.org/debian trixie/main amd64 libffi8 amd64 3.4.8-2","http://deb.debian.org/debian/pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libncursesw6 amd64 6.5+20250216-2","http://deb.debian.org/debian/pool/main/n/ncurses/libncursesw6_6.5%2b20250216-2_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 readline-common all 8.2-6","http://deb.debian.org/debian/pool/main/r/readline/readline-common_8.2-6_all.deb",8],["http://deb.debian.org/debian trixie/main amd64 libreadline8t64 amd64 8.2-6","http://deb.debian.org/debian/pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libpython3.13-stdlib amd64 3.13.5-2+deb13u5","http://deb.debian.org/debian/pool/main/p/python3.13/libpython3.13-stdlib_3.13.5-2%2bdeb13u5_amd64.deb",10],["http://deb.debian.org/debian trixie/main amd64 python3.13 amd64 3.13.5-2+deb13u5","http://deb.debian.org/debian/pool/main/p/python3.13/python3.13_3.13.5-2%2bdeb13u5_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libpython3-stdlib amd64 3.13.5-1","http://deb.debian.org/debian/pool/main/p/python3-defaults/libpython3-stdlib_3.13.5-1_amd64.deb",12],["http://deb.debian.org/debian trixie/main amd64 python3 amd64 3.13.5-1","http://deb.debian.org/debian/pool/main/p/python3-defaults/python3_3.13.5-1_amd64.deb",13],["http://deb.debian.org/debian trixie/main amd64 libgpm2 amd64 1.20.7-11+b2","http://deb.debian.org/debian/pool/main/g/gpm/libgpm2_1.20.7-11%2bb2_amd64.deb",16]]},"tmux":{"a":["Installing:","  tmux","","Installing dependencies:","  libevent-core-2.1-7t64  libjemalloc2"],"n":3,"dl":"897 kB","sp":"2448 kB","deps":["libevent-core-2.1-7t64","libjemalloc2"],"sg":"","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libevent-core-2.1-7t64 amd64 2.1.13-stable-1~deb13u1","http://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-core-2.1-7t64_2.1.13-stable-1%7edeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libjemalloc2 amd64 5.3.0-3","http://deb.debian.org/debian/pool/main/j/jemalloc/libjemalloc2_5.3.0-3_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 tmux amd64 3.5a-3","http://deb.debian.org/debian/pool/main/t/tmux/tmux_3.5a-3_amd64.deb",2]]}};
+var AVX={"bsdgames":{"a":["Installing:","  bsdgames","","Installing dependencies:","  libfl2  wamerican","","Suggested packages:","  mailutils"],"n":3,"dl":"1242 kB","sp":"3864 kB","deps":["libfl2","wamerican"],"sg":"mailutils","f":[["http://deb.debian.org/debian trixie/main amd64 wamerican all 2020.12.07-4","http://deb.debian.org/debian/pool/main/s/scowl/wamerican_2020.12.07-4_all.deb",0],["http://deb.debian.org/debian trixie/main amd64 libfl2 amd64 2.6.4-8.2+b4","http://deb.debian.org/debian/pool/main/f/flex/libfl2_2.6.4-8.2%2bb4_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 bsdgames amd64 2.17-35","http://deb.debian.org/debian/pool/main/b/bsdgames/bsdgames_2.17-35_amd64.deb",2]]},"cowsay-off":{"a":["Installing:","  cowsay-off"],"n":1,"dl":"8392 B","sp":"23.6 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 cowsay-off all 3.03+dfsg2-8","http://deb.debian.org/debian/pool/main/c/cowsay/cowsay-off_3.03%2bdfsg2-8_all.deb",0]]},"curl":{"a":["Installing:","  curl","","Installing dependencies:","  bash-completion  libldap2       librtmp1             libssh2-1t64","  libbrotli1       libnghttp2-14  libsasl2-2           publicsuffix","  libcurl4t64      libnghttp3-9   libsasl2-modules","  libldap-common   libpsl5t64     libsasl2-modules-db","","Suggested packages:","  libsasl2-modules-gssapi-mit        libsasl2-modules-otp","  | libsasl2-modules-gssapi-heimdal  libsasl2-modules-sql","  libsasl2-modules-ldap"],"n":15,"dl":"2459 kB","sp":"7366 kB","deps":["bash-completion","libbrotli1","libcurl4t64","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","publicsuffix"],"sg":"libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql","f":[["http://deb.debian.org/debian trixie/main amd64 bash-completion all 1:2.16.0-7","http://deb.debian.org/debian/pool/main/b/bash-completion/bash-completion_2.16.0-7_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",3],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl4t64 amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl4t64_8.14.1-2%2bdeb13u7_amd64.deb",10],["http://security.debian.org/debian-security trixie-security/main amd64 curl amd64 8.14.1-2+deb13u5","http://security.debian.org/debian-security/pool/updates/main/c/curl/curl_8.14.1-2%2bdeb13u5_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",13],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",14]]},"fortunes":{"a":["Installing:","  fortunes"],"n":1,"dl":"849 kB","sp":"2655 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 fortunes all 1:1.99.1-9","http://deb.debian.org/debian/pool/main/f/fortune-mod/fortunes_1.99.1-9_all.deb",0]]},"git":{"a":["Installing:","  git","","Installing dependencies:","  git-man             libnghttp2-14             libsasl2-2","  libbrotli1          libnghttp3-9              libsasl2-modules","  libcurl3t64-gnutls  libngtcp2-16              libsasl2-modules-db","  liberror-perl       libngtcp2-crypto-gnutls8  libssh2-1t64","  libldap-common      libpsl5t64                patch","  libldap2            librtmp1                  publicsuffix","","Suggested packages:","  gettext-base  git-cvs                            libsasl2-modules-otp","  git-doc       git-mediawiki                      libsasl2-modules-sql","  git-email     git-svn                            ed","  git-gui       libsasl2-modules-gssapi-mit        diffutils-doc","  gitk          | libsasl2-modules-gssapi-heimdal","  gitweb        libsasl2-modules-ldap"],"n":19,"dl":"13.3 MB","sp":"58.2 MB","deps":["git-man","libbrotli1","libcurl3t64-gnutls","liberror-perl","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libngtcp2-16","libngtcp2-crypto-gnutls8","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","patch","publicsuffix"],"sg":"gettext-base git-doc git-email git-gui gitk gitweb git-cvs git-mediawiki git-svn libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql ed diffutils-doc","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",1],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl3t64-gnutls amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl3t64-gnutls_8.14.1-2%2bdeb13u7_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",3],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-16 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-16_1.11.0-1%2bdeb13u1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-crypto-gnutls8 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-crypto-gnutls8_1.11.0-1%2bdeb13u1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",10],["http://deb.debian.org/debian trixie/main amd64 liberror-perl all 0.17030-1","http://deb.debian.org/debian/pool/main/libe/liberror-perl/liberror-perl_0.17030-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 git-man all 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git-man_2.47.3-0%2bdeb13u1_all.deb",13],["http://deb.debian.org/debian trixie/main amd64 git amd64 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0%2bdeb13u1_amd64.deb",14],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",15],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",16],["http://deb.debian.org/debian trixie/main amd64 patch amd64 2.8-2","http://deb.debian.org/debian/pool/main/p/patch/patch_2.8-2_amd64.deb",17],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",18]]},"htop":{"a":["Installing:","  htop","","Suggested packages:","  lm-sensors  lsof  strace"],"n":1,"dl":"171 kB","sp":"434 kB","deps":[],"sg":"lm-sensors lsof strace","f":[["http://deb.debian.org/debian trixie/main amd64 htop amd64 3.4.1-5","http://deb.debian.org/debian/pool/main/h/htop/htop_3.4.1-5_amd64.deb",0]]},"nano":{"a":["Installing:","  nano","","Suggested packages:","  hunspell"],"n":1,"dl":"645 kB","sp":"2907 kB","deps":[],"sg":"hunspell","f":[["http://deb.debian.org/debian trixie/main amd64 nano amd64 8.4-1","http://deb.debian.org/debian/pool/main/n/nano/nano_8.4-1_amd64.deb",0]]},"nginx":{"a":["Installing:","  nginx","","Installing dependencies:","  nginx-common","","Suggested packages:","  fcgiwrap  nginx-doc  ssl-cert"],"n":2,"dl":"725 kB","sp":"1906 kB","deps":["nginx-common"],"sg":"fcgiwrap nginx-doc ssl-cert","f":[["http://security.debian.org/debian-security trixie-security/main amd64 nginx-common all 1.26.3-3+deb13u10","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx-common_1.26.3-3%2bdeb13u10_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 nginx amd64 1.26.3-3+deb13u7","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx_1.26.3-3%2bdeb13u7_amd64.deb",1]]},"tmux":{"a":["Installing:","  tmux","","Installing dependencies:","  libevent-core-2.1-7t64  libjemalloc2"],"n":3,"dl":"897 kB","sp":"2448 kB","deps":["libevent-core-2.1-7t64","libjemalloc2"],"sg":"","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libevent-core-2.1-7t64 amd64 2.1.13-stable-1~deb13u1","http://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-core-2.1-7t64_2.1.13-stable-1%7edeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libjemalloc2 amd64 5.3.0-3","http://deb.debian.org/debian/pool/main/j/jemalloc/libjemalloc2_5.3.0-3_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 tmux amd64 3.5a-3","http://deb.debian.org/debian/pool/main/t/tmux/tmux_3.5a-3_amd64.deb",2]]}};
 var ESSENTIAL=/^(base-files|bash|coreutils|grep|tar|util-linux)$/; /* Essential: yes, of those here */
+/* What is installed is kept in the file tree, as dpkg keeps it: /var/lib/dpkg/info/NAME.list while the package is there, and
+   NAME.postrm while what it leaves behind after a remove is (dpkg -l's rc), so what root removes stays removed after a reload,
+   as root's other changes to the files do. PD, from trixie's apt and dpkg (apt-get -s, dpkg -L, apt-cache show, and a real
+   remove and purge of each): [flags: m it has manual pages, s shared libraries, a Multi-Arch: same, r it leaves its configuration;
+   its files; what goes with it (what depends on it); what it leaves unneeded (installed as a dependency); its pool folder; its .deb's size] */
+var PD={"apt":["msr",366,[],[],"pool/updates/main/a/apt/",1453228],"base-files":["r",100,[],[],"pool/main/b/base-files/",88296],"bash":["mr",166,[],[],"pool/main/b/bash/",1500792],"cmatrix":["m",25,[],[],"pool/main/c/cmatrix/",33880],"coreutils":["ms",463,[],[],"pool/main/c/coreutils/",3023556],"cowsay":["m",68,[],[],"pool/main/c/cowsay/",21372],"cron":["mr",48,[],[],"pool/main/c/cron/",87416],"dbus":["r",33,[],[],"pool/main/d/dbus/",71632],"distro-info-data":["",11,["unattended-upgrades","python3-distro-info","python3-apt"],["libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info-data/",6792],"fastfetch":["m",59,[],[],"pool/main/f/fastfetch/",542872],"fortune-mod":["m",26,[],[],"pool/main/f/fortune-mod/",38704],"fortunes-min":["",23,[],[],"pool/main/f/fortune-mod/",56456],"frotz":["m",27,[],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/f/frotz/",114412],"grep":["m",163,[],[],"pool/main/g/grep/",431488],"iproute2":["mr",208,[],[],"pool/main/i/iproute2/",1089184],"less":["m",27,[],[],"pool/main/l/less/",161148],"libao-common":["mr",15,["frotz","libao4"],["libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",7912],"libao4":["sa",19,["frotz"],["libao-common","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",33688],"libflac14":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/f/flac/",209588],"libmodplug1":["sa",16,["frotz"],["libao-common","libao4","libflac14","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libm/libmodplug/",162276],"libmp3lame0":["sa",13,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/l/lame/",362660],"libmpg123-0t64":["sa",15,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/m/mpg123/",149184],"libogg0":["sa",13,["frotz","libsndfile1","libflac14","libvorbisenc2","libvorbis0a"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libopus0","libsamplerate0"],"pool/main/libo/libogg/",23812],"libopus0":["sa",11,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/o/opus/",2851932],"libpython3-stdlib":["a",8,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",10180],"libpython3.13-minimal":["sar",322,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13","libpython3.13-stdlib","python3-minimal","python3.13-minimal"],["distro-info-data","lsb-release","python-apt-common"],"pool/main/p/python3.13/",863168],"libpython3.13-stdlib":["sa",411,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13"],["distro-info-data","libpython3.13-minimal","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",1958624],"librecode3":["sa",12,["fortune-mod"],[],"pool/main/r/recode/",234660],"libsamplerate0":["sa",13,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsamplerate/",950084],"libsndfile1":["sa",12,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsndfile/",199172],"libvorbis0a":["sa",15,["frotz","libsndfile1","libvorbisenc2"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0"],"pool/main/libv/libvorbis/",89960],"libvorbisenc2":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a"],"pool/main/libv/libvorbis/",75432],"lsb-release":["m",12,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/l/lsb-release-minimal/",5912],"man-db":["msr",537,[],[],"pool/main/m/man-db/",1469060],"nethack-common":["mr",58,["nethack-console"],[],"pool/main/n/nethack/",617724],"nethack-console":["mr",23,[],["nethack-common"],"pool/main/n/nethack/",1240800],"openssh-server":["msr",74,[],[],"pool/main/o/openssh/",602372],"procps":["mr",249,["openssh-server","unattended-upgrades","ucf"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/procps/",882088],"python-apt-common":["",173,["unattended-upgrades","python3-apt"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",68248],"python3":["mr",35,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",28244],"python3-apt":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",164280],"python3-dbus":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/dbus-python/",98424],"python3-distro-info":["",17,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info/",7736],"python3-minimal":["m",28,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",27248],"python3.13":["m",34,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",757492],"python3.13-minimal":["mr",21,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","python3-minimal","python3.13"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common"],"pool/main/p/python3.13/",2224552],"sl":["m",33,[],[],"pool/main/s/sl/",13172],"sudo":["msr",249,[],[],"pool/main/s/sudo/",2086456],"systemd":["msr",1051,[],[],"pool/main/s/systemd/",3093632],"tar":["m",148,[],[],"pool/main/t/tar/",814968],"ucf":["mr",33,["openssh-server","unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/ucf/",43296],"unattended-upgrades":["mr",100,[],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/unattended-upgrades/",66912],"util-linux":["mr",295,[],[],"pool/main/u/util-linux/",1242392],"vim-tiny":["r",26,[],[],"pool/updates/main/v/vim/",776152]};
+var DEPS={"systemd":["openssh-server depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "cron-daemon-common depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "openssh-server depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "cron-daemon-common depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed."],"python3":["unattended-upgrades depends on python3.","python3-distro-info depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any."],"python3-minimal":["python3 depends on python3-minimal (= 3.13.5-1)."],"python3.13":["python3 depends on python3.13 (>= 3.13.5-1~)."],"python3.13-minimal":["python3.13 depends on python3.13-minimal (= 3.13.5-2+deb13u5).","python3-minimal depends on python3.13-minimal (>= 3.13.5-1~)."],"libpython3.13-minimal":["python3.13-minimal depends on libpython3.13-minimal (= 3.13.5-2+deb13u5).","libpython3.13-stdlib:amd64 depends on libpython3.13-minimal (= 3.13.5-2+deb13u5)."],"libpython3.13-stdlib":["python3.13 depends on libpython3.13-stdlib (= 3.13.5-2+deb13u5).","libpython3-stdlib:amd64 depends on libpython3.13-stdlib (>= 3.13.5-1~)."],"libpython3-stdlib":["python3 depends on libpython3-stdlib (= 3.13.5-1)."],"python3-apt":["unattended-upgrades depends on python3-apt (>= 1.9.6~)."],"python-apt-common":["python3-apt depends on python-apt-common."],"python3-dbus":["unattended-upgrades depends on python3-dbus."],"python3-distro-info":["unattended-upgrades depends on python3-distro-info."],"distro-info-data":["python3-distro-info depends on distro-info-data (>= 0.46).","python3-apt depends on distro-info-data."],"lsb-release":["unattended-upgrades depends on lsb-release."],"ucf":["unattended-upgrades depends on ucf.","openssh-server depends on ucf."],"procps":["ucf depends on procps.","openssh-server depends on procps."],"libao4":["frotz depends on libao4 (>= 1.1.0)."],"libao-common":["libao4:amd64 depends on libao-common."],"libogg0":["libvorbis0a:amd64 depends on libogg0 (>= 1.1.0).","libsndfile1:amd64 depends on libogg0 (>= 1.3.0).","libflac14:amd64 depends on libogg0 (>= 1.1.0)."],"nethack-common":["nethack-console depends on nethack-common (= 3.6.7-1+b2)."],"librecode3":["fortune-mod depends on librecode3 (>= 3.7)."],"libflac14":["libsndfile1:amd64 depends on libflac14 (>= 1.5.0)."],"libmp3lame0":["libsndfile1:amd64 depends on libmp3lame0 (>= 3.100)."],"libmpg123-0t64":["libsndfile1:amd64 depends on libmpg123-0t64 (>= 1.28.0)."],"libopus0":["libsndfile1:amd64 depends on libopus0 (>= 1.1)."],"libsamplerate0":["frotz depends on libsamplerate0 (>= 0.1.7)."],"libsndfile1":["frotz depends on libsndfile1 (>= 1.0.20)."],"libvorbis0a":["libvorbisenc2:amd64 depends on libvorbis0a (= 1.3.7-3).","libsndfile1:amd64 depends on libvorbis0a (>= 1.2.3)."],"libvorbisenc2":["libsndfile1:amd64 depends on libvorbisenc2 (>= 1.1.2)."],"libmodplug1":["frotz depends on libmodplug1 (>= 1:0.8.8.5)."]}; /* what dpkg -r says depends on each */
+var INFO='/var/lib/dpkg/info/',DB0=34852; /* the files dpkg knows of, with everything here installed */
+/* the program files each package brings that this terminal has, and the commands they are; vi, view, ex and nethack are alternatives */
+var BINS={'cowsay':['/usr/games/cowsay','/usr/games/cowthink'],'cmatrix':['/usr/bin/cmatrix'],'cron':['/usr/bin/crontab','/usr/sbin/cron'],'fortune-mod':['/usr/games/fortune'],
+  'frotz':['/usr/games/frotz'],'iproute2':['/usr/bin/ip','/usr/bin/ss'],'less':['/usr/bin/less'],'man-db':['/usr/bin/man','/usr/bin/apropos','/usr/bin/whatis'],'nethack-console':['/usr/games/nethack'],
+  'fastfetch':['/usr/bin/fastfetch'],'openssh-server':['/usr/sbin/sshd'],'procps':['/usr/bin/free','/usr/bin/pgrep','/usr/bin/pkill','/usr/bin/ps','/usr/bin/top','/usr/bin/uptime','/usr/bin/w','/usr/bin/watch'],
+  'sl':['/usr/games/sl'],'sudo':['/usr/bin/sudo','/usr/bin/sudoedit','/usr/sbin/visudo'],'unattended-upgrades':['/usr/bin/unattended-upgrade'],'vim-tiny':['/usr/bin/vi','/usr/bin/view','/usr/bin/ex','/usr/bin/vim.tiny'],
+  'python3-minimal':['/usr/bin/python3'],'python3.13-minimal':['/usr/bin/python3.13'],'lsb-release':['/usr/bin/lsb_release'],'apt':['/usr/bin/apt','/usr/bin/apt-get','/usr/bin/apt-cache']};
+function installed(p){var e=typeof p==='string'?pkg(p):p;return !!e&&PKGS.indexOf(e)>=0&&!!P.find(INFO+e[0]+'.list',true)}
+function residual(p){var e=typeof p==='string'?pkg(p):p;return !!e&&PKGS.indexOf(e)>=0&&!installed(e)&&!!P.find(INFO+e[0]+'.postrm',true)}
+var RECORDED=false;
+P.setup(function(){ /* dpkg's own record of each package installed */
+  RECORDED=true;
+  PKGS.forEach(function(p){
+    P.sys(INFO+p[0]+'.list','f',{body:['/.'].concat(BINS[p[0]]||[],['/usr/share/doc/'+p[0]])});
+    if(/r/.test((PD[p[0]]||[''])[0]))P.sys(INFO+p[0]+'.postrm','f',{mode:'-rwxr-xr-x',body:['#!/bin/sh','set -e','# Automatically added by dh_installdeb','dpkg-maintscript-helper rm_conffile -- "$@"','# End automatically added section']});
+  });
+});
+var DROPPED={};
+function pkgSync(){ /* the commands of what has been removed are gone, this time and after a reload */
+  if(!RECORDED)return; /* a prompt before the records are made */
+  PKGS.forEach(function(p){
+    if(DROPPED[p[0]]||installed(p))return;
+    DROPPED[p[0]]=true;
+    (BINS[p[0]]||[]).forEach(function(f){
+      var b=f.split('/').pop();
+      if(P.find(f,true))delete P.find(P.dirOf(f),true).kids[b];
+      if(P.has(P.paths,b)&&P.paths[b]+'/'+b===f){delete P.cmds[b];delete P.paths[b];delete P.man[b]}
+    });
+  });
+}
+function dbCount(){return PKGS.reduce(function(n,p){return n-(installed(p)?0:(PD[p[0]]||[0,0])[1])},DB0)}
+function verCmp(a,b){ /* dpkg's version order: epoch, then upstream and revision, ~ before everything */
+  function split(v){var m=/^(?:(\d+):)?(.*?)(?:-([^-]*))?$/.exec(v);return [+(m[1]||0),m[2],m[3]||'']}
+  function ord(c){return c==='~'?-1:!c?0:/[a-z]/i.test(c)?c.charCodeAt(0):c.charCodeAt(0)+256}
+  function part(x,y){
+    var i=0,j=0;
+    while(i<x.length||j<y.length){
+      var d=0;
+      while(i<x.length&&!/\d/.test(x[i])||j<y.length&&!/\d/.test(y[j])){
+        var ac=i<x.length&&!/\d/.test(x[i])?x[i]:'',bc=j<y.length&&!/\d/.test(y[j])?y[j]:'';
+        if(ord(ac)!==ord(bc))return ord(ac)-ord(bc);
+        i++;j++;
+      }
+      var na='',nb='';
+      while(i<x.length&&/\d/.test(x[i]))na+=x[i++];
+      while(j<y.length&&/\d/.test(y[j]))nb+=y[j++];
+      d=(+na||0)-(+nb||0);
+      if(d)return d;
+    }
+    return 0;
+  }
+  var A=split(a),B=split(b);
+  return A[0]-B[0]||part(A[1],B[1])||part(A[2],B[2]);
+}
+function fetchOf(n){ /* where apt would fetch a package's .deb from: [what Ign: and Err: name, its URL] */
+  var p=pkg(n),d=PD[n],arch=ALL.test(n)?'all':'amd64',sec=/^pool\/updates\//.test(d[4]),v=p[1].replace(/^\d+:/,'');
+  return [(sec?'http://security.debian.org/debian-security trixie-security':'http://deb.debian.org/debian trixie')+'/main amd64 '+n+' '+arch+' '+p[1],
+    (sec?'http://security.debian.org/debian-security/':'http://deb.debian.org/debian/')+d[4]+n+'_'+v.replace(/\+/g,'%2b').replace(/~/g,'%7e')+'_'+arch+'.deb'];
+}
+function aptCols(L){ /* apt's lists: in columns, read down, as many as fit in 80, two spaces in and between */
+  for(var c=L.length;c>1;c--){
+    var r=Math.ceil(L.length/c),W=[];
+    for(var k=0;k<c;k++)W.push(L.slice(k*r,k*r+r).reduce(function(m,x){return Math.max(m,x.length)},0));
+    if(W.filter(Boolean).length<c)continue;
+    if(2+W.reduce(function(s,w){return s+w},0)+2*(c-1)<80)break;
+  }
+  var rows=Math.ceil(L.length/Math.max(c,1)),R=[];
+  for(var i=0;i<rows;i++){var l='  ';for(var k2=0;k2<Math.max(c,1);k2++){var x=L[k2*rows+i];if(x===undefined)continue;l+=k2*rows+i+rows<L.length&&k2<c-1?x.padEnd(W[k2]+2):x}R.push(l.replace(/\s+$/,''))}
+  return R;
+}
+function orphans(){ /* what was installed as a dependency of something removed since, and is needed by nothing left */
+  var O=[];
+  PKGS.forEach(function(p){if(!installed(p)&&PD[p[0]])PD[p[0]][3].forEach(function(x){if(installed(x)&&pkg(x)[4]&&O.indexOf(x)<0)O.push(x)})});
+  return O.sort();
+}
+function removal(verb,names,o,get,E,reading){ /* apt remove, purge and autoremove as root: what goes, the question, then dpkg's removal */
+  var purge=verb==='purge'||!!o.L.purge,auto=verb==='autoremove',L=reading.slice(),gone=[];
+  if(!auto)names.forEach(function(n){if(!installed(n)&&!(purge&&residual(n)))L.push("Package '"+n+"' is not installed, so not removed")});
+  var want=auto?orphans():names.filter(function(n){return installed(n)||purge&&residual(n)});
+  want.forEach(function(n){if(gone.indexOf(n)<0)gone.push(n);if(installed(n))PD[n][2].forEach(function(x){if(installed(x)&&gone.indexOf(x)<0)gone.splice(gone.indexOf(n),0,x)})});
+  /* dpkg takes what depends on a package before the package */
+  var left=auto?[]:orphans().concat(gone.reduce(function(a,n){return a.concat(PD[n][3])},[])).filter(function(x,i,A){return A.indexOf(x)===i&&installed(x)&&pkg(x)[4]&&gone.indexOf(x)<0}).sort();
+  if(left.length){
+    var one=left.length===1;
+    L.push(one?'The following package was automatically installed and is no longer required:':'The following packages were automatically installed and are no longer required:');
+    L=L.concat(get===true?wrap(left):aptCols(left),["Use 'apt autoremove' to remove "+(one?'it':'them')+'.']);
+    if(get!==true)L.push('');
+  }
+  var none=get===true?['0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.']:['Summary:','  Upgrading: 0, Installing: 0, Removing: 0, Not Upgrading: 0'];
+  if(!gone.length){lines(L.concat(none));return}
+  var shown=gone.slice().sort().map(function(n){return n+(purge?'*':'')}),ess=gone.filter(function(n){return ESSENTIAL.test(n)||n==='apt'}).sort();
+  var sd=gone.indexOf('systemd')>=0&&installed('systemd'); /* without systemd, what openssh-server and cron need of it comes from systemd-standalone-sysusers, which has to be fetched */
+  var freed=aptSize(gone.reduce(function(s,n){return s+(installed(n)?(pkg(n)[3]||0)*1024:0)},sd?-340*1024:0));
+  if(get===true){
+    if(sd)L=L.concat(['The following additional packages will be installed:','  systemd-standalone-sysusers','Suggested packages:','  libcryptsetup12 libidn2-0 libtss2-rc0t64']);
+    L=L.concat(['The following packages will be REMOVED:'],wrap(shown),sd?['The following NEW packages will be installed:','  systemd-standalone-sysusers']:[]);
+  }
+  else L=L.concat(sd?['Installing dependencies:','  systemd-standalone-sysusers','','Suggested packages:','  libcryptsetup12  libidn2-0  libtss2-rc0t64','']:[],['REMOVING:'],aptCols(shown),['']);
+  if(ess.length)L=L.concat(['WARNING: The following essential packages will be removed.','This should NOT be done unless you know exactly what you are doing!'],get===true?wrap(ess):aptCols(ess),get===true?[]:['']);
+  if(get===true)L=L.concat(['0 upgraded, '+(sd?1:0)+' newly installed, '+gone.length+' to remove and 0 not upgraded.'],sd?['Need to get 171 kB of archives.']:[],['After this operation, '+freed+' disk space will be freed.']);
+  else L=L.concat(['Summary:','  Upgrading: 0, Installing: '+(sd?1:0)+', Removing: '+gone.length+', Not Upgrading: 0'],sd?['  Download size: 171 kB']:[],['  Freed space: '+freed,'']);
+  lines(L);
+  if(ess.length){err(E+'Removing essential system-critical packages is not permitted. This might break the system.');P.queue(function(){P.status(100)});return}
+  var go=sd?function(){offline([['http://deb.debian.org/debian trixie/main amd64 systemd-standalone-sysusers amd64 '+D.systemd,'http://deb.debian.org/debian/pool/main/s/systemd/systemd-standalone-sysusers_'+D.systemd.replace(/~/g,'%7e')+'_amd64.deb',0]],'Failed to fetch',E);
+    err(E+'Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?');P.queue(function(){P.status(100)})}:function(){dpkgRemove(gone,purge)};
+  if(o.has('y','yes')||o.L['assume-yes']){go();return}
+  P.ask(get===true?'Do you want to continue? [Y/n] ':'Continue? [Y/n] ',function(l){if(l===P.INT)return;if(l===null||l===''||/^y/i.test(l)){go();return}P.typeLine('Abort.');P.status(1)});
+}
+function dpkgRemove(gone,purge){ /* dpkg --remove (and --purge) of each in turn, then the triggers of what is left */
+  var L=[],rm=gone.filter(function(n){return installed(n)}),man=false,so=false;
+  if(rm.length){
+    L.push('(Reading database ... '+dbCount()+' files and directories currently installed.)');
+    rm.forEach(function(n){
+      var d=PD[n],p=pkg(n);
+      L.push('Removing '+n+(/a/.test(d[0])?':amd64':'')+' ('+p[1]+') ...');
+      man=man||/m/.test(d[0]);so=so||/a/.test(d[0])||n==='apt'; /* ldconfig's trigger: a library */
+      P.find(INFO+n+'.list',true)&&delete P.find(INFO,true).kids[n+'.list'];
+    });
+    pkgSync();
+    if(man&&installed('man-db'))L.push('Processing triggers for man-db ('+pkg('man-db')[1]+') ...');
+    if(so)L.push('Processing triggers for libc-bin (2.41-12+deb13u4) ...');
+  }
+  var pg=purge?gone.filter(function(n){return P.find(INFO+n+'.postrm',true)}):[];
+  if(pg.length){
+    L.push('(Reading database ... '+dbCount()+' files and directories currently installed.)');
+    pg.forEach(function(n){L.push('Purging configuration files for '+n+(/a/.test(PD[n][0])?':amd64':'')+' ('+pkg(n)[1]+') ...');delete P.find(INFO,true).kids[n+'.postrm']});
+  }
+  lines(L);
+}
 function aptSize(b){ /* apt's SizeToStr: 1000s, one decimal under 100 */
   var x='kMGTP',i=-1;
   while(true){if(i>=0&&b<100)return b.toFixed(1)+' '+x.charAt(i)+'B';if(b<10000)return Math.round(b)+' '+(i<0?'':x.charAt(i))+'B';b/=1000;i++}
@@ -1489,19 +1811,77 @@ function rootApt(verb,o,get,E){ /* true if done: root on a box with no network (
     err(W+'Some index files failed to download. They have been ignored, or old ones used instead.');
     P.queue(function(){P.status(0)});return true;
   }
-  if(/^(upgrade|full-upgrade|dist-upgrade|autoremove)$/.test(verb)){lines(get===true?reading.concat(/upgrade/.test(verb)?['Calculating upgrade... Done']:[],[none]):sum0);return true}
+  if(/^(upgrade|full-upgrade|dist-upgrade)$/.test(verb)||verb==='autoremove'&&!orphans().length){lines(get===true?reading.concat(/upgrade/.test(verb)?['Calculating upgrade... Done']:[],[none]):sum0);return true}
+  if(verb==='source'||verb==='build-dep'){ /* no deb-src lines in debian.sources */
+    if(!names.length){err(E+'Must specify at least one package to '+(verb==='source'?'fetch source for':'check builddeps for'));P.queue(function(){P.status(100)});return true}
+    P.typeLine('Reading package lists... Done');err(E+"You must put some 'deb-src' URIs in your sources.list");P.queue(function(){P.status(100)});return true;
+  }
+  if(verb==='satisfy'){
+    if(!names.length){err(E+'Must specify at least one package to check builddeps for');P.queue(function(){P.status(100)});return true}
+    if(get===true)lines(reading);
+    var need=[],why=null;
+    o.ops.slice(1).join(', ').split(',').map(function(c){return c.trim()}).filter(Boolean).forEach(function(c){
+      var alts=c.split('|').map(function(x){var m=/^\s*([a-z0-9][a-z0-9+.-]*)(?::any)?\s*(?:\(\s*(<<|<=|=|>=|>>|<|>)\s*([^)\s]+)\s*\))?\s*$/.exec(x);return m?{n:m[1],op:m[2],v:m[3]}:null});
+      function ok(a,p){if(!a.op)return true;var d=verCmp(p[1],a.v);return {'<<':d<0,'<':d<=0,'<=':d<=0,'=':d===0,'>=':d>=0,'>':d>=0,'>>':d>0}[a.op]}
+      if(alts.some(function(a){return a&&installed(a.n)&&ok(a,pkg(a.n))}))return;
+      var can=alts.filter(function(a){return a&&pkg(a.n)&&!installed(a.n)&&ok(a,pkg(a.n))})[0];
+      if(can){if(need.indexOf(can.n)<0)need.push(can.n);return}
+      if(why)return;
+      var a=alts[0]||{n:c},p=pkg(a.n),op=a.op==='<<'?'<':a.op==='>>'?'>':a.op;
+      why=a.n+(a.op?' ('+op+' '+a.v+')':'')+' but '+(!p?'it is not installable':installed(p)?p[1]+' is to be installed':'it is not going to be installed');
+    });
+    if(why){
+      lines(['Some packages could not be installed. This may mean that you have','requested an impossible situation or if you are using the unstable','distribution that some required packages have not yet been created','or been moved out of Incoming.','The following information may help to resolve the situation:','']);
+      lines([get===true?'The following packages have unmet dependencies:':'Unsatisfied dependencies:',' satisfy:command-line : Depends: '+why]);
+      err(E+'Unable to correct problems, you have held broken packages.');P.queue(function(){P.status(100)});return true;
+    }
+    if(!need.length){lines(get===true?[none]:sum0);return true}
+    o.ops=['install'].concat(need);names=need;verb='install';reading=[];o.satisfy=true;
+  }
+  if(verb==='modernize-sources'&&get!==true){P.typeLine('All sources are modern.');return true} /* debian.sources is deb822 already, and there is no sources.list */
+  if(verb==='edit-sources'&&get!==true){ /* sensible-editor on sources.list (or a file in sources.list.d): an empty new one is removed again */
+    var sl=names.length?'/etc/apt/sources.list.d/'+names[0]:'/etc/apt/sources.list',ex=P.find(sl,true),before=ex?P.text(ex).join('\n'):null;
+    if(!ex)P.sys(sl,'f',{body:[],date:P.now()});
+    P.exec('vi '+sl);
+    P.queue(function(){
+      var n=P.find(sl,true);
+      if(!n)return;
+      var t=P.text(n).join('\n');
+      if(before===null&&!t)delete P.find(P.dirOf(sl),true).kids[sl.split('/').pop()];
+      else if(before!==null&&t!==before)P.typeLine("Your '"+sl+"' file changed, please run 'apt-get update'.");
+    });
+    return true;
+  }
+  if(verb==='reinstall'&&names.every(function(n){return installed(n)})){ /* the same version again: it has to be fetched */
+    if(get===true)lines(reading);
+    if(!names.length){lines(get===true?[none]:sum0);return true}
+    var R=names.filter(function(n,i){return names.indexOf(n)===i}),G=R.map(function(n,i){var x=fetchOf(n);return [x[0],x[1],i]}),dls=aptSize(R.reduce(function(s,n){return s+PD[n][5]},0));
+    var rt=DISKS.filter(function(d){return d[3]==='/'})[0],av=aptSize((rt[1]-rt[2]-1048576)*1024);
+    lines(get===true?['0 upgraded, 0 newly installed, '+R.length+' reinstalled, 0 to remove and 0 not upgraded.','Need to get '+dls+' of archives.','After this operation, 0 B of additional disk space will be used.']:
+      ['Summary:','  Upgrading: 0, Installing: 0, Reinstalling: '+R.length+', Removing: 0, Not Upgrading: 0','  Download size: '+dls,'  Space needed: 0 B / '+av+' available','']);
+    offline(G,'Failed to fetch',E);err(E+'Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?');P.queue(function(){P.status(100)});
+    return true;
+  }
+  if(verb==='reinstall')verb='install'; /* what is not installed is installed */
+  if(verb==='remove'||verb==='purge'||verb==='autoremove'){
+    var unk=names.filter(function(n){return !pkg(n)})[0];
+    if(get===true||verb==='autoremove')lines(reading);
+    if(unk!==undefined){err(E+'Unable to locate package '+unk);P.queue(function(){P.status(100)});return true}
+    removal(verb,names,o,get,E,[]);
+    return true;
+  }
   if(/^(clean|autoclean)$/.test(verb))return true;
-  if(verb==='install'||verb==='remove'||verb==='purge'){
+  if(verb==='install'){
     var bad=names.filter(function(n){return !pkg(n)})[0];
     if(get===true)lines(reading);
     if(bad!==undefined){err(E+'Unable to locate package '+bad);P.queue(function(){P.status(100)});return true}
-    if(verb!=='install'){
-      if(names.some(function(n){return PKGS.indexOf(pkg(n))>=0}))return false; /* removing what is installed: not here */
-      lines(names.map(function(n){return "Package '"+n+"' is not installed, so not removed"}).concat(none?[none]:sum0));return true;
-    }
     var L=[],want=[];
-    names.forEach(function(n){var p=pkg(n);if(PKGS.indexOf(p)>=0){L.push(n+' is already the newest version ('+p[1]+').');if(p[4])L.push(n+' set to manually installed.')}else if(want.indexOf(n)<0)want.push(n)});
-    var X=want.map(function(n){return AVX[n]}).filter(Boolean);
+    names.forEach(function(n){var p=pkg(n);if(installed(p)){L.push(n+' is already the newest version ('+p[1]+').');if(p[4]&&!o.satisfy)L.push(n+' set to manually installed.')}else if(want.indexOf(n)<0)want.push(n)});
+    var X=want.map(function(n){ /* one removed here is fetched again, by itself */
+      if(AVX[n])return AVX[n];
+      var p=pkg(n),x=fetchOf(n);
+      return {a:['Installing:','  '+n],n:1,dl:aptSize(PD[n][5]),sp:aptSize((p[3]||0)*1024),deps:[],sg:'',f:[[x[0],x[1],0]]};
+    }).filter(Boolean);
     if(!X.length){lines(L.concat(none?[none]:sum0));return true}
     var deps=[],F=[],sg=[],seen={},n=0;
     X.forEach(function(x){x.deps.forEach(function(d){if(deps.indexOf(d)<0&&want.indexOf(d)<0)deps.push(d)});x.f.forEach(function(f){if(!seen[f[1]]){seen[f[1]]=1;F.push(f)}});if(x.sg)sg.push(x.sg)});
@@ -1509,8 +1889,8 @@ function rootApt(verb,o,get,E){ /* true if done: root on a box with no network (
     var one=X.length===1?X[0]:null,dl=one?one.dl:'',sp=one?one.sp:''; /* sizes are known for one package at a time */
     var root=DISKS.filter(function(d){return d[3]==='/'})[0],avail=aptSize((root[1]-root[2]-1048576)*1024);
     if(get===true){
-      if(deps.length)L=L.concat(['The following additional packages will be installed:'],wrap(deps));
-      if(sg.length)L=L.concat(['Suggested packages:'],wrap(sg.join(' ').replace(/ \| /g,'\u0001').split(' ').map(function(w){return w.replace(/\u0001/g,' | ')})));
+      if(deps.length&&!o.satisfy)L=L.concat(['The following additional packages will be installed:'],wrap(deps));
+      if(sg.length&&!o.satisfy)L=L.concat(['Suggested packages:'],wrap(sg.join(' ').replace(/ \| /g,'\u0001').split(' ').map(function(w){return w.replace(/\u0001/g,' | ')})));
       L=L.concat(['The following NEW packages will be installed:'],wrap(want.concat(deps).sort()),['0 upgraded, '+n+' newly installed, 0 to remove and 0 not upgraded.']);
       if(one)L.push('Need to get '+dl+' of archives.','After this operation, '+sp+' of additional disk space will be used.');
     }
@@ -1527,10 +1907,17 @@ function rootApt(verb,o,get,E){ /* true if done: root on a box with no network (
   }
   return false;
 }
-var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremove|autoclean|clean|reinstall|satisfy|build-dep|source|edit-sources|modernize-sources)$/;
+var NEED_ROOT=/^(install|remove|purge|upgrade|full-upgrade|dist-upgrade|autoremove|autoclean|clean|reinstall|satisfy|build-dep)$/;
 function apt(a,get){
   var o=opts(a),verb=o.ops[0]||'',E=get?'E: ':'Error: ',CONF=['Configuration options and syntax is detailed in apt.conf(5).','Information about how to configure sources can be found in sources.list(5).','Package and version choices can be expressed via apt_preferences(5).','Security details are available in apt-secure(8).'];
-  if(get!==true&&o.has('v','version')){P.typeLine('apt 3.0.4 (amd64)');return} /* ShowCommonHelp: the version, and for apt and apt-cache nothing more */
+  if(o.has('v','version')){ /* ShowCommonHelp: the version, and for apt and apt-cache nothing more; apt-get adds the modules it was built with */
+    P.typeLine('apt 3.0.4 (amd64)');
+    if(get===true)P.say(['Supported modules:','*Ver: Standard .deb','*Pkg:  Debian dpkg interface (Priority 30)',' Pkg:  Debian APT solver interface (Priority -1000)',' Pkg:  Debian APT planner interface (Priority -1000)',
+      " S.L: 'deb' Debian binary tree"," S.L: 'deb-src' Debian source tree",' Idx: Debian Source Index',' Idx: Debian Package Index',' Idx: Debian Translation Index',' Idx: Debian dpkg status file',
+      ' Idx: Debian deb file',' Idx: Debian dsc file',' Idx: Debian control file',' Idx: EDSP scenario file',' Idx: EIPP scenario file']);
+    return;
+  }
+
   if(get===2&&!verb){ /* apt-cache's ShowHelp, and its commands that have a help line; then exit 1 */
     P.say(['apt 3.0.4 (amd64)','Usage: apt-cache [options] command','       apt-cache [options] show pkg1 [pkg2 ...]','','apt-cache queries and displays available information about installed','and installable packages. It works exclusively on the data acquired',
       "into the local cache via the 'update' command of e.g. apt-get. The",'displayed information may therefore be outdated if the last update was','too long ago, but in exchange apt-cache works independently of the','availability of the configured sources (e.g. offline).','',
@@ -1543,7 +1930,11 @@ function apt(a,get){
     P.say(['apt 3.0.4 (amd64)','Usage: apt [options] command','','Most used commands:','  list - list packages based on package names','  search - search in package descriptions','  show - show package details','  install - install packages','  remove - remove packages','  update - update list of available packages','  upgrade - upgrade the system by installing/upgrading packages','','See apt(8) for more information about the available commands.'].concat(CONF,['                                        This APT has Super Cow Powers.']));
     P.status(1);return;
   }
+  pkgSync();
+  if(get===true&&/^(edit|modernize)-sources$/.test(verb)){err(E+'Invalid operation '+verb);P.queue(function(){P.status(100)});return} /* apt's alone */
   if(P.st.user==='root'&&get!==2&&rootApt(verb,o,get,E))return;
+  if(get!==2&&(verb==='source'||verb==='modernize-sources')&&rootApt(verb,o,get,E))return; /* neither needs root */
+  if(!get&&verb==='edit-sources'){err(E+'Could not open file /etc/apt/sources.list - open (13: Permission denied)');P.queue(function(){P.status(100)});return}
   if(verb==='update'){
     P.typeLine('Reading package lists...'); /* the lock fails before it gets to Done */
     err(E+'Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)');err(E+'Unable to lock directory /var/lib/apt/lists/');P.queue(function(){P.status(100)});return;
@@ -1554,7 +1945,7 @@ function apt(a,get){
     P.queue(function(){P.status(100)});return;
   }
   if(!get&&verb==='list'){
-    var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS:PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
+    var inst=!!o.L.installed||!!o.L.upgradable,L=o.L.upgradable?[]:inst?PKGS.filter(installed):PKGS.concat(AVAIL).sort(),pat=o.ops[1]?P.globRe(o.ops[1]):null;
     P.typeLine('Listing... Done');
     lines(L.filter(function(p){return !pat||pat.test(p[0])}).map(entry));
     return;
@@ -1571,7 +1962,7 @@ function apt(a,get){
   }
   if((!get||get===2)&&(verb==='show'||verb==='policy')){
     o.ops.slice(1).forEach(function(n){
-      var p=pkg(n),i=p&&PKGS.indexOf(p)>=0;
+      var p=pkg(n),i=p&&installed(p);
       if(!p){err(E+'No packages found');P.queue(function(){P.status(100)});return}
       if(verb==='policy'){lines([n+':','  Installed: '+(i?p[1]:'(none)'),'  Candidate: '+p[1],'  Version table:',' '+(i?'***':'   ')+' '+p[1]+' 500','        500 http://deb.debian.org/debian trixie/main amd64 Packages'].concat(i?['        100 /var/lib/dpkg/status']:[]));return}
       lines(['Package: '+p[0],'Version: '+p[1],'Priority: optional','Section: '+(/game|cow|fortune|frotz|^sl$|nethack|matrix/.test(p[0])?'games':/^lib/.test(p[0])?'libs':'admin'),'Installed-Size: '+(p[3]||120+p[0].length*37).toLocaleString('en-US')+' kB',
@@ -1587,8 +1978,15 @@ cmd('apt','/usr/bin','command-line interface','apt [-h] [-o=config_string] [-c=c
   'search word   search for the word in the names and descriptions of the packages',
   'show pkg...   show information about the given packages',
   'policy [pkg...]   show the installed and candidate versions of the packages, and where they come from',
-  'update, upgrade, full-upgrade, dist-upgrade, install, reinstall, remove, purge, autoremove, satisfy, autoclean, clean, source, build-dep, edit-sources, modernize-sources   change the system or its package lists, and need root. this machine has no network: update keeps the lists it has, and install cannot fetch a package'],function(a){apt(a,false)});
-cmd('apt-get','/usr/bin','APT package handling utility -- command-line interface','apt-get [options] {update | upgrade | dist-upgrade | full-upgrade | install pkg... | reinstall pkg... | remove pkg... | purge pkg... | source pkg... | build-dep pkg... | satisfy dependencies... | clean | autoclean | autoremove | ...}',['the older, steadier apt, for scripts. as apt, it needs root to change anything.'],function(a){apt(a,true)});
+  'update, upgrade, full-upgrade, dist-upgrade, install, reinstall, remove, purge, autoremove, satisfy, autoclean, clean, build-dep   change the system or its package lists, and need root. this machine has no network: update keeps the lists it has, and install and reinstall cannot fetch a package',
+  'remove pkg..., purge pkg...   remove the packages, and what depends on them; purge their configuration files too. autoremove then removes what was installed only for them. what root removes stays removed',
+  'source pkg..., build-dep pkg...   need deb-src lines in the sources, which this machine does not have',
+  'satisfy dependency...   install what the dependency strings ask for, such as "cowsay (>= 3)"',
+  'edit-sources [file]   edit /etc/apt/sources.list (or the file in /etc/apt/sources.list.d) in the editor, as root',
+  'modernize-sources   rewrite .list sources in the deb822 .sources format; here they are already',
+  '-v, --version   print the version'],function(a){apt(a,false)});
+cmd('apt-get','/usr/bin','APT package handling utility -- command-line interface','apt-get [options] {update | upgrade | dist-upgrade | full-upgrade | install pkg... | reinstall pkg... | remove pkg... | purge pkg... | source pkg... | build-dep pkg... | satisfy dependencies... | clean | autoclean | autoremove | ...}',['the older, steadier apt, for scripts. as apt, it needs root to change anything; source needs none, but this machine has no deb-src lines for it. edit-sources and modernize-sources are apt\'s alone.','',
+  '-v, --version   show the program version, and the modules it supports'],function(a){apt(a,true)});
 cmd('apt-cache','/usr/bin','query the APT cache','apt-cache [options] {search regex | show pkg... | policy [pkg...] | ...}',['asks the package lists what there is, without changing anything.'],function(a){apt(a,2)});
 function dpkgUsage(why){ /* dpkg's badusage(): the error, then where to find help; status 2 */
   [ 'dpkg: error: '+why,'',"Type dpkg --help for help about installing and deinstalling packages [*];","Use 'apt' or 'aptitude' for user-friendly package management;",'Type dpkg -Dhelp for a list of dpkg debug flag values;',
@@ -1604,12 +2002,21 @@ function rootDpkg(o){ /* dpkg 1.22 as root: -i of a file that is no package, -r 
     o.ops.forEach(function(x){err("dpkg-deb: error: '"+x+"' is not a Debian format archive");err('dpkg: error processing archive '+x+' (--install):');err(' dpkg-deb --control subprocess returned error exit status 2');failed.push(x)}); /* nothing here is a .deb */
   }
   else{
-    if(o.ops.some(function(x){var p=pkg(x);return p&&PKGS.indexOf(p)>=0&&!ESSENTIAL.test(x)}))return false; /* removing what is installed: not here */
-    o.ops.forEach(function(x){
-      var p=pkg(x);
-      if(!p||PKGS.indexOf(p)<0){err('dpkg: warning: ignoring request to remove '+x+" which isn't installed");return}
-      err('dpkg: error processing package '+x+' ('+act+'):');err(' this is an essential package; it should not be removed');failed.push(x);
+    var L=[],first=true,purge=act==='--purge',man=false,so=false;
+    o.ops.forEach(function(x){ /* each in turn: what others still depend on stays */
+      var p=pkg(x),d=PD[x],ma=d&&/a/.test(d[0])?':amd64':'';
+      if(!p||!installed(p)&&!residual(p)){lines(L);L=[];err('dpkg: warning: ignoring request to remove '+x+" which isn't installed");return}
+      if(!installed(p)&&!purge){lines(L);L=[];err('dpkg: warning: ignoring request to remove '+x+', only the config');err(' files of which are on the system; use --purge to remove them too');return}
+      if(ESSENTIAL.test(x)){lines(L);L=[];err('dpkg: error processing package '+x+' ('+act+'):');err(' this is an essential package; it should not be removed');failed.push(x);return}
+      var by=x==='systemd'?installed('openssh-server')||installed('cron')?DEPS.systemd:[]:(DEPS[x]||[]).filter(function(l){return installed(l.split(/[: ]/)[0])});
+      if(by.length){lines(L);L=[];err('dpkg: dependency problems prevent removal of '+x+ma+':');by.forEach(function(l){err(' '+l)});err('');err('dpkg: error processing package '+x+ma+' ('+act+'):');err(' dependency problems - not removing');failed.push(x+ma);return}
+      if(first){L.push('(Reading database ... '+dbCount()+' files and directories currently installed.)');first=false}
+      if(installed(p)){L.push('Removing '+x+ma+' ('+p[1]+') ...');delete P.find(INFO,true).kids[x+'.list'];pkgSync();man=man||/m/.test(d[0]);so=so||!!ma||x==='apt'}
+      if(purge&&P.find(INFO+x+'.postrm',true)){L.push('Purging configuration files for '+x+ma+' ('+p[1]+') ...');delete P.find(INFO,true).kids[x+'.postrm']}
     });
+    if(man&&installed('man-db'))L.push('Processing triggers for man-db ('+pkg('man-db')[1]+') ...');
+    if(so)L.push('Processing triggers for libc-bin (2.41-12+deb13u4) ...');
+    lines(L);
   }
   if(failed.length){err('Errors were encountered while processing:');failed.forEach(function(x){err(' '+x)});P.queue(function(){P.status(1)})}
   else P.queue(function(){P.status(0)}); /* a warning only */
@@ -1617,17 +2024,21 @@ function rootDpkg(o){ /* dpkg 1.22 as root: -i of a file that is no package, -r 
 }
 cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['installs and removes single packages, and with -l lists what is installed.','',
   '-i, --install package-file...   install the package',
-  '-l, --list [package-name-pattern]   list packages matching given pattern',
+  '-l, --list [package-name-pattern...]   list packages matching given pattern',
   '-P, --purge package...   purge an installed or already removed package',
   '-r, --remove package...   remove an installed package',
   '--version   display dpkg version information'],function(a,raw,w){
   var o=opts(a);
   if(o.has('l','list')){
-    var pat=o.ops[0]?P.globRe(o.ops[0]):null,L=PKGS.filter(function(p){return !pat||pat.test(p[0])});
-    if(!L.length){err('dpkg-query: no packages found matching '+o.ops[0]);P.status(1);return}
+    pkgSync();
+    var pats=o.ops.map(function(x){return P.globRe(x)}),L=PKGS.filter(function(p){return (!pats.length||pats.some(function(r){return r.test(p[0])}))&&(installed(p)||residual(p))});
+    var miss=o.ops.filter(function(x,i){return !L.some(function(p){return pats[i].test(p[0])})});
+    if(miss.length)P.queue(function(){P.status(1)});
+    if(!L.length){miss.forEach(function(x){err('dpkg-query: no packages found matching '+x)});return}
     var nw=Math.max(14,L.reduce(function(m,p){return Math.max(m,p[0].length)},0)),vw=Math.max(12,L.reduce(function(m,p){return Math.max(m,p[1].length)},0));
     out(['Desired=Unknown/Install/Remove/Purge/Hold','| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend','|/ Err?=(none)/Reinst-required (Status,Err: uppercase=bad)',
-      '||/ '+'Name'.padEnd(nw)+' '+'Version'.padEnd(vw)+' Architecture Description','+++-'+'='.repeat(nw)+'-'+'='.repeat(vw)+'-============-'+'='.repeat(32)].concat(L.map(function(p){return 'ii  '+p[0].padEnd(nw)+' '+p[1].padEnd(vw)+' '+(ALL.test(p[0])?'all  ':'amd64')+'        '+p[2]})));
+      '||/ '+'Name'.padEnd(nw)+' '+'Version'.padEnd(vw)+' Architecture Description','+++-'+'='.repeat(nw)+'-'+'='.repeat(vw)+'-============-'+'='.repeat(32)].concat(L.map(function(p){return (installed(p)?'ii  ':'rc  ')+p[0].padEnd(nw)+' '+p[1].padEnd(vw)+' '+(ALL.test(p[0])?'all  ':'amd64')+'        '+p[2]})));
+    miss.forEach(function(x){err('dpkg-query: no packages found matching '+x)}); /* after the table */
     return;
   }
   if(P.st.user==='root'&&rootDpkg(o))return;
@@ -1636,13 +2047,25 @@ cmd('dpkg','/usr/bin','package manager for Debian','dpkg [option...] action',['i
   dpkgUsage('need an action option');
 });
 
-var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes|fortunes-min|libao-common)$/; /* packages that are the same on every architecture */
+var ALL=/^(cowsay|cowsay-off|unattended-upgrades|fortunes|fortunes-min|libao-common|python-apt-common|python3-distro-info|distro-info-data|lsb-release|ucf)$/; /* packages that are the same on every architecture */
+/* python3: Debian's 3.13, which unattended-upgrades runs on. This terminal runs no Python program, so it tells its version and,
+   asked to run anything, says it cannot */
+cmd(['python3.13','python3'],'/usr/bin','an interactive high-level object-oriented language (python3 version)','python3 [ -c command | script | - ] [ arguments ]',[
+  'python is an interpreted, interactive, object-oriented programming language. this machine has it because unattended-upgrades is written in it; this terminal runs no python program.','',
+  '-V, --version   prints the python version number of the executable and exits. given twice, prints more information about the build.'],function(a,raw,w){
+  var W=w.slice(1);
+  if(W[0]==='-VV'||W[0]==='-V'&&W[1]==='-V'){P.typeLine('Python 3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0]');return}
+  if(W[0]==='-V'||W[0]==='--version'){P.typeLine('Python 3.13.5');return}
+  err(w[0]+': this terminal runs no Python programs (try '+w[0]+' --version)');
+  P.queue(function(){P.status(1)});
+});
+P.setup(function(){P.paths.python3='/usr/bin'}); /* a second name for python3.13 (fs.js makes it the same file) */
 /* fastfetch: trixie's system summary (neofetch is no longer packaged). The logo is drawn for this terminal */
 var SWIRL=['        .-""""""-.','      .\'  .--.   \'.','     /   /    \\    \\','    |   |   ()|    |','    |   |    .\'   /','     \\   \'--\'   .\'','      \'.      .\'','        \'-.  \'','           \'-.','              \'.'];
 cmd('fastfetch','/usr/bin','A fast and feature-rich system information tool similar to neofetch','fastfetch [OPTIONS...]',['prints what this machine is, beside the logo of its distribution. -l none or --logo none leaves the logo out.'],function(a){
   var m=Math.floor(since()/6e4),M=D.mem,used=(M.MemTotal+M.Shmem-M.MemFree-M.Buffers-M.Cached-M.SReclaimable)/1048576,tot=M.MemTotal/1048576,id=P.st.user+'@'+P.st.hostname;
   var I=[id,'-'.repeat(id.length),'OS: Debian GNU/Linux 13 (trixie) x86_64','Host: KVM/QEMU Standard PC (i440FX + PIIX, 1996) (pc-i440fx-9.2)','Kernel: Linux '+D.krel,
-    'Uptime: '+(m<60?m+' min'+(m!==1?'s':''):Math.floor(m/60)+' hour'+(m>=120?'s':'')+', '+m%60+' min'+(m%60!==1?'s':'')),'Packages: 412 (dpkg)','Shell: bash 5.2.37','Terminal: /dev/ttyS0',
+    'Uptime: '+(m<60?m+' min'+(m!==1?'s':''):Math.floor(m/60)+' hour'+(m>=120?'s':'')+', '+m%60+' min'+(m%60!==1?'s':'')),'Packages: '+(412-PKGS.filter(function(p){return !installed(p)}).length)+' (dpkg)','Shell: bash 5.2.37','Terminal: /dev/ttyS0',
     'CPU: AMD EPYC-Rome ('+D.ncpu+') @ 2.79 GHz','GPU: Device 1234:1111','Memory: '+used.toFixed(2)+' GiB / '+tot.toFixed(2)+' GiB ('+Math.round(used/tot*100)+'%)','Locale: C.UTF-8'];
   var nologo=a.some(function(x,i){return (x==='-l'||x==='--logo')&&a[i+1]==='none'});
   var wide=I.reduce(function(x,l){return Math.max(x,l.length)},0)+24;
