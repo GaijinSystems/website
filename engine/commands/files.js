@@ -5,7 +5,7 @@
      names   first name is the real one, the rest are synonyms
      help    one line for the help list (leave out to hide the command)
      path    where its program file appears in the file tree (/bin/ls)
-     man     the manual page: what, syn (synopsis), desc and bugs (lists of lines)
+     man     the manual page: what, syn (synopsis), desc and bugs (lists of lines), or function(profile) giving them
      run     function(args, rawLine): args are lowercased words after the name
      enabled optional function(profile): return false to leave the command out
      hidden  true to keep it out of help (xyzzy)
@@ -14,15 +14,20 @@
 'use strict';
 
 P.command({names:['ls'],core:true,help:'list files',path:'/bin',
-  man:{what:'list contents of directory',syn:'ls [ -lad ] [ name ... ]',desc:[
+  man:function(pr){ /* V7's ls has no -R; 4.3BSD's and System V's (IRIX) have */
+    var v7=!pr.perror&&!pr.csh;
+    return {what:'list contents of directory',syn:v7?'ls [ -lad ] [ name ... ]':'ls [ -ladR ] [ name ... ]',desc:[
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
     '-l   long listing: mode, links, owner, size in bytes and the time of last change.',
     '-d   for a folder, list the folder itself and not what is in it.',
-    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.']},
+    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.'].concat(v7?[]:[
+    '-R   recursively list the folders found, each after a blank line and its name, then the folders in it, before the next.'])}},
   run:function(a){
-    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),typed=/F/.test(fl),blocks=/s/.test(fl),inodes=/i/.test(fl),
-        want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
+    /* the ls of V7, 4.3BSD or IRIX (System V's). V7's skips a letter it does not know, -F and -R among them */
+    var bsd=P.profile.perror,v7=!bsd&&!P.profile.csh,sys5=!bsd&&!v7;
+    var fl=a.filter(function(x){return x.charAt(0)==='-'}).join(''),long=/l/.test(fl),all=/a/.test(fl),self=/d/.test(fl),typed=!v7&&/F/.test(fl),blocks=/s/.test(fl),inodes=/i/.test(fl),
+        rec=!v7&&/R/.test(fl),want=a.filter(function(x){return x.charAt(0)!=='-'}),L=[],dirs=[];
     if(!want.length)want=['.'];
     function plain(name,n){ /* -i the inode, -s the size in kilobytes, -F a mark for what it is */
       return (inodes?String(P.ino(name)).padStart(5)+' ':'')+(blocks?String(Math.ceil(P.fsize(n)/1024)).padStart(4)+' ':'')+name+
@@ -30,6 +35,9 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
     }
     function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
       return !P.profile.perror||P.piped()||!names.length?names:P.inColumns(names);
+    }
+    function sub(dir,k){ /* the name of a folder inside dir: 4.3BSD's cat() leaves off a dir of ".", System V's makename() keeps it ("./src") */
+      return bsd&&(dir==='.'||dir==='')?k:dir+(/\/$/.test(dir)?'':'/')+k;
     }
     want.forEach(function(w){
       var n=P.find(w),shown;
@@ -39,17 +47,36 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       else if(n.prot)L.push([w+' unreadable','err']);
       else dirs.push([w,n]);
     });
-    dirs.forEach(function(d){
-      var n=d[1],ents=Object.keys(n.kids).filter(function(k){return all||k.charAt(0)!=='.'}).sort()
+    /* -R: after a folder, the folders in it, each in full before the next (4.3BSD's subdirs list, System V's dfirst chain), never . or ..;
+       the folders named are titled only when there are more than one. The shell gave ls ~ as the home folder's name. A folder already
+       on the way down (a loop) is not gone into again; a name longer than the system's limit stops it: 4.3BSD's cat() says
+       "filename too long" and ls exits, System V's opendir fails as it would for a folder it cannot read */
+    var todo=dirs.map(function(d){return {name:d[0],n:d[1],title:want.length>1}}).reverse(),stop=false;
+    while(todo.length&&!stop){
+      var d=todo.pop(),n=d.n,name=v7?d.name:d.name.replace(/^~(?=\/|$)/,P.st.home);
+      if(n.prot){ /* only a folder found on the way down: 4.3BSD's getdir says so in place of the title, System V's after it */
+        L.push('');if(sys5)L.push(name+':');L.push([name+' unreadable','err']);continue;
+      }
+      var ents=Object.keys(n.kids).filter(function(k){return all||k.charAt(0)!=='.'}).sort()
         .map(function(k){return [k,n.kids[k]]});
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
-      if(want.length>1){if(L.length)L.push('');L.push(d[0]+':')}
+      if(bsd&&ents.some(function(e){return name.length+e[0].length+2>1024})){L.push(['ls: filename too long','err']);P.status(1);stop=true;break}
+      if(d.title){if(L.length)L.push('');L.push(name+':')}
       if(long){
         var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t);
         ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
       }
       else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])})));
-    });
+      if(!rec)continue;
+      for(var i=ents.length-1;i>=0;i--){
+        var k=ents[i][0],kid=ents[i][1],up=d,loop=false;
+        if(kid.type!=='d'||k==='.'||k==='..')continue;
+        for(;up&&!loop;up=up.up)loop=up.n===kid;
+        if(loop)continue;
+        var p=sub(name,k);
+        todo.push({name:p,n:sys5&&p.length>1024?{prot:true}:kid,title:true,up:d});
+      }
+    }
     P.say(L);
   }});
 
