@@ -692,13 +692,14 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
   '-h          with -l, print sizes like 1K 234M 2G',
   '-l          use a long listing format',
   '-r          reverse order while sorting',
+  '-R, --recursive   list subdirectories recursively',
   '-S          sort by file size, largest first',
   '-t          sort by time, newest first',
   '-1          list one file per line',
   '--color     accepted; this terminal has one colour, and it is green'],function(a){
   var o=opts(a),all=o.has('a','all'),almost=o.has('A','almost-all'),long=/[lgno]/.test(o.f),hum=o.has('h','human-readable'),self=o.has('d','directory'),
-      mark=o.has('F','classify'),one=o.has('1'),rev=o.has('r','reverse'),byT=o.has('t'),byS=o.has('S'),files=[],dirs=[],bad=false;
-  var unknown=Object.keys(o.L).filter(function(k){return !/^(all|almost-all|human-readable|directory|classify|reverse|color|colour|group-directories-first)$/.test(k)})[0];
+      mark=o.has('F','classify'),one=o.has('1'),rev=o.has('r','reverse'),byT=o.has('t'),byS=o.has('S'),rec=o.has('R','recursive'),files=[],dirs=[],bad=0;
+  var unknown=Object.keys(o.L).filter(function(k){return !/^(all|almost-all|human-readable|directory|classify|reverse|recursive|color|colour|group-directories-first)$/.test(k)})[0];
   if(unknown){err("ls: unrecognized option '--"+unknown+"'");err("Try 'ls --help' for more information.");P.status(2);return}
   var badc=o.f.replace(/[aAbBcCdDfFgGhHiIklLmnNopqQrRsStTuUvwxXZ1]/g,'').charAt(0);
   if(badc){err("ls: invalid option -- '"+badc+"'");err("Try 'ls --help' for more information.");P.status(2);return}
@@ -729,29 +730,44 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
   function total(L){return 'total '+L.reduce(function(t,e){var s=e.link?0:sizeOf(e.n);return t+(e.n.dev?0:Math.ceil(s/4096)*4)},0)}
   want.forEach(function(w){
     var n=P.find(w),abs=P.norm(w),up=P.find(P.dirOf(abs),true),link=abs!=='/'&&!/\/$/.test(w)&&(long||self)?linkOf(abs,n,up):null;
-    if(!n){err("ls: cannot access '"+w+"': No such file or directory");bad=true;return}
+    if(!n){err("ls: cannot access '"+w+"': No such file or directory");bad=2;return}
     if(link||self||n.type!=='d')files.push({name:w,n:n,link:link});
-    else if(n.prot){err("ls: cannot open directory '"+w+"': Permission denied");bad=true}
-    else dirs.push({name:w,n:n});
+    else if(n.prot){err("ls: cannot open directory '"+w+"': Permission denied");bad=2}
+    else dirs.push({name:w.replace(/^~(?=\/|$)/,P.st.home),n:n}); /* bash gave ls ~ as the home folder's name */
   });
-  var L=[];
+  var O=e2out(),first=true;
+  function say(L){L.forEach(O.say)}
   if(files.length){
     sorter(files);
-    if(long)L=L.concat(longRows(files));
-    else L=L.concat(one?files.map(function(e){return e.name+tag(e)}):columns(files.map(function(e){return e.name+tag(e)})));
+    if(long)say(longRows(files));
+    else say(one?files.map(function(e){return e.name+tag(e)}):columns(files.map(function(e){return e.name+tag(e)})));
+    if(dirs.length)O.say('');
   }
-  sorter(dirs).forEach(function(d,i){
-    var n=d.n,at=P.pathOf(n),E=Object.keys(n.kids).filter(function(k){return all||almost||k.charAt(0)!=='.'}).map(function(k){
+  /* coreutils' print_dir, a folder at a time. -R (extract_dirs_from_files): then the folders in it, each in full before the next,
+     named dir/name ("./src" in "."), never . or .. or a link; every folder is titled, "." too. A folder already on the way down is
+     not listed again (its dev and inode in active_dir_set), and opendir fails on a name longer than PATH_MAX */
+  var todo=sorter(dirs).reverse(),titled=want.length>1||rec;
+  while(todo.length){
+    var d=todo.pop(),n=d.n,at=P.pathOf(n);
+    if(n.prot||d.name.length>=4096){O.err("ls: cannot open directory '"+d.name+"': "+(n.prot?'Permission denied':'File name too long'));bad=bad||1;continue}
+    for(var up=d.up,loop=false;up&&!loop;up=up.up)loop=up.n===n;
+    if(loop){O.err('ls: '+d.name+': not listing already-listed directory');bad=2;continue}
+    var E=Object.keys(n.kids).filter(function(k){return all||almost||k.charAt(0)!=='.'}).map(function(k){
       var kid=n.kids[k];return {name:k,n:kid,link:linkOf((at==='/'?'':at)+'/'+k,kid,n)};
     });
     sorter(E);
     if(all)E=[{name:'.',n:n},{name:'..',n:n.parent}].concat(E);
-    if(want.length>1){if(L.length||i)L.push('');L.push(d.name+':')}
-    if(long){L.push(total(E));L=L.concat(longRows(E))}
-    else L=L.concat(one?E.map(function(e){return e.name+tag(e)}):columns(E.map(function(e){return e.name+tag(e)})));
-  });
-  lines(L);
-  if(bad)P.status(2);
+    if(titled){if(!first)O.say('');O.say(d.name+':')}
+    first=false;
+    if(long){O.say(total(E));say(longRows(E))}
+    else say(one?E.map(function(e){return e.name+tag(e)}):columns(E.map(function(e){return e.name+tag(e)})));
+    if(rec)for(var i=E.length-1;i>=0;i--){
+      var e=E[i];
+      if(e.n.type==='d'&&!e.link&&e.name!=='.'&&e.name!=='..')todo.push({name:(/\/$/.test(d.name)?d.name:d.name+'/')+e.name,n:e.n,up:d});
+    }
+  }
+  O.end();
+  if(bad)P.status(bad);
 },{core:true,help:'list files'});
 
 /* ---------- the system ---------- */
