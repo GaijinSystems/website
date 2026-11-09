@@ -450,21 +450,23 @@ function ttPrint(t){ /* what the driver sends and the type box prints: with LCAS
   }
   return o;
 }
-function ttFit(s,col){ /* the carriage stops at the 72nd column: what comes after it there strikes over the same place */
+function ttFit(s,col){ /* the carriage stops at the 72nd column: what comes after it there strikes over the same place (a space strikes
+                         nothing). XTABS: a tab goes out as spaces to the next eighth column, as the driver counts them */
   var o='',c;col=col||0;
   for(var i=0;i<s.length;i++){
     c=s.charAt(i);
     if(c==='\n'||c==='\r'){o+=c;col=0;continue}
-    if(col>=TT_COLS&&o.length&&o.slice(-1)!=='\n'){o=o.slice(0,-1)+c;continue}
+    if(c==='\t'){s=s.slice(0,i+1)+' '.repeat(7-(col&7))+s.slice(i+1);c=' '}
+    if(col>=TT_COLS&&o.length&&o.slice(-1)!=='\n'){if(c!==' ')o=o.slice(0,-1)+c;col++;continue}
     o+=c;col++;
   }
   return o;
 }
 function ttEcho(b,col){ /* the line being typed, as it was echoed from column col: the kill character is followed by a new line,
-                           even after a \ (ttyinput echoes it before canon looks at the line); a control character (BEL rings) prints nothing */
+                           even after a \ (ttyinput echoes it before canon looks at the line); a tab goes out as spaces (XTABS), any other control character (BEL rings) prints nothing */
   if(!TELE.echo)return '';
   var o='',c;
-  for(var i=0;i<b.length;i++){c=b.charAt(i);if(c>=' ')o+=c;if(c===TELE.kill&&!TELE.raw&&!TELE.cbreak)o+='\n'}
+  for(var i=0;i<b.length;i++){c=b.charAt(i);if(c>=' '||c==='\t')o+=c;if(c===TELE.kill&&!TELE.raw&&!TELE.cbreak)o+='\n'}
   return ttFit(ttPrint(o),col);
 }
 function ttKey(c){ /* a key as the ASR-33 sends it (capitals only, and no ` { | } ~ keys), then as V7 takes it in: LCASE makes capitals small */
@@ -627,8 +629,9 @@ function typeLine(text,cls,cb,opt){
         step();return;
       }
       if(TELE.on&&ch==='\u0007'){ttBell();setTimeout(step,TT_CH);return} /* BEL rings the teletype's bell */
-      if(TELE.on&&col>=TT_COLS&&t.data.length&&ch!=='\n')t.data=t.data.slice(0,-1)+ch; /* at the right margin the carriage stops: the rest strikes over its last column, as V7 did no wrapping */
-      else{t.data+=ch;if(TELE.on)col=ch==='\n'?0:ch==='\t'?(col|7)+1:col+1}
+      if(TELE.on&&ch==='\t'){text=text.slice(0,i)+' '.repeat(7-(col&7))+text.slice(i);ch=' '} /* XTABS: the driver sends a tab as spaces to the next eighth column, each a character's time */
+      if(TELE.on&&col>=TT_COLS&&t.data.length&&ch!=='\n'){if(ch!==' ')t.data=t.data.slice(0,-1)+ch;col++} /* at the right margin the carriage stops: the rest strikes over its last column, as V7 did no wrapping (a space strikes nothing); the driver still counts */
+      else{t.data+=ch;if(TELE.on)col=ch==='\n'?0:col+1}
       if(BAUD&&burst>1){burst--;step();return} /* a real line speed: no need to scroll for what nobody will see */
       scrollBottom();
       if(TELE.on)ttStrike(ch);else if(ch!==' ')click(.194);
@@ -1042,13 +1045,16 @@ function writeFile(p,lines,append){ /* false if it cannot be written */
     L=L.slice(0,i);L.open=false;
     typeLine(diskFull(),'err');
   }
-  if(!ex)put(abs,'f',{body:L,owner:ST.user,date:now()});
+  if(!ex)ex=put(abs,'f',{body:L,owner:ST.user,date:now()});
   else{ex.body=L;ex.size=0;ex.date=now()}
+  WROTE.set(ex,{by:CURRENT,at:++WROTE.n}); /* who wrote it last: the disk-full message names them */
   return true;
 }
-function diskFull(){
+var WROTE=new WeakMap();WROTE.n=0;
+function diskFull(by){ /* by: the program whose write did not fit (else the command now) */
+  if(by===undefined)by=CURRENT;
   return PROFILE.diskFull||(PROFILE.dcl?'%SYSTEM-F-EXDISKQUOTA, disk quota exceeded':PROFILE.dos?'Insufficient disk space':
-    PROFILE.perror||PROFILE.csh||PROFILE.bash?(CURRENT?CURRENT+': ':'')+'write error: No space left on device':'no space on dev 6/0'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
+    PROFILE.perror||PROFILE.csh||PROFILE.bash?(by?by+': ':'')+'write error: No space left on device':'no space on dev 6/0'); /* V7's kernel (prdev): root on hp0, block major 6 in conf/c.c */
 }
 function bsize(L){return L.reduce(function(n,l){return n+lineOf(l)[0].length+1},0)-(L.open&&L.length?1:0)}
 function body(n){return typeof n.body==='function'?n.body():n.body}
@@ -1362,6 +1368,7 @@ function ser(n,p,at){ /* at: where it is kept; anywhere else it is a link */
   if(q!==undefined&&q!==p)o.o=q; /* moved: from where */
   if(n.type==='f'&&n.body!=null){
     if(typeof n.body==='function'&&src&&src.b===n.body)o.g=1; /* made as it is read: made again after a reload */
+    else if(o.o!==undefined&&src&&src.b===n.body)o.s=was(src); /* moved, its text as it came: kept by where it came from and what that was */
     else{var B=body(n)||[];o.b=B.slice();if(B.open)o.open=true}
   }
   return o;
@@ -1390,10 +1397,12 @@ function keepFiles(){ /* false when something more than before could not be kept
   if(full)LAST=null; /* the browser's own room: tried again at each prompt, in case it has some now */
   else{LAST=new Map();now.forEach(function(n,p){LAST.set(p,sig(n))})}
   out=out.map(function(p){return now.get(p)||p}); /* by the file, wherever it moves */
-  var more=out.some(function(x){return !OUT.has(x)});
+  var more=out.filter(function(x){return !OUT.has(x)});
   OUT=new Set(out);
-  return !more;
+  FULLBY=more.reduce(function(w,x){var y=typeof x==='object'&&WROTE.get(x);return y&&(!w||y.at>w.at)?y:w},null); /* the last write of those left out now: the one that did not fit */
+  return !more.length;
 }
+var FULLBY=null;
 var UNSET={bin:false,size:0,mode:null}; /* what a field left out of a kept file is set to; any other is removed */
 var OK={ /* what each kept field may be; a file with anything else is not put back */
   owner:word,group:word,mode:function(v){return typeof v==='string'&&/^[-dcb][-r][-w][-xsS][-r][-w][-xsS][-r][-w][-xtT]$/.test(v)},
@@ -1415,10 +1424,19 @@ function okEntry(e){
   if(e.t==='l')return typeof e.to==='string';
   if(!/^[fdc]$/.test(e.t)||typeof e.d!=='number'||!isFinite(e.d)||Math.abs(e.d)>864e13)return false;
   if(e.o!==undefined&&typeof e.o!=='string')return false;
+  if(e.s!==undefined&&(!Number.isInteger(e.s)||e.o===undefined||e.b!==undefined||e.g!==undefined||e.open!==undefined))return false;
   if(!FIELDS.slice(1).every(function(k){return !has(e,k)||OK[k](e[k])}))return false;
-  if(e.t!=='f')return e.b===undefined&&e.g===undefined;
+  if(e.t!=='f')return e.b===undefined&&e.g===undefined&&e.s===undefined;
   if(e.b!==undefined&&(!Array.isArray(e.b)||e.g!==undefined||!e.b.every(okLine)))return false;
   return (e.g===undefined||e.g===1)&&(e.open===undefined||e.open===true);
+}
+var CLASH=[]; /* the visitor's folders left out because the site has a file of that name now */
+function clashSay(p){ /* one of them, as the machine's own mkdir says it could not make it again: a file has the name */
+  var x=p.indexOf(ST.home+'/')===0?p.slice(ST.home.length+1):p,f=has(CMDS,'mkdir')?CMDS.mkdir:has(CMDS,'md')?CMDS.md:null;
+  if(PH.dirClash){PH.dirClash(p);return} /* a machine that says it otherwise (VMS) */
+  if(PROFILE.dos)x=x.replace(/\//g,'\\');
+  if(f){CURRENT='mkdir';f([x],'mkdir '+x,['mkdir',x],'mkdir '+x);CURRENT='';return}
+  if(!PROFILE.dos)typeLine(PROFILE.perror?'mkdir: '+x+': File exists':'mkdir: cannot make directory '+x,'err'); /* mkdir switched off: its words all the same */
 }
 var NOT_COPIED=new Set(['name','parent','kids','date','body'].concat(FIELDS)); /* the rest of a moved file comes from where it was */
 function restoreFiles(){
@@ -1436,11 +1454,14 @@ function restoreFiles(){
   Object.keys(keep).sort().forEach(function(p){
     var e=keep[p],a=BASE.get(p),x;
     if(good(p)&&okEntry(e)&&e.t==='d'&&folder(p)&&(x=find(p,true))&&x!==ROOT&&x.type==='d'&&(e.h!==undefined?!a||was(a)!==e.h:!!a))return; /* a folder the site has made or changed since: the site's stays, and what was kept in it goes back in */
-    if(!good(p)||!okEntry(e)||(e.h!==undefined?!a||was(a)!==e.h:!!a)||!folder(p)){dropped.add(p);return} /* the site's file changed, or the site has made one here since, or what it was in is not a folder now */
+    if(!good(p)||!okEntry(e)||(e.h!==undefined?!a||was(a)!==e.h:!!a)||!folder(p)){ /* the site's file changed, or the site has made one here since, or what it was in is not a folder now */
+      if(okEntry(e)&&e.t==='d'&&good(p)&&folder(p)&&(x=find(p,true))&&x!==ROOT&&x.type!=='d')CLASH.push(p); /* a folder of theirs where the site has put a file: said at boot */
+      dropped.add(p);return;
+    }
     if(e.t==='l'){links.push(p);return}
     var src=e.o!==undefined?(good(e.o)?BASE.get(e.o):null):a;
     if(src&&src.n.type!==e.t)src=null;
-    if((e.o!==undefined||e.t==='c'||e.g)&&!src||e.t==='c'&&!src.n.dev||e.g&&typeof src.b!=='function'){dropped.add(p);return}
+    if((e.o!==undefined||e.t==='c'||e.g)&&!src||e.t==='c'&&!src.n.dev||e.g&&typeof src.b!=='function'||e.s!==undefined&&(!Array.isArray(src.b)||was(src)!==e.s)){dropped.add(p);return} /* moved unchanged from a file the site has changed since: the move is dropped, and the new version is in its own place */
     var n=find(p,true);
     if(!n||n===ROOT||n.type!==e.t)n=put(p,e.t,{}); /* its folder is there: only this name is made or replaced */
     if(src&&src.n!==n)Object.keys(src.n).forEach(function(k){if(!NOT_COPIED.has(k))n[k]=src.n[k]});
@@ -1448,7 +1469,7 @@ function restoreFiles(){
     n.date=new Date(e.d);
     FIELDS.slice(1).forEach(function(k){if(has(e,k))n[k]=e[k];else if(has(UNSET,k))n[k]=UNSET[k];else delete n[k]});
     if(typeof n.owner!=='string')n.owner=OWNER;
-    if(e.t==='f'){n.body=e.g?src.b:e.b?e.b.slice():null;if(n.body&&e.open)n.body.open=true}
+    if(e.t==='f'){n.body=e.g||e.s!==undefined?src.b:e.b?e.b.slice():null;if(n.body&&e.open)n.body.open=true} /* the very text it came with: still kept by origin */
   });
   links.forEach(function(p){ /* a second name, once what it names is back */
     var to=keep[p].to,t=good(to)?find(to,true):null,d=folder(p),a=BASE.get(p); /* what it names, even where the site's own version now stands */
@@ -2783,6 +2804,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     var w=W[k];
     if(/^%/.test(w)&&!v7){var r=findJob(w,'kill');if(r.err){err(r.err);if(csh)return;bad=true;continue}
       if(csh&&sigDo(n)==='stop'&&r.job.state!=='Running'){typeLine(w+': Already stopped');bad=true;continue} /* pkill */
+      if(r.job.over){err(bash?'bash: kill: ('+r.job.pids[0]+') - No such process':w+': No such process');bad=true;continue} /* ended, and not yet said: killpg finds nobody (ESRCH), bash's kill_error and csh's pkill say so */
       signal(r.job,n,true);any=true;continue}
     if(!/^-?\d+$/.test(w)){if(v7){err('usage: kill [ -signo ] pid ...');queue(function(){STATUS=2});return}err(bash?'bash: kill: '+w+': arguments must be process or job IDs':'kill: Arguments should be jobs or process id\'s.');if(csh)return;bad=true;continue}
     var hit=liveJobs().filter(function(j){return j.pids.indexOf(+w)>=0})[0];
@@ -3570,7 +3592,7 @@ function nextPrompt(pre){
   queue(function(){while(KEPT.length)KEPT[KEPT.length-1]();if(pre)pre();if(LOGOUT){LOGOUT=false;return}return ttFree(shellPrompt)},true);
 }
 function shellPrompt(p,mode,kept){ /* the shell's prompt, after what has become of its jobs. kept: the files have just been tried */
-  if(!kept&&!keepFiles()){typeLine(diskFull(),'err');queue(function(){shellPrompt(p,mode,true)},true);return} /* the browser is full: the change lasts until a reload */
+  if(!kept&&!keepFiles()){typeLine(diskFull(FULLBY?FULLBY.by:undefined),'err');queue(function(){shellPrompt(p,mode,true)},true);return} /* the browser is full: the change lasts until a reload */
   if(p!=null||mode||!notesDue()){showPrompt(p,mode);return}
   jobNotes();queue(function(){showPrompt()},true);
 }
@@ -3864,7 +3886,9 @@ function resumeHeld(){if(held){var h=held;held=null;h()}}
 function submit(){
   if(TELE.on){if(TELE.echo){ttReturn();TELE.free=Date.now()+TT_NL}}else click(1,700); /* the echo of RETURN: CR LF, and the carriage's time (none with -echo) */
   if(!bufNode)return; /* no prompt up yet: output is still typing */
+  var line=TELE.on&&!TELE.echo&&(MODE==='shell'||MODE==='read')?bufNode.parentNode:null; /* -echo: no CR LF either, so what comes next goes on after the prompt */
   var cmd=TELE.on?ttCanon(buf):buf,typed=buf;leavePrompt(); /* the teletype's line as V7's canon() hands it over */
+  if(line&&line===out.lastElementChild)OPEN=JOIN=line;
   if(TELE.on&&MODE==='login')ttGetty(); /* getty's modes again: a name in capitals (all an ASR-33 has) sets LCASE */
   if(MODE==='read'){var r=READ;READ=null;r(cmd);return}
   if(MODE==='login'){login(cmd);return}
@@ -4205,6 +4229,7 @@ function boot(){
     typeLine(t.replace(/^~\s?/,''),/^~/.test(t)?'dim':'',null,{speed:.12});
     if(m)pause(+m[2]);
   });
+  CLASH.forEach(clashSay);queue(function(){STATUS=0}); /* the visitor's folders the site's new files have taken the place of */
   if(!PROFILE.noLogin){
     typeLine(ST.user,'',null,{pre:PROFILE.loginPrompt,hold:700,speed:2.2}); /* first visit: auto-login as guest */
     pause(450);
