@@ -238,7 +238,11 @@ var PROFILE=(function(){
     return L;
   }
   function lines(L){
+    var live=P.year===new Date().getFullYear(); /* a machine whose clock is the visitor's own (Debian) */
     return trimBlank(L).map(function(l){
+      if(live)l=l.replace(/~~([^~]+?)~~ (\S*\{year\}\S*)/g,function(m,real,era){ /* ~~real date~~ {year} date: here the real one alone, unstruck, ending where the pair ended */
+        return ' '.repeat(Math.max(0,era.replace(/\{year\}/g,'0000').length+1))+real;
+      });
       l=fill(l);
       var href=null,k=l.match(/^(.*?)\s+->\s*((?:https?:\/\/|mailto:)\S+)\s*$/i);
       if(k){l=k[1];href=k[2]}
@@ -1156,7 +1160,7 @@ var LOGOUT=false;
 var RP=null,PENDROOT=null;
 function setRoot(viaSu){
   if(RP)return;
-  RP={user:ST.user,home:ST.home,cwd:ST.cwd,su:viaSu,prot:[]};
+  RP={user:ST.user,home:ST.home,cwd:ST.cwd,su:viaSu,bsh:BSH.length,prot:[]}; /* bsh: the Bourne shells already running, which an su's exit leaves */
   (function walk(n){
     if(n.prot){RP.prot.push(n);n.prot=false}
     if(n.type==='d')Object.keys(n.kids).forEach(function(k){if(n.kids[k]!==n)walk(n.kids[k])});
@@ -1281,7 +1285,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   env:ENV,runScript:runScript,child:child,keep:keep,exec:execLine,
   bourne:{on:false, /* 4.3BSD's sh (on: the machine has it): run(fn) with its grammar; start() one at the terminal; leave(status): exit or ^D in that one, true if it was */
     run:function(fn){runAs('sh',fn)},start:function(){bourne(true,true)},
-    leave:function(st){if(!BSH.length||!BSH[BSH.length-1].tty||SUB||SCRIPTS)return false;bourne(false);STATUS=st;return true}},
+    leave:function(st){if(!BSH.length||!BSH[BSH.length-1].tty||SUB||SCRIPTS||RP&&RP.su&&RP.bsh>=BSH.length)return false;bourne(false);STATUS=st;return true}}, /* an su newer than this sh is left first */
   subshell:function(){return SUB>0},subExit:function(a){if(!SUBSH||SUB!==SUBSH)return false;STATUS=a[0]===undefined?PREV:parseInt(a[0],10)||0;LOOP='exit';return true}, /* exit in ( ): that process ends */forked:forked,pidNow:function(){var p=PIDNOW;PIDNOW=null;return p},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,jobCmd:jobCmd,jobs:psJobs,stoppedWarn:stoppedWarn,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,aside:aside,asideNow:function(){return !!ASIDE},typed:function(){return kb?kb.value:''},sleep:sleep,click:click,load:load,
@@ -1863,7 +1867,7 @@ function parseList(s,o){ /* a line with no top-level ; into [{op,stages:[{words,
       if(check||PROFILE.bash&&/^[A-Za-z_]\w*\[[^\]]*\]\+?=/.test(x)&&st.words.every(function(y){return asgOf(y)})){st.words.push(x);return} /* x[1]=v: an assignment, not a pattern */
       var g=glob(x);
       if(CSH&&g.length===1&&g[0]===x&&/[*?\[]/.test(x))throw NOMATCH; /* csh says so; sh passes the word along */
-      st.words=st.words.concat(g);
+      g.forEach(function(y){st.words.push(y)});
     });
     for(var e=[st.raw.length,st.src.length];st.ends.length<st.words.length;)st.ends.push(e); /* where each word ends in raw and src */
     w=null;quoted=false;fromVar=false;
@@ -1875,8 +1879,8 @@ function parseList(s,o){ /* a line with no top-level ; into [{op,stages:[{words,
       if(!/\S/.test(st.src))throw {syntax:tok}; /* > f, or echo a &> f: a redirection with no command (4.3BSD's syn3) */
       st.in=st.out=null; /* $empty > f: no command once the words are made, and csh does nothing at all */
     }
-    if(st.sub!==undefined&&st.words.length||st.paren)throw {syntax:st.words[0],paren:true};
-    if((st.cond!==undefined||st.arith!==undefined)&&st.words.length)throw {syntax:st.words[0]}; /* [[ a ]] b */ /* (a) b, and csh's (a) 2>f: its 2 is a word (4.3BSD's syn3: Badly placed ()'s) */
+    if(st.sub!==undefined&&st.words.length||st.paren)throw {syntax:st.words[0],paren:true}; /* (a) b, and csh's (a) 2>f: its 2 is a word (4.3BSD's syn3: Badly placed ()'s) */
+    if((st.cond!==undefined||st.arith!==undefined)&&st.words.length)throw {syntax:st.words[0]}; /* [[ a ]] b */
     st.text=s.slice(at,i).replace(/^\s*(\|&?|&&|\|\||&)?\s*/,'').trim();at=i; /* as typed, for the job table */
     st.raw0=st.raw;st.raw=unguard(st.raw);if(st.words.length||st.in||st.out||st.err||st.glass||st.sub!==undefined||st.cond!==undefined||st.arith!==undefined||st.here!==undefined||st.hd!==undefined)stages.push(st);st=fresh();
   }
@@ -2057,11 +2061,14 @@ function patRe(p){ /* a glob pattern from dqWord(t,true) as a RegExp: * ? [...] 
     if(c==='?'){o+='[\\s\\S]';continue}
     if(c==='['&&(j=p.indexOf(']',i+(/^\[[!^]?\]/.test(p.slice(i))?p.charAt(i+1)===']'?2:3:1)))>0){
       var b=p.slice(i+1,j).replace(/^!/,'^').replace(/\[:(\w+):\]/g,function(m,k){return POSIXCL[k]||''}).replace(/\\(?![-\]^\\])/g,'\\\\');
-      o+='['+b.replace(/^\]/,'\\]')+']';i=j;continue;
+      b=b.replace(/^\]/,'\\]').replace(/^(\^?)([\s\S]*)/,function(m,n,x){ /* a range that ends before it starts, as z-a, holds nothing */
+        return n+x.replace(/(\\[^\w]|[^\\])-(\\[^\w]|[^\\])|\\[\s\S]/g,function(m,x,y){return x&&x.slice(-1)>y.slice(-1)?'':m})});
+      o+='['+b+']';i=j;continue;
     }
-    o+=c.replace(/[.+^${}()|\]\\\/]/g,'\\$&');
+    o+=c.replace(/[.+^${}()|[\]\\\/]/g,'\\$&'); /* a [ with no ] is itself */
   }
-  r=new RegExp('^'+o+'$');PATRES.set(p,r);return r;
+  try{r=new RegExp('^'+o+'$')}catch(e){r=/(?!)/} /* anything else a RegExp cannot take matches nothing */
+  PATRES.set(p,r);return r;
 }
 var CONDBIN=/^(==|=|!=|<|>|=~|-eq|-ne|-lt|-le|-gt|-ge|-nt|-ot|-ef)$/,CONDUN=/^-[abcdefghknoprstuvwxzGLNORS]$/;
 function condToks(t){ /* the tokens of [[ ]]: words as typed, and && || ( ) ! < > ; the word after =~ may hold ( ) and | */
@@ -2206,7 +2213,7 @@ function brace1(w){ /* one word's expansions, in order */
     alts.push(w.slice(start,end));
     if(alts.length<2&&PROFILE.bash){var q=seqOf(alts[0]);if(!q)continue;alts=q}
     var pre=w.slice(0,i),post=w.slice(end+1),R=[];
-    alts.forEach(function(a){R=R.concat(brace1(pre+a+post))});
+    alts.forEach(function(a){brace1(pre+a+post).forEach(function(x){R.push(x)})});
     return R;
   }
   return [w];
