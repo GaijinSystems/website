@@ -31,7 +31,7 @@ Phosphor.setup(function(P){
   }});
   sys('/etc/motd','f',{body:P.profile.welcome});
   sys('/etc/passwd','f',{body:function(){
-    var L=['root:VwL97VCAx1Qhs:0:10:Charlie &:/:/bin/csh','toor:*:0:10:Bourne-again Superuser:/:','daemon:*:1:31:The devil himself:/:','operator:*:2:28:System &:/usr/guest/operator:/bin/csh','uucp:*:66:1:UNIX-to-UNIX Copy:/usr/spool/uucppublic:/usr/lib/uucp/uucico','nobody:*:32767:9999:Unprivileged user:/nonexistent:/dev/null','notes:*:5:31:Notesfile maintainer:/usr/spool/notes:/bin/csh','karels:QOrZFUGpxDUlo:6:10:Mike &:/usr/guest/karels:/bin/csh','sam:Yd6H6R7ejeIP2:7:10:& Leffler:/usr/guest/sam:/bin/csh','wnj:ZDjXDBwXle2gc:8:10:Bill Joy:/usr/guest/wnj:/bin/csh'];
+    var L=['root:VwL97VCAx1Qhs:0:10:Charlie &:/:/bin/csh','toor:*:0:10:Bourne-again Superuser:/:','daemon:*:1:31:The devil himself:/:','bin:*:3:20:Binaries Commands and Source:/:','operator:*:2:28:System &:/usr/guest/operator:/bin/csh','uucp:*:66:1:UNIX-to-UNIX Copy:/usr/spool/uucppublic:/usr/lib/uucp/uucico','nobody:*:32767:9999:Unprivileged user:/nonexistent:/dev/null','notes:*:5:31:Notesfile maintainer:/usr/spool/notes:/bin/csh','karels:QOrZFUGpxDUlo:6:10:Mike &:/usr/guest/karels:/bin/csh','sam:Yd6H6R7ejeIP2:7:10:& Leffler:/usr/guest/sam:/bin/csh','wnj:ZDjXDBwXle2gc:8:10:Bill Joy:/usr/guest/wnj:/bin/csh'];
     if(OWNER!==ST.user)L.push(OWNER+':Zz8qT3mXcE0aU:8:20::/usr/'+OWNER+':/bin/csh');
     L.push(ST.user+'::9:20::/usr/'+ST.user+':/bin/csh');
     return L;
