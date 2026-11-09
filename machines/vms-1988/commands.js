@@ -138,9 +138,9 @@ verb('directory',3,function(a,q){
   if(dirs>1)say(['','Grand total of '+dirs+' directories, '+plural(files,'file')+(size?', '+plural(blocksAll,'block'):'')+'.']);
   if(!any&&groups.indexOf(null)<0)err('%DIRECT-W-NOFILES, no files found');
 },['size','date','acl','backup','before','by_owner','created','exclude','expired','modified','since','brief','columns','file_id','full','grand_total','heading','output','owner','printer','protection','security','select','total','trailing','versions','width']); /* each verb's list: the VMS 5.0 DCL Dictionary's */
-verb('type',2,function(a){
-  if(!a.length){P.typeLine('_File: ');return}
-  a.forEach(function(spec){
+verb('type',2,function(a,q,raw){
+  if(!a.length){need(raw,'_File: ');return}
+  list(a).forEach(function(spec){
     var r=pick(spec);
     if(!r.e||r.e.node.type==='d'){err('%TYPE-W-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
     if(r.e.node.prot){err('%TYPE-E-OPENIN, error opening '+fullSpec(r.S)+' as input',PRV);return}
@@ -148,15 +148,15 @@ verb('type',2,function(a){
     say(P.text(r.e.node));
   });
 },['backup','before','by_owner','confirm','created','exclude','expired','modified','since','output','page']);
-verb('copy',2,function(a){
-  if(a.length<2){P.typeLine('_From: ');return}
+verb('copy',2,function(a,q,raw){
+  if(a.length<2){need(raw,a.length?'_To: ':'_From: ');return}
   var r=pick(a[0]);
   if(!r.e){err('%COPY-E-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
   if(r.e.node.prot){err('%COPY-E-OPENIN, error opening '+fullSpec(r.S)+' as input',PRV);return}
   writeNew(from(parse(a[1]),r.e),P.text(r.e.node));
 },['backup','before','by_owner','confirm','created','exclude','expired','modified','since','allocation','concatenate','contiguous','extension','log','overlay','protection','read_check','replace','truncate','volume','write_check']);
-verb('rename',3,function(a){
-  if(a.length<2){P.typeLine('_From: ');return}
+verb('rename',3,function(a,q,raw){
+  if(a.length<2){need(raw,a.length?'_To: ':'_From: ');return}
   var r=pick(a[0]);
   if(!r.e){err('%RENAME-E-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
   var T=from(parse(a[1]),r.e),dir=folder(T.abs);
@@ -166,17 +166,17 @@ verb('rename',3,function(a){
   n.name=k;n.parent=dir;dir.kids[k]=n;
   delete n.store; /* no longer the EMPSAVE.DAT that stands for the saved game */
 },['backup','before','by_owner','confirm','created','exclude','expired','modified','since','log','new_version']);
-verb('delete',3,function(a,q){
+verb('delete',3,function(a,q,raw){
   if(has(q,'symbol')){ /* DELETE/SYMBOL [/LOCAL|/GLOBAL] name, or /ALL */
     var T=SYM[has(q,'global')?'global':'local'];
     if(has(q,'all')){Object.keys(T).forEach(function(k){delete T[k]});return}
-    if(!a.length){need('DELETE/SYMBOL','_Symbol: ');return}
+    if(!a.length){need(raw,'_Symbol: ');return}
     if(!P.has(T,up(a[0]))){symErr(a[0]);return}
     delete T[up(a[0])];return;
   }
   if(has(q,'entry')||has(q,'key'))return; /* no queue entries and no key definitions here */
-  if(!a.length){P.typeLine('_File: ');return}
-  a.forEach(function(spec){
+  if(!a.length){need(raw,'_File: ');return}
+  list(a).forEach(function(spec){
     var S=parse(spec);
     if(S.ver===null){err('%DELETE-E-DELVER, explicit version number or wild card required');return}
     var dir=folder(S.abs),L=dir?versions(matches(S,dir),S):[];
@@ -197,8 +197,8 @@ verb('purge',2,function(a){ /* keep only the newest of each */
   latest(L).forEach(function(e){keep[e.key]=true});
   L.forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&!e.node.prot&&P.canWrite(P.pathOf(e.node))){gone(e.node);delete dir.kids[e.key]}});
 },['backup','before','by_owner','confirm','created','exclude','expired','modified','since','erase','keep','log']);
-verb('create',2,function(a,q){
-  if(!a.length){P.typeLine('_File: ');return}
+verb('create',2,function(a,q,raw){
+  if(!a.length){need(raw,'_File: ');return}
   if(has(q,'directory')){
     var S=parse(a[0]);
     if(!P.canWrite(S.abs)){err('%CREATE-E-DIRNOTCRE, '+dirName(S.abs)+' directory file not created','-SYSTEM-F-NOPRIV, no privilege for attempted operation');return}
@@ -208,8 +208,8 @@ verb('create',2,function(a,q){
   P.input([],function(L){writeNew(a[0],L)});
 },['directory','log','owner_uic','protection','volume','version_limit']);
 P.dirClash=function(abs){err('%CREATE-E-DIRNOTCRE, '+dirName(abs)+' directory file not created','-SYSTEM-W-DUPFILENAME, duplicate file name')}; /* at boot: a directory of the guest's that a file of the site's now has the name of */
-verb('edit',2,function(a){ /* EDT, in its line mode */
-  if(!a.length){P.typeLine('_File: ');return}
+verb('edit',2,function(a,q,raw){ /* EDT, in its line mode */
+  if(!a.length){need(raw,'_File: ');return}
   var r=pick(a[0]);
   if(r.e&&r.e.node.prot){P.typeLine('Input file could not be opened');err('%RMS-E-PRV, insufficient privilege or file protection violation');return}
   var B=r.e?P.text(r.e.node):[];
@@ -234,12 +234,15 @@ verb('edit',2,function(a){ /* EDT, in its line mode */
     });
   })();
 },['edt','tpu','command','journal','output','read_only','recover','create']);
-function need(word,ask){ /* a verb with its parameter left off: DCL asks for it, till it gets it; a command procedure cannot be asked */
+function need(raw,ask){ /* a verb with a parameter left off: DCL asks for it, till it gets it, and runs the line with the answer
+                            on it (COPY asks _From:, then _To:); a command procedure cannot be asked */
   if(P.inScript()){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
-  (function again(){P.ask(ask,function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}P.fallback(word,word+' '+l.trim())},true)})();
+  var line=raw.trim().replace(/^\$\s*/,''),word=line.split(/[\s\/]/)[0];
+  (function again(){P.ask(ask,function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}P.fallback(word,line+' '+l.trim())},true)})();
 }
+function list(a){return a.join(',').split(',').filter(Boolean)} /* TYPE A.TXT,B.TXT: a parameter is a list */
 verb('set',3,function(a,q,raw){
-  if(!a.length){need('SET','_What: ');return}
+  if(!a.length){need(raw,'_What: ');return}
   var w=(a[0]||'').toLowerCase().split('=')[0],val=(a[0]||'').indexOf('=')>0?a[0].slice(a[0].indexOf('=')+1):a[1]; /* SET PROMPT="$ ", SET DEF=[GAMES] */
   if(abbr(w,'default',3)){
     var S=parse(val||'[]'),dir=folder(S.abs);
@@ -248,16 +251,27 @@ verb('set',3,function(a,q,raw){
     return;
   }
   if(abbr(w,'password',3)){P.typeLine('%SET-E-NOPASSWORD, your account does not allow it');return}
-  if(abbr(w,'terminal',3)||abbr(w,'prompt',3)||abbr(w,'verify',2)||abbr(w,'noverify',4))return;
+  if(abbr(w,'prompt',3)){setPrompt(raw);return}
+  if(abbr(w,'terminal',3)||abbr(w,'verify',2)||abbr(w,'noverify',4))return;
   err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0]||'')+'\\');
 },function(a){var w=(a[0]||'').toLowerCase().split('=')[0];return abbr(w,'terminal',3)?null:abbr(w,'prompt',3)?['carriage_control']:abbr(w,'password',3)?['generate','secondary','system']:[]}); /* SET TERMINAL's own qualifiers are taken, and change nothing here */
+/* SET PROMPT[=string]: in quotes as it is, else in capitals with the blanks round it gone; no more than 32 characters; with
+   none, $ again (the VMS 5.0 DCL Dictionary, SET PROMPT). For this process only: LOGOUT puts the default back */
+var PROMPT0=null; /* the prompts the site set, before the first SET PROMPT */
+function setPrompt(raw){
+  PROMPT0=PROMPT0||[P.profile.prompt,P.profile.rootPrompt];
+  var m=raw.replace(/^\s*\$?\s*/,'').match(/^\S*?\s+[^=\s\/]*(?:\s*=\s*((?:"(?:[^"]|"")*"|[^\/"])*))?/),v=m&&m[1]?m[1].trim():'';
+  if(!v){P.profile.prompt=PROMPT0[0];P.profile.rootPrompt=PROMPT0[1];return}
+  v=v.replace(/"((?:[^"]|"")*)"|([^"]+)/g,function(x,q,t){return q!==undefined?q.replace(/""/g,'"'):up(t)}).slice(0,32);
+  P.profile.prompt=P.profile.rootPrompt=v;
+}
 function now(){return P.now()}
 function timeStr(d){return stamp(d)+':'+P.p2(d.getSeconds())}
 function nodeName(){return up(P.st.hostname)}
-verb('show',2,function(a,q){
+verb('show',2,function(a,q,raw){
   var w=(a[0]||'').toLowerCase(),S=P.st,me=up(S.user);
   function is(n,min){return abbr(w,n,min)}
-  if(!w){need('SHOW','_What: ');return}
+  if(!w){need(raw,'_What: ');return}
   if(is('time',2)||is('daytime',2)){P.typeLine('  '+timeStr(now()));return}
   if(is('default',3)){P.typeLine('  '+dirName(S.cwd));return}
   if(is('users',1)){
@@ -285,7 +299,7 @@ verb('show',2,function(a,q){
   if(is('memory',1)){say(['              System Memory Resources on '+timeStr(now()),'','Physical Memory Usage (pages):     Total        Free      In Use    Modified','  Main Memory (8.00Mb)             16384        9120        6912         352']);return}
   if(is('device',3)){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSRL4      41822   112   1']);return}
   if(is('quota',1)){P.typeLine('User ['+me+'] has 412 blocks used, 9588 available, of 10000 authorized');return}
-  if(is('symbol',2)){showSymbol(a[1],q);return}
+  if(is('symbol',2)){showSymbol(a[1],q,raw);return}
   if(is('terminal',2)){say(['Terminal: _TXA2:      Device_Type: VT100        Owner: '+me,'','   Input:    9600      LFfill:  0      Width:  80      Parity: None','   Output:   9600      CRfill:  0      Page:   24']);return}
   err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0])+'\\');
 },function(a){ /* each SHOW keyword's own; an unknown keyword is IVKEYW, not IVQUAL */
@@ -303,7 +317,8 @@ verb('write',2,function(a,q,raw){
 verb('exit',3,function(){if(P.inScript())P.loop('exit')}); /* the end of a command procedure; at the prompt, nothing */
 verb('logout',2,function(a,q){
   P.say(['  '+up(P.st.user)+'      logged out at '+timeStr(now())]);
-  SYM={local:{},global:{}}; /* the process's symbols go with it */
+  SYM={local:{},global:{}}; /* the process's symbols go with it, and its prompt */
+  if(PROMPT0){P.profile.prompt=PROMPT0[0];P.profile.rootPrompt=PROMPT0[1]}
   P.logout();
 },['brief','full','hangup']);
 verb('run',2,function(a){
@@ -381,16 +396,17 @@ function evaluate(src){ /* the value, or undefined after saying why */
   return v;
 }
 function literal(src){ /* NAME := string: capitals and single blanks, but what is in quotes is kept as it is */
-  var o='',q=false;
+  var o='',q=false,gap=false; /* gap: a blank outside quotes, kept only between words */
   src=src.trim();
   for(var i=0;i<src.length;i++){
     var c=src.charAt(i);
-    if(c==='"'){if(q&&src.charAt(i+1)==='"'){o+='"';i++;continue}q=!q;continue}
+    if(c==='"'){if(q&&src.charAt(i+1)==='"'){o+='"';i++;continue}if(gap&&o)o+=' ';gap=false;q=!q;continue}
     if(!q&&c==='!')break;
-    if(!q&&/\s/.test(c)){if(!/ $/.test(o))o+=' ';continue}
+    if(!q&&/\s/.test(c)){gap=true;continue}
+    if(gap&&o)o+=' ';gap=false;
     o+=q?c:c.toUpperCase();
   }
-  return o.trim();
+  return o;
 }
 function assign(raw){ /* true if raw defines a symbol */
   var m=raw.match(/^\$?\s*([A-Za-z_$][\w$]*)\s*(:==|:=|==|=)\s*([\s\S]*)$/);
@@ -399,15 +415,40 @@ function assign(raw){ /* true if raw defines a symbol */
   if(v!==undefined)SYM[/==$/.test(m[2])?'global':'local'][up(m[1])]=v;
   return true;
 }
-P.symbols=function(line){return assign(line.trim())}; /* the engine gives a line here first: MORIA :== RUN MORIA defines a symbol, though MORIA is a command */
+/* 'NAME' in a command line is the symbol's value, before anything else is done with the line; inside quotes it is ''NAME'.
+   An undefined symbol is the null string, and an integer its decimal digits. Outside quotes what is put in is looked at again,
+   so its own 'NAME's are put in too; inside quotes it is not (OpenVMS User's Manual, 12.12-12.13: forced substitution) */
+function substitute(s){
+  var o='',q=false,n=0,m;
+  for(var i=0;i<s.length;i++){
+    var c=s.charAt(i);
+    if(c==='"'){q=!q;o+=c;continue}
+    if(c==="'"&&(m=(q?/^''([A-Za-z_$][\w$]*)'/:/^'([A-Za-z_$][\w$]*)'/).exec(s.slice(i)))){
+      var y=lookupSym(m[1]),v=y?String(y.v):'';
+      if(q){o+=v;i+=m[0].length-1;continue}
+      if(++n>64){o+=s.slice(i);break} /* a symbol that names itself */
+      s=v+s.slice(i+m[0].length);i=-1;continue;
+    }
+    o+=c;
+  }
+  return o;
+}
+var subbing=false;
+P.symbols=function(line){ /* the engine gives a line here first: MORIA :== RUN MORIA defines a symbol, though MORIA is a command */
+  if(!subbing&&line.indexOf("'")>=0){
+    var s=substitute(line);
+    if(s!==line){subbing=true;try{P.exec(s)}finally{subbing=false}return true}
+  }
+  return assign(line.trim());
+};
 function symLine(name,y){
   var v=y.v,n=v>>>0;
   return '  '+up(name)+' '+(y.g?'==':'=')+' '+(typeof v==='number'?v+'   Hex = '+n.toString(16).toUpperCase().padStart(8,'0')+'  Octal = '+n.toString(8).padStart(11,'0'):'"'+v.replace(/"/g,'""')+'"');
 }
-function showSymbol(name,q){
+function showSymbol(name,q,raw){
   var which=has(q,'global')?'global':has(q,'local')?'local':null;
   if(has(q,'all')){var T=SYM[which||'local'];say(Object.keys(T).sort().map(function(k){return symLine(k,{v:T[k],g:which==='global'})}));return}
-  if(!name){need('SHOW SYMBOL','_Symbol: ');return}
+  if(!name){need(raw,'_Symbol: ');return}
   var y=lookupSym(name,which);
   if(!y){symErr(name);return}
   P.typeLine(symLine(name,y));
@@ -437,25 +478,31 @@ P.fallback=function(word,raw){
   var rest=W.slice(0);rest[0]=slash>0?W[0].slice(slash):'';
   var parts=split(rest.filter(Boolean)),ok=typeof v.quals==='function'?v.quals(parts.a):v.quals,badQ=ok&&quals(raw.trim().replace(/^\$\s*/,'')).filter(function(x){var k=x.split('=')[0].toLowerCase();return !ok.some(function(n){return n.indexOf(k)===0||k.length>2&&k.slice(0,2)==='no'&&n.indexOf(k.slice(2))===0})})[0];
   if(badQ){err('%DCL-W-IVQUAL, unrecognized qualifier - check validity, spelling, and placement',' \\'+up(badQ.split('=')[0])+'\\');return true}
+  parts.a=parts.a.join(' ').replace(/\s*([,+])\s*/g,'$1').split(' ').filter(Boolean); /* A.TXT, B.TXT is one parameter, a list */
+  if(v.max!==undefined&&parts.a.length>v.max){err('%DCL-W-MAXPARM, too many parameters - reenter command with fewer parameters',' \\'+up(parts.a[v.max])+'\\');return true}
   P.status(0);
   v.run(parts.a,parts.q,raw);
   return true;
 };
+/* how many parameters each verb takes (the VMS 5.0 DCL Dictionary's formats); more is %DCL-W-MAXPARM */
+[['directory',1],['type',1],['copy',2],['rename',2],['delete',1],['purge',1],['create',1],['edit',1],['run',1],['exit',1],['logout',0]].forEach(function(x){V[x[0]].max=x[1]});
 /* real DCL HELP stands in for the terminal's: a list, and the topic you ask for */
 var TOPICS={ /* each: its lines, as HELP prints them */
   DIRECTORY:['Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*, DIR A.TXT,B.TXT.','','Format:','','  DIRECTORY [file-spec[,...]]','',
     '/DATE      Includes the creation date of each file.','/SIZE      Includes the size of each file, in blocks used.'],
-  TYPE:['Prints a file. TYPE README.TXT.','','Format:','','  TYPE file-spec ...'],
+  TYPE:['Prints a file. TYPE README.TXT, or a list: TYPE A.TXT,B.TXT.','','Format:','','  TYPE file-spec[,...]'],
   COPY:['COPY from to. Makes a new version of to.','','Format:','','  COPY input-file-spec output-file-spec'],
-  DELETE:['DELETE FILE.TXT;1. The version number is required.','A wildcard may stand for the name, the type or the version: DELETE *.TMP;*.','','Format:','','  DELETE file-spec;version ...'],
+  DELETE:['DELETE FILE.TXT;1. The version number is required.','A wildcard may stand for the name, the type or the version: DELETE *.TMP;*.','','Format:','','  DELETE file-spec;version[,...]'],
   PURGE:['Deletes all but the newest version of each file.','With no file-spec, PURGE purges every file in the default directory.','','Format:','','  PURGE [file-spec]'],
   RENAME:['RENAME old new.','','Format:','','  RENAME input-file-spec output-file-spec'],
   CREATE:['CREATE name, then type it, then ctrl-z. CREATE/DIRECTORY [.NAME].','','Format:','','  CREATE file-spec','  CREATE/DIRECTORY directory-spec','',
     '/DIRECTORY Creates a new directory or subdirectory.'],
   EDIT:['EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.','QUIT leaves without writing the file. HELP lists these commands.','','Format:','','  EDIT file-spec'],
   SET:['SET DEFAULT [.NAME] or [-] to move about.','','Format:','','  SET option','',
-    'DEFAULT    SET DEFAULT directory-spec','PASSWORD   Not allowed for this account.','PROMPT, TERMINAL, VERIFY and NOVERIFY are accepted, and change nothing here.'],
-  SHOW:['SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.','SHOW DAYTIME is SHOW TIME. SHOW SYMBOL name displays a symbol: NAME = 1+2 and','NAME := text define one, == and :== a global one. SHOW SYMBOL/ALL lists them.','','Format:','','  SHOW option'],
+    'DEFAULT    SET DEFAULT directory-spec','PASSWORD   Not allowed for this account.','PROMPT     SET PROMPT[=string]. In quotes for blanks or small letters;',
+    '           with no string, the prompt is $ again.','TERMINAL, VERIFY and NOVERIFY are accepted, and change nothing here.'],
+  SHOW:['SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.','SHOW DAYTIME is SHOW TIME. SHOW SYMBOL name displays a symbol: NAME = 1+2 and','NAME := text define one, == and :== a global one. SHOW SYMBOL/ALL lists them.',
+    '\'NAME\' in a command puts in its value; inside quotes, \'\'NAME\'.','','Format:','','  SHOW option'],
   WRITE:['Writes a line to your terminal.','','Format:','','  WRITE SYS$OUTPUT text'],
   RUN:['Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.','','Format:','','  RUN file-spec'],
   '@':['Executes a command procedure. The file type is .COM unless you give one.','','Format:','','  @file-spec'],

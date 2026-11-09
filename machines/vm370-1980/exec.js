@@ -292,7 +292,7 @@ function after(S){ /* the command's return code, as the EXEC sees it */
 V.execCommand=function(C,S){ /* a command from an EXEC: no implied CP; an unknown name is -3, quietly */
   var w=C[0];
   if(w==='CP')return V.command(C.join(' '),{exec:S});
-  if(V.termWord(w,C.join(' ')))return 0;
+  if(V.termWord(w,C.join(' ')))return V.termRc;
   if(w==='EXEC'||V.find(w,'EXEC','*'))return V.exec(C,{});
   var n=V.cmsName(w);
   if(!n&&!V.find(w,'MODULE','*'))return -3;

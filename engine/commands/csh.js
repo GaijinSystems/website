@@ -285,6 +285,7 @@ builtin(['limit'],function(){
   P.say(['cputime         unlimited','filesize        unlimited','datasize        6144 kbytes','stacksize       512 kbytes','coredumpsize    unlimited','memoryuse       6819 kbytes']);
 });
 function perror(p){return p.csh&&p.perror} /* these came with Berkeley, not with every csh */
+var MAN1=['case','cd','for','if','kill','man','wait','while']; /* 4.3BSD's /usr/man/man1 pages for commands with no program file here: cd.1, kill.1, wait.1 ... and man.1 (/usr/ucb/man) */
 function place(x){
   var d=P.has(P.paths,x)&&P.paths[x];
   return d?d+'/'+x:(P.env.PATH||'').split(':').map(function(o){return (o||'.')+'/'+x}).filter(function(f){var n=P.find(f);return n&&n.type!=='d'&&n.bin})[0];
@@ -298,7 +299,10 @@ P.command({names:['which'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
 }});
 P.command({names:['whereis'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
   man:{what:'locate source, binary, and or manual for program',syn:'whereis name ...',desc:['locates the binary and manual sections for each name given. the supplied names are first stripped of leading pathname components.']},run:function(a){
-  a.forEach(function(x){var f=place(x);P.typeLine(x+':'+(f?' '+f:'')+(P.has(P.man,x)&&!P.own(x)?' /usr/man/man1/'+x+'.1':''))}); /* the terminal's words are not the machine's */
+  a.forEach(function(x){ /* whereis.c: /usr/man's chapters held a page only for a program, and of the shells' own commands only for these; the terminal's words are not the machine's */
+    var f=place(x),p=P.has(P.man,x)&&!P.own(x)&&(f||MAN1.indexOf(x)>=0)?P.man[x]:null,c=p?String(p.sec||1):'';
+    P.typeLine(x+':'+(f?' '+f:'')+(p?' /usr/man/man'+c+'/'+x+'.'+c:''));
+  });
 }});
 P.command({names:['apropos'],path:'/usr/ucb',noHelpFlag:true,enabled:perror,
   man:{what:'locate commands by keyword lookup',syn:'apropos keyword ...',desc:['shows which manual sections contain instances of any of the given keywords in their title. each word is considered separately.']},run:function(a){
