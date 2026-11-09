@@ -72,7 +72,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
     if(n&&!n.prot&&P.isImmutable(n)){P.notPermitted('chmod',x);return}
-    if(!n||n.prot||!P.mayChmod(n)){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
+    if(!n||n.prot||!P.mayChmod(n,x)){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
     var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
     if(/^[0-7]{3}$/.test(a[0])){
       m=t+a[0].split('').map(function(c){c=+c;return (c&4?'r':'-')+(c&2?'w':'-')+(c&1?'x':'-')}).join('');
