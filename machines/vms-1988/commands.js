@@ -186,6 +186,7 @@ verb('create',2,function(a,q){
   }
   P.input([],function(L){writeNew(a[0],L)});
 });
+P.dirClash=function(abs){err('%CREATE-E-DIRNOTCRE, '+dirName(abs)+' directory file not created','-SYSTEM-W-DUPFILENAME, duplicate file name')}; /* at boot: a directory of the guest's that a file of the site's now has the name of */
 verb('edit',2,function(a){ /* EDT, in its line mode */
   if(!a.length){P.typeLine('_File: ');return}
   var r=pick(a[0]);
