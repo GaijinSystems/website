@@ -71,7 +71,7 @@ Phosphor.setup(function(P){
   P.find('/etc',true).kids['os-release']=P.find('/usr/lib/os-release',true);
   sys('/etc/debian_version','f',{body:[D.debian],date:UPG});
   sys('/etc/hostname','f',{body:function(){return [ST.hostname]}});
-  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1\tlocalhost','127.0.1.1\t'+ST.hostname,'','# The following lines are desirable for IPv6 capable hosts','::1     localhost ip6-localhost ip6-loopback','ff02::1 ip6-allnodes','ff02::2 ip6-allrouters']}});
+  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1\tlocalhost','127.0.1.1\t'+ST.hostname+'.gaijin.systems\t'+ST.hostname,'','# The following lines are desirable for IPv6 capable hosts','::1     localhost ip6-localhost ip6-loopback','ff02::1 ip6-allnodes','ff02::2 ip6-allrouters']}});
   sys('/etc/issue','f',{body:['Debian GNU/Linux 13 \\n \\l','']});
   sys('/etc/issue.net','f',{body:['Debian GNU/Linux 13']});
   sys('/etc/shells','f',{body:['# /etc/shells: valid login shells','/bin/sh','/usr/bin/sh','/bin/bash','/usr/bin/bash','/bin/rbash','/usr/bin/rbash','/usr/bin/dash']});
@@ -92,7 +92,7 @@ Phosphor.setup(function(P){
     '# backup box to collect from /var/backups.','# if it has not run, log in on the console as root ('+P.profile.rootPassword+') and run the',
     '# line below by hand. a better password before the auditors come.','SHELL=/bin/sh','PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin','',
     '30 2 * * *\troot\ttar -czf /var/backups/home.tar.gz /home 2>/dev/null']});
-  sys('/etc/motd','f',{body:function(){return MOTD.slice(1).concat([''],P.profile.welcome.slice(WEL))}});
+  sys('/etc/motd','f',{body:function(){return P.profile.welcome.slice(WEL)}});
   sys('/etc/passwd','f',{body:function(){
     return ['root:x:0:0:root:/root:/bin/bash','daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin','bin:x:2:2:bin:/bin:/usr/sbin/nologin','sys:x:3:3:sys:/dev:/usr/sbin/nologin','sync:x:4:65534:sync:/bin:/bin/sync',
       'games:x:5:60:games:/usr/games:/usr/sbin/nologin','man:x:6:12:man:/var/cache/man:/usr/sbin/nologin','lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin','mail:x:8:8:mail:/var/mail:/usr/sbin/nologin',
@@ -174,9 +174,9 @@ Phosphor.setup(function(P){
   sys('/home/'+OWNER,'d',{owner:OWNER,date:P.fileDate,prot:true,mode:'drwx------'});
 
   /* what login prints: the kernel, the message of the day, and then the site's own welcome */
-  var MOTD=['','The programs included with the Debian GNU/Linux system are free software;','the exact distribution terms for each program are described in the','individual files in /usr/share/doc/*/copyright.','',
-    'Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent','permitted by applicable law.'];
-  var head=['Linux '+ST.hostname+' '+D.krel+' '+D.kbuild+' x86_64'].concat(MOTD,['']),WEL=head.length; /* no Last login: a stock Debian 13 does not print one */
+  /* the administrator emptied Debian's stock message of the day (its licence and warranty lines), so login prints
+     the kernel line and the site's welcome, and /etc/motd holds just the welcome */
+  var head=['Linux '+ST.hostname+' '+D.krel+' '+D.kbuild+' x86_64',''],WEL=head.length; /* no Last login: a stock Debian 13 does not print one */
   P.profile.welcome=head.concat(P.profile.welcome);
 });
 

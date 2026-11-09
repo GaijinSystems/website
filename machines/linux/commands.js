@@ -782,11 +782,13 @@ cmd('uname','/usr/bin','print system information','uname [OPTION]...',[
   });
   P.typeLine(R.join(' '));
 });
-cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-i|-I|-f|-s] [name]','prints the name of this machine. -I prints its addresses, -i the address its name resolves to. only root may change it.',function(a){
+cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-i|-I|-f|-d|-s] [name]','prints the name of this machine. -f prints its full name, -d its domain, -I its addresses, -i the address its name resolves to. only root may change it.',function(a){
   var o=opts(a);
   if(o.ops.length){err('hostname: you must be root to change the host name');return}
   if(o.has('I','all-ip-addresses'))P.typeLine(D.ip4+' '+D.ip6+' ');
   else if(o.has('i','ip-address'))P.typeLine('127.0.1.1');
+  else if(o.has('f','fqdn')||o.has('A','all-fqdns'))P.typeLine(P.st.hostname+'.gaijin.systems'); /* as /etc/hosts names it */
+  else if(o.has('d','domain'))P.typeLine('gaijin.systems');
   else P.typeLine(P.st.hostname);
 });
 cmd('hostnamectl','/usr/bin','control the system hostname','hostnamectl [OPTIONS...] COMMAND ...','with no command, describes the machine: its name, what it runs on, and the kernel.',function(a){

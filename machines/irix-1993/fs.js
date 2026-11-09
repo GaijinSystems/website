@@ -16,7 +16,7 @@ Phosphor.setup(function(P){
   sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[3,2]});
   sys('/dev/console','c',{mode:'crw--w--w-',dev:[0,0]});
   sys('/etc/motd','f',{body:P.profile.welcome});
-  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1    localhost','192.48.153.20 '+ST.hostname]}});
+  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1    localhost','192.48.153.20 '+ST.hostname+'.gaijin.systems '+ST.hostname]}});
   sys('/etc/passwd','f',{body:function(){
     return ['root::0:0:Super-User:/:/bin/csh','guest::998:998:Guest Account:/usr/people/guest:/bin/csh','4Dgifts:*:999:998:4Dgifts Account:/usr/people/4Dgifts:/bin/csh','demos:*:993:997:Demonstration User:/usr/demos:/bin/csh',
       OWNER+':Zz8qT3mXcE0aU:100:20::/usr/people/'+OWNER+':/bin/csh'];
