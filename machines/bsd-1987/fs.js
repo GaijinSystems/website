@@ -25,7 +25,7 @@ Phosphor.setup(function(P){
   sys('/dev/null','c',{mode:'crw-rw-rw-',dev:[3,2]});
   sys('/dev/kmem','c',{mode:'cr--r-----',dev:[3,1],prot:true});
   sys('/etc/hosts','f',{body:function(){
-    var L=['127.0.0.1    localhost '+ST.hostname+'.gaijin.systems '+ST.hostname];
+    var L=['127.0.0.1    localhost '+(ST.domain?ST.hostname+'.'+ST.domain+' ':'')+ST.hostname];
     if(ST.site)L.push('             '+ST.site+'   (somewhere out there)');
     return L;
   }});

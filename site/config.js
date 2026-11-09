@@ -12,6 +12,7 @@ machine:   linux
 machines:  linux, bbs, c128, apple2, dos, trs80
 name:      gaijin
 email:     support@gaijin.systems
+domain:    gaijin.systems
 title:     Gaijin Systems
 speed:     1.25
 uppercase: no

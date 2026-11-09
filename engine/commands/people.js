@@ -57,7 +57,7 @@ P.command({names:['source'],core:true,terminal:true,help:'where to get this term
       'this terminal is free software (gnu agpl v3 or later).',
       'the source is at:',
       [url,'',{href:url}]
-    ].concat(P.profile.year===new Date().getFullYear()?[]:[['you will need a modem from the future.','dim']])); /* not on a machine of today (Debian), which has the network it needs */
+    ].concat(P.profile.live?[]:[['you will need a modem from the future.','dim']])); /* not on a machine of today (Debian), which has the network it needs */
   }});
 
 })(window.Phosphor);

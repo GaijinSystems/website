@@ -45,6 +45,7 @@ function bre(s){
 }
 
 function list(v){return v.split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean)} /* a, B ,c -> [a,b,c] */
+function paths(v){return v.split(',').map(function(x){return x.trim()}).filter(Boolean)} /* the same, keeping case: file names */
 function unquote(s){return s.replace(/^(['"])((?:(?!\1).)*)\1$/,'$2')} /* one quoted string only: "a" ; "b" keeps its quotes */
 function setAlias(L,from,to,n){ /* a new alias replaces any with the same words. n: csh's count of the words it was given */
   var k=from.join(' ');
@@ -155,7 +156,7 @@ var SITE=(location.hostname||'').toLowerCase(); /* the real server this page cam
 var PROFILE=(function(){
   var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],guestFiles:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
     cord:{turns:7,desktop:0,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
-    title:'',badge:'PHOSPHOR-9',year:CAT&&CAT.year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
+    title:'',badge:'PHOSPHOR-9',year:CAT&&CAT.year||1979,installed:'',user:'guest',hostname:'',domain:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',effects:'auto',
     welcome:null,about:[],mail:[],commands:[],files:[],dirs:[],man:Object.create(null),aliases:[],sec:Object.create(null),raw:Object.create(null),problems:[]};
   var secs=[];
@@ -173,8 +174,8 @@ var PROFILE=(function(){
     else if(k==='persist')P.persist=yes(v);             /* no: the visitor's file changes go at a reload, as a reboot */
     else if(k==='teletype')P.teletype=yes(v);           /* a Teletype Model 33 instead of the glass, where the machine has one (V7) */
     else if(k==='effects'){var fx=v.toLowerCase();if(/^(auto|full|lite)$/.test(fx))P.effects=fx;else P.problems.push('effects: auto, full or lite')}
-    else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
-    else if(k==='guest files')P.guestFiles=P.guestFiles.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean)); /* the guest's own: the machine's shell startup files, and the site's choice */
+    else if(k==='protected')P.protected=P.protected.concat(paths(v));
+    else if(k==='guest files')P.guestFiles=P.guestFiles.concat(paths(v)); /* the guest's own: the machine's shell startup files, and the site's choice */
     else if(k==='core mode'){if(/^-[-r][-w]-[-r][-w]-[-r][-w]-$/.test(v))P.coreMode=v} /* a core dump's mode, as the kernel made it (Linux: -rw-------) */
     else if(k==='immutable')P.immutable=yes(v);           /* the site owner's files in the home carry Linux's immutable attribute (chattr +i) */
     else if(k==='not found')P.notFound=v;
@@ -200,6 +201,7 @@ var PROFILE=(function(){
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
     else if(k==='user'){if(LOGIN_NAME.test(v))P.user=v.toLowerCase()}
     else if(k==='hostname')P.hostname=v.toLowerCase();
+    else if(k==='domain')P.domain=v.toLowerCase();       /* the machine's domain: its full name is hostname.domain */
     else if(k==='source'){ /* becomes a link: same rule as links in the text */
       if(!v||/^https?:\/\/\S+$/i.test(v))P.source=v;
       else P.problems.push('source: must start with http:// or https://');
@@ -225,6 +227,7 @@ var PROFILE=(function(){
     });
   });
   P.teletype=!!(P.teletype&&CAT&&CAT.teletype); /* only a machine that had one offers it: the rest ignore it */
+  P.live=P.year===new Date().getFullYear(); /* a machine of today: its clock is the visitor's own (Debian) */
   /* who the machine is, worked out once the settings are known */
   P.owner=P.name.split(/\s+/)[0].replace(/[^a-z0-9]/gi,'').slice(0,8).toLowerCase()||'operator';
   P.host=P.hostname||(SITE.replace(/^www\./,'').split('.')[0]||P.owner).replace(/[^a-z0-9-]/g,'').slice(0,8)||'phosphor';
@@ -241,9 +244,8 @@ var PROFILE=(function(){
     return L;
   }
   function lines(L){
-    var live=P.year===new Date().getFullYear(); /* a machine whose clock is the visitor's own (Debian) */
     return trimBlank(L).map(function(l){
-      if(live)l=l.replace(/~~([^~]+?)~~ (\S*\{year\}\S*)/g,function(m,real,era){ /* ~~real date~~ {year} date: here the real one alone, unstruck, ending where the pair ended */
+      if(P.live)l=l.replace(/~~([^~]+?)~~ (\S*\{year\}\S*)/g,function(m,real,era){ /* ~~real date~~ {year} date: here the real one alone, unstruck, ending where the pair ended */
         return ' '.repeat(fill(era).length+1)+real;
       });
       l=fill(l);
@@ -940,7 +942,7 @@ function input(names,done){ /* the lines a command works on: named files, else i
 /* ---------- shell state ---------- */
 var OWNER=PROFILE.owner;
 var HOME0=PROFILE.home||PROFILE.homes+'/'+PROFILE.user;
-var ST={owner:OWNER,user:PROFILE.user,home:HOME0,cwd:HOME0,site:SITE,hostname:PROFILE.host,login:now()};
+var ST={owner:OWNER,user:PROFILE.user,home:HOME0,cwd:HOME0,site:SITE,hostname:PROFILE.host,domain:PROFILE.domain,login:now()};
 var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MONS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function p2(x){return String(x).padStart(2,'0')}
 function now(){ /* the time of day, moved to the machine's year (February 29 becomes the 28th in a non-leap year) */
@@ -1036,16 +1038,17 @@ function mayAlter(n){ /* may who is logged in change, replace or remove this fil
   if(ATTRS)return !n.ro;
   return n.owner===ST.user||modeOf(n).charAt(8)==='w';
 }
+function isImmutable(n){return IMM&&!!n.ro} /* does this file carry Linux's immutable attribute */
 function immutable(abs){ /* is it Linux's immutable attribute that stops a change to abs: on the file, or on the folder it is in */
   if(!IMM)return false;
-  var ex=find(abs,true),dir=find(dirOf(abs),true);
+  var dir=find(dirOf(abs),true),key=abs.slice(abs.lastIndexOf('/')+1);
+  var ex=abs!==norm(abs)?find(abs,true):dir&&dir.type==='d'&&has(dir.kids,key)?dir.kids[key]:null; /* the entry in its folder, unless abs has . or .. in it */
   return !!(ex&&ex!==ROOT&&ex.ro||dir&&dir.ro);
 }
 function notPermitted(who,x,to){ /* EPERM, in the words of GNU's tools and bash: what the immutable attribute gets */
-  var q=function(s){return "'"+s+"'"},E=': Operation not permitted';
-  typeLine(who==='mv'?'mv: cannot move '+q(x)+' to '+q(to)+E:who==='cp'?'cp: cannot create regular file '+q(x)+E:who==='touch'?'touch: cannot touch '+q(x)+E:
-    who==='chmod'?'chmod: changing permissions of '+q(x)+E:who==='rmdir'?'rmdir: failed to remove '+q(x)+E:who==='mkdir'?'mkdir: cannot create directory '+q(x)+E:
-    who==='rm'?'rm: cannot remove '+q(x)+E:who==='ln'?'ln: failed to create hard link '+q(x)+' => '+q(to)+E:(who||'bash')+': '+x+E,'err');
+  var q="'"+x+"'",t="'"+to+"'",W={mv:'cannot move '+q+' to '+t,cp:'cannot create regular file '+q,touch:'cannot touch '+q,chmod:'changing permissions of '+q,
+    rmdir:'failed to remove '+q,mkdir:'cannot create directory '+q,rm:'cannot remove '+q,ln:'failed to create hard link '+q+' => '+t};
+  typeLine((who||'bash')+': '+(has(W,who)?W[who]:x)+': Operation not permitted','err');
 }
 function canWrite(abs){ /* your home folder, or a folder anyone may write in; nothing else, and nothing locked or someone else's */
   var up=dirOf(abs),dir=find(up),ex=find(abs,true);
@@ -1295,7 +1298,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,dirOf:dirOf,
   envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
   piped:function(){return !!SINK},bre:bre,INT:INT,
-  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
+  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,mayPut:function(dir){return mayPut(pathOf(dir),dir)},isImmutable:isImmutable,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
   status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){if(!SUB)LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},teletype:function(){return TELE.on?TELE:null}, /* the Teletype Model 33's line: lcase, speed */
   teletypeMode:function(on){ /* the teletype command: null where it is not offered; on or off, remembered in this browser */
