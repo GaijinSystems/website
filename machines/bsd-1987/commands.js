@@ -13,7 +13,7 @@ P.command({names:['wargames'],path:'/usr/games',noHelpFlag:true,run:function(){
   });
 }});
 P.command({names:['tunefs'],path:'/etc',
-  man:{what:'tune up an existing file system',syn:'tunefs tuneup-options special | filesys',desc:[
+  man:{what:'tune up an existing file system',sec:8,syn:'tunefs tuneup-options special | filesys',desc:[
     'changes the dynamic parameters of a file system, which affect how it lays out blocks. the parameters which are to be changed are indicated by the flags given below:',
     '-a maxcontig   the maximum number of contiguous blocks that will be laid out before forcing a rotational delay (see -d below). the default value is one.',
     '-d rotdelay   the expected time (in milliseconds) to service a transfer completion interrupt and initiate a new transfer on the same disk.',

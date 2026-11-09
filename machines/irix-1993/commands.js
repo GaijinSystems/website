@@ -44,8 +44,12 @@ cmd('ps','process status','ps [ -ef ]','lists your processes. -e lists everyone\
   if(/f/.test(f))P.say(['     UID   PID  PPID  C    STIME TTY      TIME COMMAND'].concat(R.map(function(r){return r[0].padStart(8)+String(r[1]).padStart(6)+String(r[2]).padStart(6)+'  0 '+P.short(P.st.login).slice(7).padStart(8)+' '+tty(r)+r[3]})));
   else P.say(['   PID TTY      TIME COMD'].concat(R.map(function(r){return String(r[1]).padStart(6)+' '+tty(r)+r[3].split(' ')[0].replace(/^.*\//,'')})));
 },'/bin');
-cmd('df','disk free','df [ -k ]','shows how full each disk is.',function(){
-  P.say(['Filesystem          Type  blocks     use   avail  %use  Mounted on','/dev/root            efs  1900168 1247112  653056   66%  /','/dev/usr             efs  3808272 3056120  752152   80%  /usr']);
+cmd('df','disk free','df [ -k ]',['shows how full each disk is, in blocks of 512 bytes.','','-k   give the sizes in kilobytes instead.'],function(a){
+  var k=a.some(function(x){return /^-\w*k/.test(x)}),D=[['/dev/root',1900168,1247112,653056,'66%','/'],['/dev/usr',3808272,3056120,752152,'80%','/usr']];
+  P.say(['Filesystem          Type  '+(k?'kbytes':'blocks')+'     use   avail  %use  Mounted on'].concat(D.map(function(d){
+    function n(x,w){return String(k?x/2:x).padStart(w)}
+    return d[0].padEnd(21)+'efs'+n(d[1],9)+n(d[2],8)+n(d[3],8)+d[4].padStart(6)+'  '+d[5];
+  })));
 },'/bin');
 cmd('gr_osview','graphical system monitor','gr_osview','shows what the machine is doing, in pictures.',function(){
   P.say(['gr_osview: cannot open display: this is a serial line.']);
@@ -134,4 +138,13 @@ P.command({names:['fsn'],help:'browse the files in pictures',path:'/usr/sbin',
     if(P.piped()){P.typeLine("fsn: can't open display",'err');return}
     P.program(Fsn);
   }});
+/* /bin/sh is System V's Bourne shell, not csh: sh at the terminal starts one, which exit or ^D ends; sh file and sh -c run theirs with it */
+P.setup(function(){
+  P.bourne.on=true;
+  var sh=P.cmds.sh;
+  if(sh)P.cmds.sh=function(a,raw,w){
+    if(!a.length&&!P.stdin()&&!P.subshell()&&!P.inScript()){P.bourne.start();return}
+    P.bourne.run(function(){sh(a,raw,w)});
+  };
+});
 })(window.Phosphor);

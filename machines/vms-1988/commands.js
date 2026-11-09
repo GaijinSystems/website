@@ -83,7 +83,7 @@ function writeNew(spec,lines){ /* a new version, never over the old one */
 
 /* the verbs, and how short each may be */
 var V={};
-function verb(names,min,run){V[names]={min:min,run:run}}
+function verb(names,min,run,quals){V[names]={min:min,run:run,quals:quals||[]}} /* quals: VMS's qualifiers for the verb (any other is %DCL-W-IVQUAL; those not done here change nothing), or a function of its parameters that says */
 function find(w){
   w=w.toLowerCase();
   var k=Object.keys(V).filter(function(n){return abbr(w,n,V[n].min)});
@@ -100,17 +100,28 @@ function split(words){ /* words, with qualifiers apart: DIR/SIZE *.COM */
 }
 function has(q,name){return q.some(function(x){return name.indexOf(x.split('=')[0])===0})}
 
+function plural(n,w){return n+' '+w+(n===1?'':'s')}
 verb('directory',3,function(a,q){
-  var specs=a.length?a:['*.*;*'],any=false;
+  /* a list, A.TXT,B.TXT: a spec with no directory takes the one before it (RMS's sticky default), and the files of
+     specs in a row in one directory are listed under one heading, with a grand total when there is more than one */
+  var specs=a.length?a.join(',').split(',').filter(Boolean):['*.*;*'],any=false,dirPart='',groups=[],size=has(q,'size'),date=has(q,'date');
   specs.forEach(function(spec){
+    var m=spec.match(/^([a-z0-9$]+:)?\[[^\]]*\]/i);
+    if(m)dirPart=m[0];else if(dirPart)spec=dirPart+spec.replace(/^[a-z0-9$]+:/i,'');
     var S=parse(spec),dir=folder(S.abs);
-    if(!dir){err('%DIRECT-E-OPENIN, error opening '+fullSpec(S)+' as input','-RMS-E-DNF, directory not found');return}
+    if(!dir){err('%DIRECT-E-OPENIN, error opening '+fullSpec(S)+' as input','-RMS-E-DNF, directory not found');groups.push(null);return}
     var L=matches(S,dir,true);
     L=S.ver===null&&a.length?L:versions(L,S.ver===null?{ver:'*'}:S);
     if(!L.length)return;
     any=true;
-    var out=['','Directory '+dirName(S.abs),''],size=has(q,'size'),date=has(q,'date'),row=[],used=0;
-    L.forEach(function(e){
+    var g=groups[groups.length-1];
+    if(g&&g.abs===S.abs)g.L=g.L.concat(L);else groups.push({abs:S.abs,L:L});
+  });
+  var dirs=0,files=0,blocksAll=0;
+  groups.forEach(function(g){
+    if(!g)return;
+    var out=['','Directory '+dirName(g.abs),''],row=[],used=0;
+    g.L.forEach(function(e){
       var blocks=Math.ceil(P.fsize(e.node)/512)||1,name=show(e);
       used+=blocks;
       if(size||date){
@@ -120,11 +131,13 @@ verb('directory',3,function(a,q){
       row.push(name.padEnd(19));
     });
     P.chunk(row,3).forEach(function(r){out.push(r.join(' ').trimEnd())});
-    out.push('','Total of '+L.length+' file'+(L.length===1?'':'s')+(size?', '+used+' block'+(used===1?'':'s'):'')+'.');
+    out.push('','Total of '+plural(g.L.length,'file')+(size?', '+plural(used,'block'):'')+'.');
     say(out);
+    dirs++;files+=g.L.length;blocksAll+=used;
   });
-  if(!any&&specs.every(function(s){return folder(parse(s).abs)}))err('%DIRECT-W-NOFILES, no files found');
-});
+  if(dirs>1)say(['','Grand total of '+dirs+' directories, '+plural(files,'file')+(size?', '+plural(blocksAll,'block'):'')+'.']);
+  if(!any&&groups.indexOf(null)<0)err('%DIRECT-W-NOFILES, no files found');
+},['size','date','acl','backup','before','by_owner','created','exclude','expired','modified','since','brief','columns','file_id','full','grand_total','heading','output','owner','printer','protection','security','select','total','trailing','versions','width']); /* each verb's list: the VMS 5.0 DCL Dictionary's */
 verb('type',2,function(a){
   if(!a.length){P.typeLine('_File: ');return}
   a.forEach(function(spec){
@@ -134,14 +147,14 @@ verb('type',2,function(a){
     if(r.e.node.bin){err('%TYPE-W-READERR, error reading '+fullSpec(r.S),'-RMS-F-RTB, record too large for user\'s buffer');return}
     say(P.text(r.e.node));
   });
-});
+},['backup','before','by_owner','confirm','created','exclude','expired','modified','since','output','page']);
 verb('copy',2,function(a){
   if(a.length<2){P.typeLine('_From: ');return}
   var r=pick(a[0]);
   if(!r.e){err('%COPY-E-SEARCHFAIL, error searching for '+fullSpec(r.S),FNF);return}
   if(r.e.node.prot){err('%COPY-E-OPENIN, error opening '+fullSpec(r.S)+' as input',PRV);return}
   writeNew(from(parse(a[1]),r.e),P.text(r.e.node));
-});
+},['backup','before','by_owner','confirm','created','exclude','expired','modified','since','allocation','concatenate','contiguous','extension','log','overlay','protection','read_check','replace','truncate','volume','write_check']);
 verb('rename',3,function(a){
   if(a.length<2){P.typeLine('_From: ');return}
   var r=pick(a[0]);
@@ -152,8 +165,16 @@ verb('rename',3,function(a){
   delete r.dir.kids[r.e.key];
   n.name=k;n.parent=dir;dir.kids[k]=n;
   delete n.store; /* no longer the EMPSAVE.DAT that stands for the saved game */
-});
-verb('delete',3,function(a){
+},['backup','before','by_owner','confirm','created','exclude','expired','modified','since','log','new_version']);
+verb('delete',3,function(a,q){
+  if(has(q,'symbol')){ /* DELETE/SYMBOL [/LOCAL|/GLOBAL] name, or /ALL */
+    var T=SYM[has(q,'global')?'global':'local'];
+    if(has(q,'all')){Object.keys(T).forEach(function(k){delete T[k]});return}
+    if(!a.length){need('DELETE/SYMBOL','_Symbol: ');return}
+    if(!P.has(T,up(a[0]))){symErr(a[0]);return}
+    delete T[up(a[0])];return;
+  }
+  if(has(q,'entry')||has(q,'key'))return; /* no queue entries and no key definitions here */
   if(!a.length){P.typeLine('_File: ');return}
   a.forEach(function(spec){
     var S=parse(spec);
@@ -168,14 +189,14 @@ verb('delete',3,function(a){
       gone(e.node);delete dir.kids[e.key];
     });
   });
-});
+},['backup','before','by_owner','confirm','created','exclude','expired','modified','since','erase','log','entry','symbol','key','all','global','local']);
 verb('purge',2,function(a){ /* keep only the newest of each */
   var S=parse(a[0]||'*.*'),dir=folder(S.abs);
   if(!dir)return;
   var keep={},L=matches(S,dir);
   latest(L).forEach(function(e){keep[e.key]=true});
   L.forEach(function(e){if(!keep[e.key]&&e.node.type!=='d'&&!e.node.prot&&P.canWrite(P.pathOf(e.node))){gone(e.node);delete dir.kids[e.key]}});
-});
+},['backup','before','by_owner','confirm','created','exclude','expired','modified','since','erase','keep','log']);
 verb('create',2,function(a,q){
   if(!a.length){P.typeLine('_File: ');return}
   if(has(q,'directory')){
@@ -185,7 +206,7 @@ verb('create',2,function(a,q){
     return;
   }
   P.input([],function(L){writeNew(a[0],L)});
-});
+},['directory','log','owner_uic','protection','volume','version_limit']);
 P.dirClash=function(abs){err('%CREATE-E-DIRNOTCRE, '+dirName(abs)+' directory file not created','-SYSTEM-W-DUPFILENAME, duplicate file name')}; /* at boot: a directory of the guest's that a file of the site's now has the name of */
 verb('edit',2,function(a){ /* EDT, in its line mode */
   if(!a.length){P.typeLine('_File: ');return}
@@ -212,8 +233,13 @@ verb('edit',2,function(a){ /* EDT, in its line mode */
       loop();
     });
   })();
-});
+},['edt','tpu','command','journal','output','read_only','recover','create']);
+function need(word,ask){ /* a verb with its parameter left off: DCL asks for it, till it gets it; a command procedure cannot be asked */
+  if(P.inScript()){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
+  (function again(){P.ask(ask,function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}P.fallback(word,word+' '+l.trim())},true)})();
+}
 verb('set',3,function(a,q,raw){
+  if(!a.length){need('SET','_What: ');return}
   var w=(a[0]||'').toLowerCase().split('=')[0],val=(a[0]||'').indexOf('=')>0?a[0].slice(a[0].indexOf('=')+1):a[1]; /* SET PROMPT="$ ", SET DEF=[GAMES] */
   if(abbr(w,'default',3)){
     var S=parse(val||'[]'),dir=folder(S.abs);
@@ -222,16 +248,16 @@ verb('set',3,function(a,q,raw){
     return;
   }
   if(abbr(w,'password',3)){P.typeLine('%SET-E-NOPASSWORD, your account does not allow it');return}
-  if(abbr(w,'terminal',3)||abbr(w,'prompt',3)||abbr(w,'verify',0)||abbr(w,'noverify',0))return;
+  if(abbr(w,'terminal',3)||abbr(w,'prompt',3)||abbr(w,'verify',2)||abbr(w,'noverify',4))return;
   err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0]||'')+'\\');
-});
+},function(a){var w=(a[0]||'').toLowerCase().split('=')[0];return abbr(w,'terminal',3)?null:abbr(w,'prompt',3)?['carriage_control']:abbr(w,'password',3)?['generate','secondary','system']:[]}); /* SET TERMINAL's own qualifiers are taken, and change nothing here */
 function now(){return P.now()}
 function timeStr(d){return stamp(d)+':'+P.p2(d.getSeconds())}
 function nodeName(){return up(P.st.hostname)}
-verb('show',2,function(a){
+verb('show',2,function(a,q){
   var w=(a[0]||'').toLowerCase(),S=P.st,me=up(S.user);
   function is(n,min){return abbr(w,n,min)}
-  if(!w){P.typeLine('_What: ');return}
+  if(!w){need('SHOW','_What: ');return}
   if(is('time',2)||is('daytime',2)){P.typeLine('  '+timeStr(now()));return}
   if(is('default',3)){P.typeLine('  '+dirName(S.cwd));return}
   if(is('users',1)){
@@ -259,20 +285,27 @@ verb('show',2,function(a){
   if(is('memory',1)){say(['              System Memory Resources on '+timeStr(now()),'','Physical Memory Usage (pages):     Total        Free      In Use    Modified','  Main Memory (8.00Mb)             16384        9120        6912         352']);return}
   if(is('device',3)){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSRL4      41822   112   1']);return}
   if(is('quota',1)){P.typeLine('User ['+me+'] has 412 blocks used, 9588 available, of 10000 authorized');return}
-  if(is('symbol',2)){err('%DCL-W-UNDSYM, undefined symbol - check validity and spelling');return}
+  if(is('symbol',2)){showSymbol(a[1],q);return}
   if(is('terminal',2)){say(['Terminal: _TXA2:      Device_Type: VT100        Owner: '+me,'','   Input:    9600      LFfill:  0      Width:  80      Parity: None','   Output:   9600      CRfill:  0      Page:   24']);return}
   err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0])+'\\');
+},function(a){ /* each SHOW keyword's own; an unknown keyword is IVKEYW, not IVQUAL */
+  var w=(a[0]||'').toLowerCase(),Q=[['symbol',2,['all','global','local','log']],['users',1,['output']],['system',2,['batch','full','network','output','process','subprocess']],
+    ['process',1,['accounting','all','continuous','identification','memory','output','privileges','quotas','subprocesses']],['memory',1,['all','files','full','output','physical_pages','pool','slots']],
+    ['devices',3,['allocated','brief','files','full','mounted','output','system','windows']],['quota',1,['disk','user']],['terminal',2,['output','permanent']],['time',2,[]],['daytime',2,[]],['default',3,[]]];
+  for(var i=0;i<Q.length;i++)if(abbr(w,Q[i][0],Q[i][1]))return Q[i][2];
+  return null;
 });
 verb('write',2,function(a,q,raw){
   var m=raw.match(/sys\$output\s+(.*)$/i);
   if(!m){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
   P.typeLine(m[1].replace(/^"(.*)"$/,'$1'));
-});
+},['symbol','error','update']);
 verb('exit',3,function(){if(P.inScript())P.loop('exit')}); /* the end of a command procedure; at the prompt, nothing */
 verb('logout',2,function(a,q){
   P.say(['  '+up(P.st.user)+'      logged out at '+timeStr(now())]);
+  SYM={local:{},global:{}}; /* the process's symbols go with it */
   P.logout();
-});
+},['brief','full','hangup']);
 verb('run',2,function(a){
   if(!a[0]){(function again(){P.ask('_File: ',function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}V.run.run([l.trim()],[],l.trim())},true)})();return} /* DCL asks for what it needs, until it gets it */
   if(/[*%]/.test(a[0])){err('%DCL-W-ACTIMAGE, error activating image '+up(a[0]),'-RMS-F-WLD, invalid wildcard operation');return}
@@ -284,9 +317,106 @@ verb('run',2,function(a){
     return;
   }
   err('%DCL-W-ACTIMAGE, error activating image '+fullSpec(r.S),FNF);
-});
+},['debug','accounting','ast_limit','authorize','buffer_limit','delay','detached','dump','enqueue_limit','error','extent','file_limit','input','interval','io_buffered','io_direct','job_table_quota','mailbox','maximum_working_set','output','page_file','priority','privileges','process_name','queue_limit','resource_wait','schedule','service_failure','subprocess_limit','swapping','time_limit','uic','working_set']); /* RUN (Image)'s /DEBUG, and RUN (Process)'s, which start no process here */
 
-P.symbols=true; /* NAME = value and NAME :== value define a symbol, whatever NAME is: the engine takes them without a word */
+/* symbols: NAME = expression and NAME := string define a local one, == and :== a global one; SHOW SYMBOL shows them.
+   An expression here is integers, "strings" and symbols, with + - * / and parentheses */
+var SYM={local:{},global:{}};
+function symErr(name){err('%DCL-W-UNDSYM, undefined symbol - check validity and spelling',' \\'+up(name)+'\\')}
+function lookupSym(name,which){
+  var n=up(name);
+  if(which!=='global'&&P.has(SYM.local,n))return {v:SYM.local[n],g:false};
+  if(which!=='local'&&P.has(SYM.global,n))return {v:SYM.global[n],g:true};
+  return null;
+}
+function num(v){ /* a string where a number is wanted: its digits, or true (T or Y) or false */
+  if(typeof v==='number')return v;
+  var t=v.trim();
+  return /^[-+]?\d+$/.test(t)?parseInt(t,10)|0:/^[TY]/i.test(t)?1:0;
+}
+function evaluate(src){ /* the value, or undefined after saying why */
+  var T=[],i=0,m,re=/\s*(?:(\d+)|"((?:[^"]|"")*)"|([A-Za-z_$][\w$]*)|([-+*\/()]))/y;
+  src=src.replace(/^((?:[^"!]|"(?:[^"]|"")*")*)!.*$/,'$1'); /* a comment, outside quotes */
+  while(!/^\s*$/.test(src.slice(i))){
+    re.lastIndex=i;m=re.exec(src);
+    if(!m)return bad();
+    T.push(m[1]!==undefined?{n:parseInt(m[1],10)|0}:m[2]!==undefined?{s:m[2].replace(/""/g,'"')}:m[3]!==undefined?{id:m[3]}:{op:m[4]});
+    i=re.lastIndex;
+  }
+  function bad(){err('%DCL-W-EXPSYN, invalid expression syntax - check operators and operands');return undefined}
+  var k=0,fail=false;
+  function primary(){
+    var t=T[k++];
+    if(!t){fail=true;return 0}
+    if(t.n!==undefined)return t.n;
+    if(t.s!==undefined)return t.s;
+    if(t.id!==undefined){var y=lookupSym(t.id);if(!y){if(!fail)symErr(t.id);fail='said';return 0}return y.v}
+    if(t.op==='('){var v=sum();if(!T[k]||T[k++].op!==')')fail=fail||true;return v}
+    if(t.op==='-')return -num(primary())|0;
+    if(t.op==='+')return num(primary());
+    fail=fail||true;return 0;
+  }
+  function product(){
+    var v=primary();
+    while(T[k]&&(T[k].op==='*'||T[k].op==='/')){
+      var op=T[k++].op,w=num(primary());v=num(v);
+      if(op==='/'&&w===0){if(!fail)err('%DCL-W-DIVBY0, division by zero');fail='said';return 0}
+      v=op==='*'?Math.imul(v,w):(v/w)|0;
+    }
+    return v;
+  }
+  function sum(){
+    var v=product();
+    while(T[k]&&(T[k].op==='+'||T[k].op==='-')){
+      var op=T[k++].op,w=product();
+      if(typeof v==='string'&&typeof w==='string')v=op==='+'?v+w:v.replace(w,'');
+      else v=op==='+'?(num(v)+num(w))|0:(num(v)-num(w))|0;
+    }
+    return v;
+  }
+  if(!T.length)return '';
+  var v=sum();
+  if(fail==='said')return undefined;
+  if(fail||k<T.length)return bad();
+  return v;
+}
+function literal(src){ /* NAME := string: capitals and single blanks, but what is in quotes is kept as it is */
+  var o='',q=false;
+  src=src.trim();
+  for(var i=0;i<src.length;i++){
+    var c=src.charAt(i);
+    if(c==='"'){if(q&&src.charAt(i+1)==='"'){o+='"';i++;continue}q=!q;continue}
+    if(!q&&c==='!')break;
+    if(!q&&/\s/.test(c)){if(!/ $/.test(o))o+=' ';continue}
+    o+=q?c:c.toUpperCase();
+  }
+  return o.trim();
+}
+function assign(raw){ /* true if raw defines a symbol */
+  var m=raw.match(/^\$?\s*([A-Za-z_$][\w$]*)\s*(:==|:=|==|=)\s*([\s\S]*)$/);
+  if(!m)return false;
+  var v=m[2].charAt(0)===':'?literal(m[3]):evaluate(m[3]);
+  if(v!==undefined)SYM[/==$/.test(m[2])?'global':'local'][up(m[1])]=v;
+  return true;
+}
+P.symbols=function(line){return assign(line.trim())}; /* the engine gives a line here first: MORIA :== RUN MORIA defines a symbol, though MORIA is a command */
+function symLine(name,y){
+  var v=y.v,n=v>>>0;
+  return '  '+up(name)+' '+(y.g?'==':'=')+' '+(typeof v==='number'?v+'   Hex = '+n.toString(16).toUpperCase().padStart(8,'0')+'  Octal = '+n.toString(8).padStart(11,'0'):'"'+v.replace(/"/g,'""')+'"');
+}
+function showSymbol(name,q){
+  var which=has(q,'global')?'global':has(q,'local')?'local':null;
+  if(has(q,'all')){var T=SYM[which||'local'];say(Object.keys(T).sort().map(function(k){return symLine(k,{v:T[k],g:which==='global'})}));return}
+  if(!name){need('SHOW SYMBOL','_Symbol: ');return}
+  var y=lookupSym(name,which);
+  if(!y){symErr(name);return}
+  P.typeLine(symLine(name,y));
+}
+function quals(raw){ /* the qualifiers typed, what is in quotes left out */
+  var q=[];
+  raw.replace(/"(?:[^"]|"")*"/g,' ').trim().split(/\s+/).forEach(function(w){w.split('/').slice(1).forEach(function(x){if(x)q.push(x)})});
+  return q;
+}
 /* a command: a verb from the table, @file, or a question for the operator */
 P.fallback=function(word,raw){
   var W=raw.trim().split(/\s+/);
@@ -298,20 +428,22 @@ P.fallback=function(word,raw){
     P.runScript(P.text(r.e.node));
     return true;
   }
+  if(assign(raw.trim()))return true;
   var slash=W[0].indexOf('/'),name=slash>0?W[0].slice(0,slash):W[0],v=find(name);
   if(!v){
     err('%DCL-W-IVVERB, unrecognized command verb - check validity and spelling',' \\'+up(name)+'\\');
     return true;
   }
   var rest=W.slice(0);rest[0]=slash>0?W[0].slice(slash):'';
-  var parts=split(rest.filter(Boolean));
+  var parts=split(rest.filter(Boolean)),ok=typeof v.quals==='function'?v.quals(parts.a):v.quals,badQ=ok&&quals(raw.trim().replace(/^\$\s*/,'')).filter(function(x){var k=x.split('=')[0].toLowerCase();return !ok.some(function(n){return n.indexOf(k)===0||k.length>2&&k.slice(0,2)==='no'&&n.indexOf(k.slice(2))===0})})[0];
+  if(badQ){err('%DCL-W-IVQUAL, unrecognized qualifier - check validity, spelling, and placement',' \\'+up(badQ.split('=')[0])+'\\');return true}
   P.status(0);
   v.run(parts.a,parts.q,raw);
   return true;
 };
 /* real DCL HELP stands in for the terminal's: a list, and the topic you ask for */
 var TOPICS={ /* each: its lines, as HELP prints them */
-  DIRECTORY:['Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*.','','Format:','','  DIRECTORY [file-spec ...]','',
+  DIRECTORY:['Lists files. DIR *.COM, DIR/SIZE, DIR/DATE, DIR *.*;*, DIR A.TXT,B.TXT.','','Format:','','  DIRECTORY [file-spec[,...]]','',
     '/DATE      Includes the creation date of each file.','/SIZE      Includes the size of each file, in blocks used.'],
   TYPE:['Prints a file. TYPE README.TXT.','','Format:','','  TYPE file-spec ...'],
   COPY:['COPY from to. Makes a new version of to.','','Format:','','  COPY input-file-spec output-file-spec'],
@@ -323,7 +455,7 @@ var TOPICS={ /* each: its lines, as HELP prints them */
   EDIT:['EDT, in its line mode. I to insert, ctrl-z to stop, T WHOLE, EXIT.','QUIT leaves without writing the file. HELP lists these commands.','','Format:','','  EDIT file-spec'],
   SET:['SET DEFAULT [.NAME] or [-] to move about.','','Format:','','  SET option','',
     'DEFAULT    SET DEFAULT directory-spec','PASSWORD   Not allowed for this account.','PROMPT, TERMINAL, VERIFY and NOVERIFY are accepted, and change nothing here.'],
-  SHOW:['SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.','SHOW DAYTIME is SHOW TIME. SHOW SYMBOL name displays a symbol.','','Format:','','  SHOW option'],
+  SHOW:['SHOW TIME, USERS, SYSTEM, DEFAULT, PROCESS, MEMORY, DEVICE, QUOTA, TERMINAL.','SHOW DAYTIME is SHOW TIME. SHOW SYMBOL name displays a symbol: NAME = 1+2 and','NAME := text define one, == and :== a global one. SHOW SYMBOL/ALL lists them.','','Format:','','  SHOW option'],
   WRITE:['Writes a line to your terminal.','','Format:','','  WRITE SYS$OUTPUT text'],
   RUN:['Runs a program. RUN [GAMES]STARTREK. DIR [GAMES] lists them.','','Format:','','  RUN file-spec'],
   '@':['Executes a command procedure. The file type is .COM unless you give one.','','Format:','','  @file-spec'],

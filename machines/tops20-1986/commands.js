@@ -399,11 +399,14 @@ cmd('LOGIN','','user',function(a){
   P.ask('Password: ',go,true,true);
 },{login:true,out:true,help:'User name'});
 function jobLine(n){return [' Job '+JOB+' on TTY'+TTY+' '+dt(n)+', Last Login '+dt(S.last)]}
-function run(a,where,missing){ /* R and RUN: the program the first word names, given the rest */
+function run(a,where,missing){ /* R and RUN: the program the first word names, then only a switch or the end of the line
+  (the EXEC's GET1S and GSWIS: /USE-SECTION, else CONFIRM), so nothing goes on to the program; typed at the @ prompt by
+  its own name, a program has the rest of the line in the rescan buffer */
   if(!a[0]){err('?Missing '+missing);return}
-  var r=program(a[0],where);
+  var r=program(a[0].replace(/\/.*$/,''),where),sw=(a[0].match(/\/.*$/)||[''])[0]+a.slice(1).join('');
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
-  runFile(r,a.slice(1));
+  if(sw&&!/^(\/U(S(E(-(S(E(C(T(I(O(N)?)?)?)?)?)?)?)?)?)?:\d+)+$/i.test(sw)){err(sw.charAt(0)==='/'?'?Does not match switch - "'+up(sw.split('/')[1].split(':')[0])+'"':'?Not confirmed');return}
+  runFile(r,[]);
 }
 cmd('R','(PROGRAM)','prog',function(a){run(a,'sys','program name')});
 cmd('RUN','(PROGRAM)','file',function(a){run(a,null,'file name')});
@@ -433,8 +436,8 @@ var HLP={
   SYSTAT:['@SYSTAT argument','Displays information about the jobs on the system.','SYSTAT ? lists the arguments the EXEC recognizes: ALL, DIRECTORY, HEADER, LINE, NO, ORIGIN, PROGRAM, STATE, SYSTEM, TIME, WHAT, WHERE, WHO, a user name or a job number. Here every one of them gives the whole list.'],
   INFORMATION:['@INFORMATION (ABOUT) keyword','INFORMATION ? lists the keywords. Those with an answer here: AVAILABLE, DIRECTORY, DISK-USAGE, JOB-STATUS, LOGICAL-NAMES, MAIL, SYSTEM-STATUS, TERMINAL-MODE, VERSION, and the BATCH-, MOUNT-, OUTPUT- and RETRIEVAL-REQUESTS queues.'],
   LOGIN:['@LOGIN user-name password','With no password on the line, LOGIN asks for it.'],
-  R:['@R (PROGRAM) program-name arguments','Runs a program from SYS:, passing it the rest of the line.'],
-  RUN:['@RUN (PROGRAM) filespec arguments','Runs the program in that file, passing it the rest of the line.']
+  R:['@R (PROGRAM) program-name /USE-SECTION:n','Runs a program from SYS:. Nothing may follow but the switch: to give a program','the rest of the line, type its name at the @ prompt instead.'],
+  RUN:['@RUN (PROGRAM) filespec /USE-SECTION:n','Runs the program in that file. Nothing may follow but the switch.']
 };
 function helpTopics(){return Object.keys(HLP).filter(function(k){return !(k==='CONNECT'&&P.allowed.length<2)&&!(k==='ABOUT'&&!P.profile.about.length)}).sort()}
 function helpOn(t){

@@ -500,18 +500,36 @@ C.RENAME=function(a,o){
   r.disk.rename(r.f,t[0],t[1],t[2].charAt(1)||r.f.fm);
   return 0;
 };
+/* DMSCPY's checks once the options are read: one given twice, or two that conflict (its CONFTAB, of the options it has
+   here: each first one against the rest). Each pair in the order typed; the message names the one later in its option
+   table first */
+var CTAB=['TYPE','NOTYPE','NEWDATE','OLDDATE','RECFM','EBCDIC','UPCASE','LOWCASE','TRANS','LRECL','FROM','FRLABEL','FOR','TOLABEL','TRUNC','NOTRUNC',
+  'FILL','PROMPT','NOPROMPT','PACK','UNPACK','SPECS','NOSPECS','REPLACE','OVLY','APPEND','NEWFILE','SINGLE'];
+var CONF=[['TYPE','NOTYPE'],['NEWDATE','OLDDATE'],['APPEND','NEWDATE','OLDDATE','RECFM','LRECL','NEWFILE','REPLACE'],['PROMPT','NOPROMPT'],['REPLACE','NEWFILE']];
+function conflict(seen){
+  for(var i=0;i<seen.length;i++)for(var j=i+1;j<seen.length;j++){
+    var x=seen[i],y=seen[j];
+    if(x===y)return 'DMSCPY065E \''+x+'\' OPTION SPECIFIED TWICE';
+    if(CONF.some(function(g){return g[0]===x&&g.indexOf(y)>0||g[0]===y&&g.indexOf(x)>0})){
+      var hi=CTAB.indexOf(x)>CTAB.indexOf(y)?x:y,lo=hi===x?y:x;
+      return 'DMSCPY066E \''+hi+'\' AND \''+lo+'\' ARE CONFLICTING OPTIONS';
+    }
+  }
+  return null;
+}
 var COPT=[['REPLACE',3],['APPEND',3],['NEWFILE',3],['TYPE',3],['NOTYPE',3],['NEWDATE',4],['OLDDATE',3],['UPCASE',2],['LOWCASE',3],['RECFM',3],['LRECL',3],['PROMPT',3],['NOPROMPT',5]];
 C.COPYFILE=function(a,o){
   if(!a.length){err('DMSCPY042E NO FILEID(S) SPECIFIED');return 24}
-  var opt={},i;
+  var opt={},i,seen=[];
   for(i=0;i<o.length;i++){
     var k=V.lookup(COPT,o[i]);
     if(!k){err('DMSCPY003E INVALID OPTION \''+o[i]+'\'');return 24}
+    seen.push(k);
     if(k==='RECFM'){var r=o[++i];if(r!=='F'&&r!=='V'){err('DMSCPY029E INVALID PARAMETER \''+(r||'')+'\' IN THE OPTION \'RECFM\' FIELD');return 24}opt.RECFM=r;continue}
     if(k==='LRECL'){var n=+o[++i];if(!(n>=1&&n<=255)){err('DMSCPY029E INVALID PARAMETER \''+(o[i]||'')+'\' IN THE OPTION \'LRECL\' FIELD');return 24}opt.LRECL=n;continue}
     opt[k]=true;
   }
-  if(opt.REPLACE&&opt.APPEND){err('DMSCPY066E \'REPLACE\' AND \'APPEND\' ARE CONFLICTING OPTIONS');return 24}
+  var bad=conflict(seen);if(bad){err(bad);return 24}
   if(a.length<2){err('DMSCPY054E INCOMPLETE FILEID SPECIFIED');return 24}
   var s=[a[0],a[1],a[2]||'A'],t=a.length>3?[a[3]||'=',a[4]||'=',a[5]||'='].map(function(x,j){return x==='='?s[j]:x}):null;
   if(!t){ /* the same file, changed in place by its options */
@@ -555,21 +573,38 @@ C.STATE=function(a){
 };
 
 /* ---------- the spool from CMS: PRINT, PUNCH, READCARD ---------- */
+/* the options each takes on Release 6 (DMSPRT, DMSPUN): PRINT's CC, NOCC, UPCASE and LINECOUN n shape the printed
+   page, and change nothing that shows here; PUNCH's HEADER puts the :READ card in front. MEMBER name or * prints or
+   punches the members of a MACLIB or TXTLIB, which a file is when its first record says LIB in columns 4 to 6 */
 function spoolOut(mod,dev,a,o){
   if(a.length<2){err('DMS'+mod+'054E INCOMPLETE FILEID SPECIFIED');return 24}
-  var hdr=dev==='00D'&&o.indexOf('NOHEADER')<0&&o.indexOf('NOH')<0;
-  for(var i=0;i<o.length;i++)if(!/^(NOHEADER|NOH|HEADER|CC|NOCC|MEMBER|MEM|UPCASE|COPY)$/.test(o[i])&&!/^\d+$/.test(o[i])){err('DMS'+mod+'003E INVALID OPTION \''+o[i]+'\'');return 24}
+  var pun=dev==='00D',hdr=pun,mem=false;
+  for(var i=0;i<o.length;i++){
+    var x=o[i];
+    if(pun&&(x==='HEADER'||x==='H'))hdr=true;
+    else if(pun&&(x==='NOHEADER'||x==='NOH'))hdr=false;
+    else if(!pun&&/^(CC|NOCC|UPCASE|UP)$/.test(x));
+    else if(!pun&&(x==='LINECOUN'||x==='LI')){if(!/^\d\d?$/.test(o[i+1]||'')){err('DMS'+mod+'029E INVALID PARAMETER \''+(o[i+1]||'')+'\' IN THE OPTION \''+x+'\' FIELD');return 24}i++}
+    else if(x==='MEMBER'||x==='MEM'){if(o[i+1]===undefined){err('DMS'+mod+'029E INVALID PARAMETER \'\' IN THE OPTION \''+x+'\' FIELD');return 24}mem=true;i++}
+    else{err('DMS'+mod+'003E INVALID OPTION \''+x+'\'');return 24}
+  }
+  if(o.indexOf('NOHEADER')>=0||o.indexOf('NOH')>=0)hdr=false; /* NOHEADER wins, wherever it is */
   var R=V.matches(a[0],a[1],a[2]||'A');
   if(!R.length){err('DMS'+mod+'002E FILE \''+a[0]+' '+a[1]+' '+(a[2]||'A')+'\' NOT FOUND');return 28}
   if(!V.devs[dev]){err('DMS'+mod+'113S '+(dev==='00D'?'PUNCH':'PRINTER')+' ('+dev+') NOT ATTACHED');return 100}
+  var rc=0;
   R.forEach(function(r){
     var f=r.f;
     if(f.prot&&!V.mayRead()){err('DMS'+mod+'104S ERROR \'3\' READING FILE \''+fid(f,r.mode)+'\' FROM DISK');return}
+    if(mem&&!f.bin){ /* none of the files one can write holds a library's directory: one that says LIB has no entries (the system's own libraries, names only here, are spooled as they are) */
+      var first=f.lines.length?V.text(f.lines[0]):'';
+      err('DMS'+mod+(first.slice(3,6)==='LIB'?'039E NO ENTRIES IN LIBRARY \'':'033E FILE \'')+fid(f,r.mode)+'\''+(first.slice(3,6)==='LIB'?'':' IS NOT A LIBRARY'));rc=32;return;
+    }
     var L=f.lines.map(V.text);
     if(hdr)L=[V.readCard(f,r.mode,r.disk.label)].concat(L);
     V.closeSpool(dev,L,f.fn,f.ft);
   });
-  return 0;
+  return rc;
 }
 V.readCard=function(f,mode,label){ /* the :READ card the punch puts in front of a file */
   return ':READ  '+f.fn.padEnd(8)+' '+f.ft.padEnd(8)+' '+mode+f.fm+' '+label+' '+V.mdy(f.date)+'  '+String(f.date.getHours()).padStart(2)+':'+V.hms(f.date).slice(3,5);

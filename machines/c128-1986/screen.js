@@ -211,7 +211,7 @@ P.program(function(S){
     ];
     if(M.mode===64)L=L.map(function(l){return l.replace(/^DIRECTORY {8}/,'LOAD"$",8        ').replace(/^DLOAD"NAME" {6}/,'LOAD"NAME",8     ').replace(/^DSAVE"NAME" {6}/,'SAVE"NAME",8     ')}).filter(function(l){return !/^(GO 64|ESC)/.test(l)});
     if(P.allowed.length<2)L=L.filter(function(l){return !/^CONNECT/.test(l)});
-    M.scr.put(13);L.slice(1).forEach(function(l){say(l+'\r')});
+    M.scr.put(13);L.slice(1).forEach(function(l){say(l.replace(/\|/g,'\xdd')+'\r')}); /* PETSCII has no |: its vertical line, SHIFT and minus (221), as Commodore programs printed one */
   }
   /* ---------- memory: a few places that mean something ---------- */
   function cell(a,base){var i=a-base;return i>=0&&i<1000?i:-1}

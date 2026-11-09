@@ -54,6 +54,18 @@ P.command({names:['hangman'],run:function(a,raw,words){
     while(at<D.length&&space(D.charAt(at)))at++;
     return w;
   }
+  function usable(w){ /* the word getword would take, or null: a small letter first, at least MINLEN letters once the hyphens go, and all small */
+    if(w.charAt(0)>'z'||w.charAt(0)<'a')return null;
+    var b='',j;
+    for(j=0;j<w.length;j++){ /* the hyphen goes, and the character after it is taken as it stands */
+      if(w.charAt(j)==='-')j++;
+      b+=w.charAt(j);
+    }
+    return b.length>=MINLEN&&/^[a-z]*$/.test(b)?b:null;
+  }
+  /* with no word it can use, the real getword goes round the file for ever; here it says so and stops instead of freezing the tab */
+  for(var w;(w=fscan())!==null&&usable(w)===null;);
+  if(w===null){P.typeLine('no usable words in '+dictfile,'err');return}
   function fixed(x,n){return x.toFixed(n)}
   P.cprog(function*(io){
     var errors=0,count=0,alive,lost,word,alph,real;
@@ -61,14 +73,8 @@ P.command({names:['hangman'],run:function(a,raw,words){
       for(;;){
         var w=fscan();
         if(w===null){at=0;continue}
-        if(w.charAt(0)>'z'||w.charAt(0)<'a')continue;
-        var b='',i=0,j;
-        for(j=0;j<w.length;i++,j++){ /* the hyphen goes, and the character after it is taken as it stands */
-          if(w.charAt(j)==='-')j++;
-          b+=w.charAt(j);
-        }
-        if(b.length<MINLEN)continue;
-        if(!/^[a-z]*$/.test(b))continue;
+        var b=usable(w);
+        if(b===null)continue;
         if(count!==0)io.print('('+fixed(errors/count,2)+'/'+count+') ');
         real=b;
         word=b.replace(/./g,'.').split('');

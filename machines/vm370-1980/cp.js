@@ -635,11 +635,40 @@ V.ask=function(then,trap,hidden,prog){ /* prog: a CMS program's read, which an a
   P.ask('',function(l){
     V.asking=false;
     if(l===null||l===P.INT){then(l);return}
+    if(prog&&cpAtRead(l,function(){V.read(then,trap,prog)}))return; /* the read again: the console stack first */
     var L=V.lineEdit(l,!prog);
     if(prog){then(V.crd(L.join(V.LE)),L.length>1);return} /* a program's read takes the first logical line; the rest are stacked (DMSCRD) */
     then(L[0]);
   },trap,hidden);
 };
+/* #CP typed at a program's read (an EXEC's &READ, the editor): CP takes the line at once, as it reads it (DMKCFM), and
+   the virtual machine's read stays up. #CP alone puts the terminal in CP mode, the virtual machine stopped at its read,
+   till BEGIN. If CP lets the terminal go (DISCONN), CMS goes on unseen in a queue of its own (V.dark), and the read is
+   the first thing it does there: it waits for the reconnection, and LOGON and BEGIN put it up again */
+function cpAtRead(l,again){
+  var t=l.replace(/^\s+/,'');
+  if(V.state!=='cms'||V.cpMode||!V.term||!V.term.linend||t.slice(0,3).toUpperCase()!==V.term.linend+'CP'||/^\S/.test(t.slice(3,4)))return false;
+  var rest=V.lineEdit(t.slice(3),true)[0].trim(),acc=V.acc,read=function(){again()};
+  V.pend.unshift(read); /* for CMS going on unseen, if it comes to that */
+  function back(more){ /* after a CP command: the read again, here or (disconnected) there; more: still in CP mode */
+    if(V.dsc)return;
+    var i=V.pend.indexOf(read);if(i>=0)V.pend.splice(i,1);
+    if(V.state!=='cms'||V.acc!==acc)return; /* LOGOFF or IPL: no read to go back to */
+    if(V.cpMode&&more){V.pend.unshift(read);more();return}
+    again();
+  }
+  if(rest){P.queue(function(){V.cp(rest,'cp')});P.queue(function(){back(null)});return true}
+  V.cpMode=true;P.typeLine('CP');
+  (function more(){
+    P.ask('',function(x){
+      if(x===null||x===P.INT){more();return}
+      var w0=up(x.trim().split(/\s+/)[0]||'');
+      if(!(w0&&V.termWord(w0,x)))P.queue(function(){V.cp(V.lineEdit(x,true)[0],'cp')});
+      P.queue(function(){back(more)});
+    },true);
+  })();
+  return true;
+}
 V.lineEdit=function(s,one){ /* logical lines: the line end splits them, the character delete takes one back, the line delete
                               drops what came before it, the escape makes the next character plain */
   var T=V.term||TERM0,L=[],o='';
