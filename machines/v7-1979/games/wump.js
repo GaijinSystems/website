@@ -1,7 +1,7 @@
 /* PHOSPHOR-9 terminal: machine "v7-1979", wump, hunt the wumpus. Ported to JavaScript for this terminal from V7's
    usr/src/games/wump.c. The binary on the V7 tape is older than that source, and where they differ this follows the
    binary, checked under a simulator: one line of the instructions, and the rand() it was linked with, which is the
-   Sixth Edition's. 4.3BSD ("bsd-1987") runs it too, as 4.3BSD's wump.c 4.1 has it, which its binary matches: the
+   Sixth Edition's. 4.3BSD ("bsd-1987") and Debian ("linux", built from 4.3BSD's source) run it too, as 4.3BSD's wump.c 4.1 has it, which its binary matches: the
    source's two lines in place of that one, its own rand(), "Another game?" and "Same room setup?" taken as yes unless
    the answer starts with n, and what is waiting to be read thrown away before each. The source is under this notice:
 
@@ -50,7 +50,7 @@ var INTRO=[
 '\tIf the arrow hits the wumpus, you win!','\tIf the arrow hits you, you lose!','','Warnings:','','When you are one or two rooms away from the wumpus,','the computer says:',
 "\t\t'I smell a Wumpus'",'When you are one room away from some other hazard, it says:',"\t\tBat    - 'Bats nearby'","\t\tPit    - 'I feel a draft'",''];
 P.command({names:['wump'],run:function(){
-  var bsd=P.machine==='bsd',rand=null,room=[],arrow,loc,wloc,tchar,i;
+  var bsd=P.machine!=='v7',rand=null,room=[],arrow,loc,wloc,tchar,i;
   for(i=0;i<NROOM;i++)room.push({tunn:[-1,-1,-1],flag:0});
   function rnum(n){
     var t=Math.floor(Date.now()/1000);

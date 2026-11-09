@@ -2071,7 +2071,7 @@ P.command({names:['trek'],run:function(a,raw,words){
     if(!P.keep||P.piped())return;
     var back=P.keep(); /* a child shell: a cd in it stays there */
     for(;;){
-      pr('% ');
+      pr(P.subPrompt?P.subPrompt():'% '); /* the shell's prompt: csh's on 4.3BSD */
       var l=yield;
       if(l===null||l===undefined||/^\s*(exit|logout)\s*$/.test(l)){back();return}
       if(l.trim())P.runScript([l]);

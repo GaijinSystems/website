@@ -488,17 +488,17 @@ function save_game(){
     rec.obj.push([i,o.owner,o.type,o.loc,o.func,o.hits,o.moved,o.count,o.range,o.ship?object.indexOf(o.ship):-1]);
   });
   if(!P.save('empire/save',rec)){topmsg(3,"Cannot save empsave.dat",0,0,0,0,0,0,0,0);return}
-  var n=P.find($SAVEAT,true),size=JSON.stringify(rec).length; /* the file in [GUEST] that stands for the record: DELETE it for a new game */
+  var at=$saveAt(),n=P.find(at,true),size=JSON.stringify(rec).length; /* the file in [GUEST] that stands for the record: DELETE it for a new game */
   if(n){n.date=P.now();n.size=size}
-  else P.put($SAVEAT,'f',{owner:'guest',date:P.now(),bin:true,size:size,store:'empire/save'});
+  else P.put(at,'f',Object.assign({owner:P.machine==='linux'?P.st.user:'guest',date:P.now(),bin:true,size:size,store:'empire/save'},P.machine==='linux'?{mode:'-rw-r--r--'}:{})); /* Debian: fopen's 0666 under the umask */
   $movieFlush(); /* the movie so far, kept with the game */
   topmsg(3,"Game saved.",0,0,0,0,0,0,0,0);
 }
-var $SAVEAT='/guest/empsave.dat;1';
+function $saveAt(){return P.machine==='linux'?P.st.home.replace(/\/$/,'')+'/empsave.dat':'/guest/empsave.dat;1'} /* Debian: empsave.dat in the home, as the Unix build writes it */
 function $int(v,lo,hi){return Number.isInteger(v)&&v>=lo&&v<=hi}
 function $restore(){
   var r=P.saved('empire/save'),i;
-  if(r&&!P.find($SAVEAT,true)){P.save('empire/save',null);return false} /* EMPSAVE.DAT was deleted */
+  if(r&&!P.find($saveAt(),true)){P.save('empire/save',null);return false} /* EMPSAVE.DAT was deleted */
   if(!r||typeof r!=='object')return false;
   function str(x){return typeof x==='string'&&x.length===MAP_SIZE}
   function seen(x){return Array.isArray(x)&&x.length===MAP_SIZE&&x.every(function(v){return Number.isInteger(v)})}
@@ -5591,7 +5591,7 @@ P.command({names:['empire'],noHelpFlag:true,run:function(a,raw,words){
     return {
       feed:function(k){
         /* it has no handler for the interrupt, so ^C ends it where it stands */
-        if(k==='C-c'||k==='C-y'){quit();return} /* ^Y, as at DCL */
+        if(k==='C-c'||k==='C-y'&&P.machine!=='linux'){quit();return} /* ^Y, as at DCL; on Debian only ^C */
         var m=/^C-([a-z])$/.exec(k),c=k==='Enter'?'\n':k==='Backspace'?'\b':k==='Tab'?'\t':k.length===1?k:m?$chr(m[1].charCodeAt(0)-96):null;
         if(c===null)return;
         if(waiting){waiting=null;pump(c)}

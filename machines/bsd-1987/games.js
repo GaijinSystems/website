@@ -207,7 +207,7 @@ game('banner',function(a,raw,words){
     }
     out.forEach(function(s){P.typeLine(s,'',null,{speed:.04})});
   }
-  P.queue(function(){return P.load('banner-font.js')});
+  P.queue(function(){return P.load(P.machine==='linux'?'../bsd-1987/banner-font.js':'banner-font.js')}); /* Debian runs this from its own machine's folder */
   P.queue(function(){
     if(!P.bannerFont){P.typeLine('banner: cannot execute','err');return}
     if(w.length)print(w.join(' '));

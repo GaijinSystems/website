@@ -263,7 +263,7 @@ function convert_hex_to_bin(s,v){
   v.v=parseInt(t,16)|0;return 1;
 }
 /* LIB$SPAWN: no subprocess here; the game is back at once, as if EOJ were typed */
-function* shell_out(){$writeln('$ EOJ');put_qio()}
+function* shell_out(){$writeln(P.machine==='linux'?'$ exit':'$ EOJ');put_qio()} /* Debian: a shell, left the same way */
 
 /* ---------- files: records in this browser's storage, under moria/files ---------- */
 var $fs=null;
@@ -23169,7 +23169,7 @@ function* dungeon(){
           case 36:{
             /* $  = Shell */
             clear(1,1);
-            $writeln($ws("[Entering DCL shell, type \"EOJ\" to resume your game]",0));
+            $writeln($ws(P.machine==='linux'?"[Entering shell, type \"exit\" to resume your game]":"[Entering DCL shell, type \"EOJ\" to resume your game]",0));
             $writeln("");
             controly();
             (yield* shell_out());

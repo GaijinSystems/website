@@ -1,5 +1,5 @@
 /* PHOSPHOR-9 terminal: machine "linux", its file system: the merged /usr, a small /etc, /proc, /var/log,
-   and what the administrator added to /usr/games.
+   what the administrator added to /usr/games, and the old games built from source in /usr/local/games.
    Copyright (C) 2026 Gaijin Systems. GNU AGPL v3 or later; see LICENSE.
 
    The default cow below is cowsay's default.cow, copyright (c) 1999 Tony Monroe, distributed under the same
@@ -56,6 +56,19 @@ Phosphor.setup(function(P){
   var GAMES={'/usr/games/frotz':139152,'/usr/games/sl':26568,'/usr/games/cowsay':4608,'/usr/games/fortune':35664,'/usr/bin/cmatrix':22608};
   Object.keys(GAMES).forEach(function(f){if(P.find(f,true))sys(f,'f',{bin:true,size:GAMES[f],date:new Date(2025,10,2,19,4)})});
   if(P.find('/usr/games/cowsay',true))P.find('/usr/games',true).kids.cowthink=P.find('/usr/games/cowsay',true);
+  /* the old games the administrator built from source over a weekend and installed by hand: amd64 builds, stripped.
+     [size, day of November 2025, hour, minute] */
+  var LOCAL={ppt:[14472,8,14,21],bj:[18584,8,14,22],moo:[14544,8,14,22],ttt:[18696,8,14,23],words:[14616,8,14,25],cubic:[18712,8,14,26],maze:[18648,8,14,27],
+    reversi:[22872,8,14,29],checkers:[27048,8,14,31],v7backgammon:[22816,8,14,34],v7banner:[14504,8,14,35],v7hangman:[18600,8,14,36],
+    arithmetic:[14672,8,16,2],bcd:[14456,8,16,2],chess:[39320,8,16,5],ching:[23016,8,16,8],quiz:[18792,8,16,9],wump:[18760,8,16,10],
+    number:[14560,8,16,12],primes:[14520,8,16,12],factor:[14528,8,16,12],banner:[18640,8,16,13],hangman:[31088,8,16,15],worm:[22936,8,16,16],
+    robots:[39376,8,16,18],snake:[43664,8,16,20],snscore:[14592,8,16,20],rain:[14600,8,16,22],worms:[18800,8,16,22],fish:[18736,8,16,24],
+    canfield:[43528,8,16,31],cfscores:[14664,8,16,31],cribbage:[51896,8,16,37],boggle:[27296,8,16,40],backgammon:[64872,8,16,52],teachgammon:[72944,8,16,52],
+    btlgammon:[22880,8,16,54],monop:[60168,8,17,6],mille:[56104,8,17,14],trek:[89272,8,17,29],doctor:[31160,8,17,40],rogue:[146008,8,18,3],
+    hunt:[68232,8,18,21],sail:[118504,8,18,47],battlestar:[244080,8,19,12],adventure:[109824,8,19,30],aardvark:[129736,8,19,44],dungeon:[322160,9,10,17],
+    startrek:[178392,9,11,2],empire:[109880,9,11,40],monster:[358216,9,13,9],moria:[631064,9,14,55],conquest:[296104,9,16,28]};
+  Object.keys(LOCAL).forEach(function(g){var f='/usr/local/games/'+g,x=LOCAL[g];if(P.find(f,true))sys(f,'f',{bin:true,size:x[0],date:new Date(2025,10,x[1],x[2],x[3])})});
+  sys('/usr/local/games','d',{date:new Date(2025,10,9,16,28)});
 
   var V=['/boot/vmlinuz-'+D.krel,'/boot/initrd.img-'+D.krel];
   sys(V[0],'f',{bin:true,size:11829952,date:UPG,mode:'-rw-r--r--'});

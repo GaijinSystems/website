@@ -12098,12 +12098,12 @@ H.gamtname=function(name,list,tty){
   return l.indexOf(n)>=0;
 };
 H.gamend=function(){};
-H.gamcronfile=function(b){$setstr(b,'DUA0:[GAMES]GAMCRON.')};
+H.gamcronfile=function(b){$setstr(b,P.machine==='linux'?'/usr/local/games/lib/conquest/gamcron':'DUA0:[GAMES]GAMCRON.')}; /* Debian: where its Unix build keeps it */
 H.gamlinit=function(fdial,fprio,fcron,despri,badlist,badttylist,truename,cronfile){
   if(B[badlist]&&H.gamtname(R_$glname(),badlist,0))H.error($S('You are NOT allowed to play this game.'));
   if((I[fcron>>2]&1)!==0){
     var gc=$scratch(132);
-    if(B[cronfile])H.strcpy(cronfile,gc);else H.gamcronfile(gc);
+    if(B[cronfile]&&P.machine!=='linux')H.strcpy(cronfile,gc);else H.gamcronfile(gc);
     if(R_enopen(gc)===-3){H.eprintf($S('gamlb$gaminit: Failed to open the game cron file, %s.\n'),gc);return}
     var ok=false;
     $real=true;
