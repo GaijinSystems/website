@@ -259,11 +259,11 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
     if(W[0]==='-v'){if(W.length<2){err(at+'printf: -v: option requires an argument');usage();return}to=W[1];W=W.slice(2)}
     if(W[0]==='--')W=W.slice(1);
     if(!W.length){usage();return}
-    var F=W[0],A=W.slice(1),k=0,out='',bad=false,stop=false;
+    var F=W[0],A=W.slice(1),k=0,out='',bad=false,stop=false,warned=false,vbad=false;
     function arg(){return k<A.length?A[k++]:undefined}
     function star(){ /* a * width or precision: bash holds it to an int, warning (with the word after it, as bash 5.2 does) */
       var v=Number(num(arg()));
-      if(Math.abs(v)>INTMAX){if(k<A.length)err(at+'printf: warning: '+A[k]+': Numerical result out of range');v=v<0?-INTMAX:INTMAX}
+      if(Math.abs(v)>INTMAX){if(k<A.length){err(at+'printf: warning: '+A[k]+': Numerical result out of range');warned=true}v=v<0?-INTMAX:INTMAX} /* only a warning: the status stays 0 */
       return v;
     }
     function num(x,conv){ /* an integer word: 'c is its character's code; 0x and 0 prefixes; a word that is not all number is an error, with the part that was */
@@ -324,7 +324,7 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
       var c=F.charAt(i);
       if(c==='\\'){var e=/^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)?/.exec(F.slice(i))[0];c=pfEsc(e,false).s;i+=e.length-1}
       else if(c==='%'){
-        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?[hjlLtz]*(.)?/.exec(F.slice(i)),cv=m[4]; /* C's length modifiers are passed over */
+        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?[hjlLtz]*([\s\S])?/.exec(F.slice(i)),cv=m[4]; /* C's length modifiers are passed over */
         if(!cv){T.push({bad:"`"+F.slice(i)+"': missing format character"});break}
         if(!/[sbqcdiouxXeEfFgG%]/.test(cv)){T.push({bad:"`"+cv+"': invalid format character"});break}
         i+=m[0].length-1;
@@ -353,9 +353,10 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
         else out+=floOut(flo(x),cv,fl,wd,pr);
       }
     }while(!stop&&took&&k<A.length);
-    if(to!==null){if(!P.bashVars.asg(to+'='+out)){err(at+'printf: `'+to+"': not a valid identifier");P.queue(function(){P.status(2)})}}
+    if(to!==null){if(!P.bashVars.asg(to+'='+out)){err(at+'printf: `'+to+"': not a valid identifier");vbad=true;P.queue(function(){P.status(2)})}}
     else flush();
     if(bad)P.queue(function(){P.status(1)});
+    else if(warned&&!vbad)P.queue(function(){P.status(0)}); /* the warning's red line set it to 1 */
   });
 cmd('unset','','unset values and attributes of shell variables and functions','unset [-f] [-v] [-n] [name ...]','removes each variable named, or one element of an array: unset \'x[1]\'.',function(a,raw,w){
   var bad=false;

@@ -241,7 +241,7 @@ var PROFILE=(function(){
     var live=P.year===new Date().getFullYear(); /* a machine whose clock is the visitor's own (Debian) */
     return trimBlank(L).map(function(l){
       if(live)l=l.replace(/~~([^~]+?)~~ (\S*\{year\}\S*)/g,function(m,real,era){ /* ~~real date~~ {year} date: here the real one alone, unstruck, ending where the pair ended */
-        return ' '.repeat(Math.max(0,era.replace(/\{year\}/g,'0000').length+1))+real;
+        return ' '.repeat(fill(era).length+1)+real;
       });
       l=fill(l);
       var href=null,k=l.match(/^(.*?)\s+->\s*((?:https?:\/\/|mailto:)\S+)\s*$/i);
