@@ -511,7 +511,7 @@ P.setup(function(){
       var n=P.find(x,true),abs=P.norm(x);
       if(!n){if(!force){err("rm: cannot remove '"+x+"': No such file or directory");P.status(1)}return}
       if(n.type==='d'&&!rec){err("rm: cannot remove '"+x+"': Is a directory");P.status(1);return}
-      if(n!==P.root&&!n.prot&&P.immutable(abs)){err("rm: cannot remove '"+x+"': Operation not permitted");P.status(1);return}
+      if(n!==P.root&&!n.prot&&P.immutable(abs)){P.notPermitted('rm',x);P.status(1);return}
       if(n===P.root||n.prot||!P.canWrite(abs)){err("rm: cannot remove '"+x+"': Permission denied");P.status(1);return}
       if(rec&&n.type==='d'&&fixed(n)){sweep(n,x,abs,P.find(P.dirOf(abs),true),abs.split('/').pop());return}
       keep.push(x);
@@ -521,13 +521,14 @@ P.setup(function(){
   function fixed(n){ /* anything immutable in the tree (by its own place, not through a link) */
     return n.ro||n.type==='d'&&Object.keys(n.kids).some(function(k){var x=n.kids[k];return x.parent===n&&x.name===k&&fixed(x)});
   }
-  function sweep(n,x,abs,up,key){ /* rm -r over a tree that holds immutable things, as GNU's does it: what can go goes, and each
-                                       immutable thing, and the folders it keeps, stays, named once (its folders are not tried again) */
-    if(n.ro||up.ro){err("rm: cannot remove '"+x+"': Operation not permitted");P.status(1);return false}
+  function sweep(n,x,abs,up,key,shut){ /* rm -r over a tree that holds immutable things, as GNU's does it: what can go goes, and each
+                                       immutable thing, and the folders it keeps, stays, named once (its folders are not tried again).
+                                       shut: a locked folder above up, which nobody gets through */
+    if(n.ro||up.ro){P.notPermitted('rm',x);P.status(1);return false}
     var all=true;
-    if(n.type==='d'&&n.parent===up&&n.name===key)Object.keys(n.kids).sort().forEach(function(k){if(!sweep(n.kids[k],x+'/'+k,abs+'/'+k,n,k))all=false});
+    if(n.type==='d'&&n.parent===up&&n.name===key)Object.keys(n.kids).sort().forEach(function(k){if(!sweep(n.kids[k],x+'/'+k,abs+'/'+k,n,k,shut||up.prot))all=false});
     if(!all)return false;
-    if(n.prot||!P.canWrite(abs)||P.inUse(abs)){err("rm: cannot remove '"+x+"': Permission denied");P.status(1);return false}
+    if(n.prot||shut||n.parent===up&&n.name===key&&!P.mayAlter(n)||!P.mayPut(up)||P.inUse(abs)){err("rm: cannot remove '"+x+"': Permission denied");P.status(1);return false}
     delete up.kids[key];return true;
   }
 });
@@ -541,7 +542,7 @@ cmd('mkdir','/usr/bin','make directories','mkdir [OPTION]... DIRECTORY...','make
     while(!P.find(up,true)){todo.unshift(up);up=P.dirOf(up)}
     var top=P.find(up,true);
     if(todo.length>1&&!par||top.type!=='d'){err("mkdir: cannot create directory '"+x+"': "+(top.type!=='d'?'Not a directory':'No such file or directory'));P.status(1);return}
-    if(P.immutable(todo[0])){err("mkdir: cannot create directory '"+x+"': Operation not permitted");P.status(1);return}
+    if(P.immutable(todo[0])){P.notPermitted('mkdir',x);P.status(1);return}
     if(!P.canWrite(todo[0])){err("mkdir: cannot create directory '"+x+"': Permission denied");P.status(1);return}
     todo.forEach(function(d){P.put(d,'d',{owner:P.st.user,date:P.now()})});
   });
@@ -552,13 +553,15 @@ cmd('mkdir','/usr/bin','make directories','mkdir [OPTION]... DIRECTORY...','make
 var E2V='1.47.2 (1-Jan-2025)';
 function ext4(n){return (n.type==='f'||n.type==='d')&&!n.dev&&!/^\/(proc|sys|dev|run|tmp)(\/|$)/.test(P.pathOf(n))} /* tmpfs and the kernel's: no flags (ENOTTY, said as EOPNOTSUPP) */
 function attrs(n,long,noe){return long?(n.ro?'Immutable, Extents':'Extents'):'----'+(n.ro?'i':'-')+'---------'+(noe?'-':'e')+'-------'} /* print_flags: i and e of its 22 */
-function lstatOf(x){ /* what lstat finds at x: the node, and whether the name is a link to it */
+function lstatOf(x){ /* what lstat finds at x: the node, whether the name is a link to it, and its path */
   var abs=P.norm(x),n=P.find(abs,true);
   if(!n)return null;
-  if(n===P.root)return {n:n,link:false};
+  if(n===P.root)return {n:n,link:false,abs:abs};
   var up=P.find(P.dirOf(abs),true);
-  return {n:n,link:!!linkOf(abs,n,up)};
+  return {n:n,link:!!linkOf(abs,n,up),abs:abs};
 }
+function kidOf(e,k){var n=e.n.kids[k],abs=join(e.abs,k);return {n:n,link:!!linkOf(abs,n,e.n),abs:abs}} /* lstatOf of the name k in the folder e, without going back to / */
+function join(dir,k){return (/\/$/.test(dir)?dir:dir+'/')+k} /* a name in a folder: dir/k, and /k in / */
 function e2out(){ /* what goes out, in its order with the complaints */
   var B=[];
   return {say:function(l){B.push(l)},err:function(s){if(B.length)P.say(B.splice(0));err(s)},end:function(){if(B.length)P.say(B.splice(0))}};
@@ -578,11 +581,11 @@ cmd('lsattr','/usr/bin','list file attributes on a Linux second extended file sy
   }
   function walk(name,d){ /* iterate_on_dir: an unreadable directory fails quietly */
     if(d.prot)return false;
-    [['.',d],['..',d.parent]].concat(Object.keys(d.kids).sort().map(function(k){return [k,d.kids[k]]})).forEach(function(k){
-      var path=(/\/$/.test(name)?name:name+'/')+k[0],e={n:k[1],link:k[0]!=='.'&&k[0]!=='..'&&!!linkOf(P.pathOf(d).replace(/\/$/,'')+'/'+k[0],k[1],d)};
-      if(k[0].charAt(0)==='.'&&!all)return;
+    var pre=join(name,''),at=join(P.pathOf(d),'');
+    ['.','..'].concat(Object.keys(d.kids).sort()).filter(function(k){return all||k.charAt(0)!=='.'}).forEach(function(k){
+      var dot=k==='.'||k==='..',n=k==='.'?d:k==='..'?d.parent:d.kids[k],path=pre+k,e={n:n,link:!dot&&!!linkOf(at+k,n,d)};
       list(path,e);
-      if(R&&k[1].type==='d'&&!e.link&&k[0]!=='.'&&k[0]!=='..'){O.say('');O.say(path+':');walk(path,k[1]);O.say('')}
+      if(R&&n.type==='d'&&!e.link&&!dot){O.say('');O.say(path+':');walk(path,n);O.say('')}
     });
     return true;
   }
@@ -596,7 +599,7 @@ cmd('lsattr','/usr/bin','list file attributes on a Linux second extended file sy
 },{noHelpFlag:true});
 cmd('chattr','/usr/bin','change file attributes on a Linux file system','chattr [ -RVf ] [ -v version ] [ -p project ] [ mode ] files...',
   'changes the attributes of each file: +i sets the immutable attribute, -i clears it, =i makes it the only one. -R goes down into directories, -V says what it set, -f keeps quiet about what fails. only root may set or clear i; the immutable attribute stops root too, until it is cleared.',function(a){
-  var W=a.slice(),i=0,R=false,V=false,f=false,rf='',af='',sf='',add=false,rem=false,set=false,ver=false,prj=false,st=0,O=e2out();
+  var W=a.slice(),i=0,R=false,V=false,f=false,rf='',af='',sf='',ver=false,prj=false,st=0,O=e2out();
   function usage(){err('Usage: chattr [-RVf] [-+=aAcCdDeijPsStTuFx] [-p project] [-v version] files...');P.status(1)}
   var FL='ASDacmdeijPsutTCxF';
   for(;i<W.length;i++){
@@ -613,33 +616,33 @@ cmd('chattr','/usr/bin','change file attributes on a Linux file system','chattr 
         continue;
       }
       if(FL.indexOf(ch)<0){usage();return}
-      if(c==='-'){rf+=ch;rem=true}else if(c==='+'){af+=ch;add=true}else{sf+=ch;set=true}
+      if(c==='-')rf+=ch;else if(c==='+')af+=ch;else sf+=ch;
     }
   }
   if(i>=W.length){usage();return}
-  if(set&&(add||rem)){err('= is incompatible with - and +');P.status(1);return}
+  if(sf&&(af||rf)){err('= is incompatible with - and +');P.status(1);return}
   if(rf.split('').some(function(ch){return af.indexOf(ch)>=0})){err("Can't both set and unset same flag.");P.status(1);return}
-  if(!(add||rem||set||ver||prj)){err("Must use '-v', =, - or +");P.status(1);return}
+  if(!(af||rf||sf||ver||prj)){err("Must use '-v', =, - or +");P.status(1);return}
   if(V)err('chattr '+E2V);
   var root=P.st.user==='root';
-  function change(name){
-    var e=lstatOf(name),n=e&&e.n;
+  function change(name,e){ /* e: what lstat found at name, when chattr -R already has it */
+    e=e||lstatOf(name);var n=e&&e.n;
     if(!e){if(!f)O.err('chattr: No such file or directory while trying to stat '+name);return false}
     if(e.link||!ext4(n)){if(!f)O.err('chattr: Operation not supported while reading flags on '+name);return false}
     if(n.prot){if(!f)O.err('chattr: Permission denied while reading flags on '+name);return false}
-    var was=!!n.ro,now=set?sf.indexOf('i')>=0:(was&&rf.indexOf('i')<0)||af.indexOf('i')>=0;
-    if(set||add||rem){
-      var noe=set?sf.indexOf('e')<0:rf.indexOf('e')>=0,why=!root&&(n.owner!==P.st.user||now!==was)?'Operation not permitted': /* FS_IOC_SETFLAGS: the owner's, and i takes CAP_LINUX_IMMUTABLE */
+    var was=!!n.ro,now=sf?sf.indexOf('i')>=0:(was&&rf.indexOf('i')<0)||af.indexOf('i')>=0;
+    if(sf||af||rf){
+      var noe=sf?sf.indexOf('e')<0:rf.indexOf('e')>=0,why=!root&&(n.owner!==P.st.user||now!==was)?'Operation not permitted': /* FS_IOC_SETFLAGS: the owner's, and i takes CAP_LINUX_IMMUTABLE */
         noe?'Operation not supported':''; /* ext4 will not turn an extent-mapped file back */
       if(V)O.say('Flags of '+name+' set as '+attrs({ro:now},false,noe));
-      if(why&&set)O.err(name+': '+why); /* = says it with perror, and goes on as if it had worked */
+      if(why&&sf)O.err(name+': '+why); /* = says it with perror, and goes on as if it had worked */
       else if(why){if(!f)O.err('chattr: '+why+' while setting flags on '+name);return false}
       else if(now)n.ro=true;
       else delete n.ro;
     }
     if((ver||prj)&&!root&&n.owner!==P.st.user){if(!f)O.err('chattr: Operation not permitted while setting '+(ver?'version':'project')+' on '+name);return false}
     var ok=true;
-    if(R&&n.type==='d'&&!e.link)Object.keys(n.kids).sort().forEach(function(k){if(!change(name+'/'+k))ok=false});
+    if(R&&n.type==='d'&&!e.link)Object.keys(n.kids).sort().forEach(function(k){if(!change(name+'/'+k,kidOf(e,k)))ok=false});
     return ok;
   }
   W.slice(i).forEach(function(x){if(!change(x))st=1});
@@ -753,7 +756,7 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
     for(var up=d.up,loop=false;up&&!loop;up=up.up)loop=up.n===n;
     if(loop){O.err('ls: '+d.name+': not listing already-listed directory');bad=2;continue}
     var E=Object.keys(n.kids).filter(function(k){return all||almost||k.charAt(0)!=='.'}).map(function(k){
-      var kid=n.kids[k];return {name:k,n:kid,link:linkOf((at==='/'?'':at)+'/'+k,kid,n)};
+      var kid=n.kids[k];return {name:k,n:kid,link:linkOf(join(at,k),kid,n)};
     });
     sorter(E);
     if(all)E=[{name:'.',n:n},{name:'..',n:n.parent}].concat(E);
@@ -763,7 +766,7 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
     else say(one?E.map(function(e){return e.name+tag(e)}):columns(E.map(function(e){return e.name+tag(e)})));
     if(rec)for(var i=E.length-1;i>=0;i--){
       var e=E[i];
-      if(e.n.type==='d'&&!e.link&&e.name!=='.'&&e.name!=='..')todo.push({name:(/\/$/.test(d.name)?d.name:d.name+'/')+e.name,n:e.n,up:d});
+      if(e.n.type==='d'&&!e.link&&e.name!=='.'&&e.name!=='..')todo.push({name:join(d.name,e.name),n:e.n,up:d});
     }
   }
   O.end();
@@ -787,8 +790,8 @@ cmd('hostname','/usr/bin','show or set the system\'s host name','hostname [-i|-I
   if(o.ops.length){err('hostname: you must be root to change the host name');return}
   if(o.has('I','all-ip-addresses'))P.typeLine(D.ip4+' '+D.ip6+' ');
   else if(o.has('i','ip-address'))P.typeLine('127.0.1.1');
-  else if(o.has('f','fqdn')||o.has('A','all-fqdns'))P.typeLine(P.st.hostname+'.gaijin.systems'); /* as /etc/hosts names it */
-  else if(o.has('d','domain'))P.typeLine('gaijin.systems');
+  else if(o.has('f','fqdn')||o.has('A','all-fqdns'))P.typeLine(P.st.hostname+(P.st.domain?'.'+P.st.domain:'')); /* as /etc/hosts names it */
+  else if(o.has('d','domain'))P.typeLine(P.st.domain);
   else P.typeLine(P.st.hostname);
 });
 cmd('hostnamectl','/usr/bin','control the system hostname','hostnamectl [OPTIONS...] COMMAND ...','with no command, describes the machine: its name, what it runs on, and the kernel.',function(a){

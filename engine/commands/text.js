@@ -71,7 +71,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
-    if(n&&!n.prot&&n.ro&&P.immutable(P.pathOf(n))){P.notPermitted('chmod',x);return}
+    if(n&&!n.prot&&P.isImmutable(n)){P.notPermitted('chmod',x);return}
     if(!n||!P.canWrite(P.pathOf(n))||n.prot){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
     var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
     if(/^[0-7]{3}$/.test(a[0])){
@@ -565,8 +565,9 @@ cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.named(a[0]),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
-  if(!P.find(to,true)&&(n.ro&&P.immutable(P.pathOf(n))||P.immutable(to))){P.notPermitted('ln',a[1]||a[0].split('/').pop(),a[0]);return} /* no hard link to an immutable file, nor in an immutable folder */
-  if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
+  var ex=P.find(to,true);
+  if(!ex&&(P.isImmutable(n)||P.immutable(to))){P.notPermitted('ln',a[1]||a[0].split('/').pop(),a[0]);return} /* no hard link to an immutable file, nor in an immutable folder */
+  if(ex||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
   var dir=P.find(P.dirOf(to),true);
   dir.kids[to.split('/').pop()]=n;
 });

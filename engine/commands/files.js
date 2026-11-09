@@ -45,22 +45,22 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       else if(self&&n.type==='d')L.push(long?P.longRow(w,n):plain(w,n));
       else if(n.type!=='d'){var abs=P.norm(w),key=abs.split('/').pop(),up=P.find(P.dirOf(abs),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);L.push(long?P.longRow(shown,n):plain(shown,n))}
       else if(n.prot)L.push([w+' unreadable','err']);
-      else dirs.push([w,n]);
+      else dirs.push([v7?w:w.replace(/^~(?=\/|$)/,P.st.home),n]);
     });
     /* -R: after a folder, the folders in it, each in full before the next (4.3BSD's subdirs list, System V's dfirst chain), never . or ..;
        the folders named are titled only when there are more than one. The shell gave ls ~ as the home folder's name. A folder already
        on the way down (a loop) is not gone into again; a name longer than the system's limit stops it: 4.3BSD's cat() says
        "filename too long" and ls exits, System V's opendir fails as it would for a folder it cannot read */
-    var todo=dirs.map(function(d){return {name:d[0],n:d[1],title:want.length>1}}).reverse(),stop=false;
-    while(todo.length&&!stop){
-      var d=todo.pop(),n=d.n,name=v7?d.name:d.name.replace(/^~(?=\/|$)/,P.st.home);
+    var todo=dirs.map(function(d){return {name:d[0],n:d[1],title:want.length>1}}).reverse();
+    while(todo.length){
+      var d=todo.pop(),n=d.n,name=d.name;
       if(n.prot){ /* only a folder found on the way down: 4.3BSD's getdir says so in place of the title, System V's after it */
         L.push('');if(sys5)L.push(name+':');L.push([name+' unreadable','err']);continue;
       }
       var ents=Object.keys(n.kids).filter(function(k){return all||k.charAt(0)!=='.'}).sort()
         .map(function(k){return [k,n.kids[k]]});
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
-      if(bsd&&ents.some(function(e){return name.length+e[0].length+2>1024})){L.push(['ls: filename too long','err']);P.status(1);stop=true;break}
+      if(bsd&&ents.some(function(e){return name.length+e[0].length+2>1024})){L.push(['ls: filename too long','err']);P.status(1);break}
       if(d.title){if(L.length)L.push('');L.push(name+':')}
       if(long){
         var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/512)});L.push('total '+t);

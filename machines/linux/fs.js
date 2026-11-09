@@ -71,7 +71,7 @@ Phosphor.setup(function(P){
   P.find('/etc',true).kids['os-release']=P.find('/usr/lib/os-release',true);
   sys('/etc/debian_version','f',{body:[D.debian],date:UPG});
   sys('/etc/hostname','f',{body:function(){return [ST.hostname]}});
-  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1\tlocalhost','127.0.1.1\t'+ST.hostname+'.gaijin.systems\t'+ST.hostname,'','# The following lines are desirable for IPv6 capable hosts','::1     localhost ip6-localhost ip6-loopback','ff02::1 ip6-allnodes','ff02::2 ip6-allrouters']}});
+  sys('/etc/hosts','f',{body:function(){return ['127.0.0.1\tlocalhost','127.0.1.1\t'+(ST.domain?ST.hostname+'.'+ST.domain+'\t':'')+ST.hostname,'','# The following lines are desirable for IPv6 capable hosts','::1     localhost ip6-localhost ip6-loopback','ff02::1 ip6-allnodes','ff02::2 ip6-allrouters']}});
   sys('/etc/issue','f',{body:['Debian GNU/Linux 13 \\n \\l','']});
   sys('/etc/issue.net','f',{body:['Debian GNU/Linux 13']});
   sys('/etc/shells','f',{body:['# /etc/shells: valid login shells','/bin/sh','/usr/bin/sh','/bin/bash','/usr/bin/bash','/bin/rbash','/usr/bin/rbash','/usr/bin/dash']});
