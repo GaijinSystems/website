@@ -26,12 +26,13 @@ function table(){
     .map(function(f){return {show:f[0].toLowerCase(),p:[f[1],f[2],f[3],f.slice(4).join(' ')]}});
 }
 P.command({names:['ps'],path:'/bin',
-  man:{what:'process status',syn:'ps [ ax ]',desc:[
+  man:function(pr){return {what:'process status',syn:pr.csh?'ps [ aux ]':'ps [ ax ]',desc:[
     'lists your processes: process id, terminal, cpu time used, and the command.',
     '',
-    'a    also list processes on other terminals.',
-    'x    also list processes with no terminal at all.'],bugs:[
-    'it shows what other people are doing.']},
+    'a    also list processes on other terminals.'].concat(pr.csh?[
+    'u    a user oriented output is produced. this includes the fields user, %cpu, %mem, sz and rss.']:[],[
+    'x    also list processes with no terminal at all.']),bugs:[
+    'it shows what other people are doing.']}},
   run:function(a){
     var fl=a.join('').replace(/-/g,''),T=table(),R=[],me=String(P.pidNow()||P.newPid()),tty=P.profile.csh?'02':'0';
     T.forEach(function(r){if(r.show==='-'||fl.indexOf(r.show)>=0)R.push(r.p)});
@@ -65,8 +66,8 @@ P.command({names:['uptime'],path:'/bin',
   }});
 
 P.command({names:['hostname'],path:'/bin',
-  man:{what:'print name of current host system',syn:'hostname',desc:[
-    'prints the name of this machine. only the super-user may change it.']},
+  man:{what:'print name of current host system',syn:'hostname [ nameofhost ]',desc:[
+    'prints the name of this machine. only the super-user may change it, by giving the new nameofhost.']},
   run:function(a){
     if(a[0]){P.typeLine('hostname: permission denied','err');return} /* only root may rename the machine */
     P.typeLine(P.st.hostname);
@@ -87,8 +88,10 @@ P.command({names:['ifconfig'],path:'/etc',
    is a HEAD request for this page, so the times are genuine round trips. Nothing else is reachable.
    Switch it off with "commands: -ping" in site/config.js if you would rather it made no requests. */
 P.command({names:['ping'],path:'/etc',
-  man:{what:'send echo requests to a host',syn:'ping host [ data size ] [ npackets ]',desc:[
-    'sends npackets echo requests (default 4, at most 10), one a second, and reports how long each answer took.',
+  man:{what:'send echo requests to a host',syn:'ping [ -c count ] host [ data size ] [ npackets ]',desc:[
+    'sends npackets echo requests (default 4, at most 10), one a second, and reports how long each answer took. the data size is taken and changes nothing.',
+    '',
+    '-c count   stop after sending count echo requests: the same as npackets.',
     '',
     'localhost answers at once. one other host answers as well: the server this terminal came from. those times are real round trips across your own network.'],bugs:[
     'every other host is unknown. it is {year}.']},
@@ -188,8 +191,8 @@ P.command({names:['connect'],terminal:true,help:'plug into another machine',
   }});
 
 P.command({names:['su'],path:'/bin',
-  man:{what:'become super-user',syn:'su',desc:[
-    'asks for the root password, then makes you the super-user, until you exit.'],bugs:[
+  man:{what:'become super-user',syn:'su [ userid ]',desc:[
+    'asks for the root password, then makes you the super-user, until you exit. userid, if given, must be root, your own name or the owner\'s; it makes no difference which.'],bugs:[
     'you do not know the root password. yet.']},
   run:function(a){
     var word=P.profile.rootPassword;
@@ -218,8 +221,14 @@ P.command({names:['sync'],path:'/bin',enabled:function(p){return !p.csh&&p.year<
   }});
 
 P.command({names:['rm'],path:'/bin',
-  man:{what:'remove files',syn:'rm [ -r ] file ...',desc:[
-    'removes each file named. -r also removes folders and everything in them. you can only remove your own files, in your own home folder or in /tmp. unless the site says otherwise, what you remove stays removed at your next visit in this browser; /tmp starts empty.']},
+  man:function(pr){ /* Debian's rm (machines/linux) takes -f and -R as well */
+    var rest='you can only remove your own files, in your own home folder or in /tmp. unless the site says otherwise, what you remove stays removed at your next visit in this browser; /tmp starts empty.';
+    if(pr.bash)return {what:'remove files',syn:'rm [ -r ] file ...',desc:['removes each file named. '+rest,'',
+      '-f, --force   ignore nonexistent files and arguments, never prompt',
+      '-r, -R, --recursive   remove directories and their contents recursively']};
+    return {what:'remove files',syn:'rm [ -r ] file ...',desc:[
+    'removes each file named. -r also removes folders and everything in them. '+rest]};
+  },
   run:function(a){
     var f=a.filter(function(x){return x.charAt(0)!=='-'}),rec=a.some(function(x){return /^-.*r/.test(x)}),denied=false;
     if(!f.length){if(P.profile.perror)P.typeLine('usage: rm [-rif] file ...','err');return}

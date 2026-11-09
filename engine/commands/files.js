@@ -16,12 +16,15 @@
 P.command({names:['ls'],core:true,help:'list files',path:'/bin',
   man:function(pr){ /* V7's ls has no -R; 4.3BSD's and System V's (IRIX) have */
     var v7=!pr.perror&&!pr.csh;
-    return {what:'list contents of directory',syn:v7?'ls [ -lad ] [ name ... ]':'ls [ -ladR ] [ name ... ]',desc:[
+    return {what:'list contents of directory',syn:v7?'ls [ -ladsi ] [ name ... ]':'ls [ -ladsiFR ] [ name ... ]',desc:[
     'for each folder named, lists its contents; for each file, repeats its name. with no name, lists the working directory, in alphabetical order.',
     '',
     '-l   long listing: mode, links, owner, size in bytes and the time of last change.',
     '-d   for a folder, list the folder itself and not what is in it.',
-    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.'].concat(v7?[]:[
+    '-a   also list names beginning with a dot, which are otherwise hidden. this includes . and .., the folder itself and the one above it.',
+    '-s   give the size of each file in kilobytes, before its name.',
+    '-i   for each file, print the i-number in the first column of the report.'].concat(v7?[]:[
+    '-F   mark folders with a trailing / and executable files with a trailing *.',
     '-R   recursively list the folders found, each after a blank line and its name, then the folders in it, before the next.'])}},
   run:function(a){
     /* the ls of V7, 4.3BSD or IRIX (System V's). V7's skips a letter it does not know, -F and -R among them */
@@ -82,7 +85,7 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
 
 P.command({names:['cat'],core:true,help:'print a file',path:'/bin',
   man:{what:'catenate and print',syn:'cat file ...',desc:[
-    'prints each file in turn.',
+    'prints each file in turn. with no file, it reads the standard input.',
     '',
     'locked files cannot be opened, and neither can folders.'],bugs:[
     'cat of a program prints exactly what you deserve.']},

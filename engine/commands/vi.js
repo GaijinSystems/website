@@ -655,7 +655,12 @@ P.command({names:['vi'],path:'/bin',
   man:{what:'the visual editor',syn:'vi [ file ]',desc:[
     'edits a file on the full screen. you are in command mode: i or a to type text and escape to stop. h j k l move, or the arrow keys. x deletes, dd deletes a line, u undoes, and . repeats.',
     '',
-    ':w writes. :q quits. :q! quits regardless. ZZ writes and quits.'],bugs:[
+    ':w writes. :q quits. :q! quits regardless. ZZ writes and quits.',
+    '',
+    'motions: h j k l w b e W B E 0 ^ $ | f F t T ; , % { } H M L G n N / ? \' ` + - and counts before them.',
+    'changes: i I a A o O r R x X s S J ~ d c y < > D C Y p P u U ., and "a before a delete, yank or put to use the register named a.',
+    'keys: ctrl-f ctrl-b ctrl-d ctrl-u ctrl-e ctrl-y ctrl-g ctrl-l.',
+    'colon commands: :w :q :wq :x :e :r :f :set :s :d :g, and a line number to go to it.'],bugs:[
     'there is a way out. everyone finds it eventually.']},
   run:function(a){
     if(P.piped()){P.typeLine('ex: Visual needs addressable cursor or upline capability','err');return}

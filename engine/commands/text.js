@@ -5,8 +5,9 @@
 (function(P){
 'use strict';
 
-function cmd(name,what,syn,desc,run,noH){
-  P.command({names:[name],path:'/bin',noHelpFlag:!!noH,man:{what:what,syn:syn,desc:[desc]},run:run});
+function cmd(name,what,syn,desc,run,noH){ /* desc: a line, a list of lines, or function(profile) giving [syn, lines] where the page differs by machine */
+  var man=typeof desc==='function'?function(pr){var o=desc(pr);return {what:what,syn:o[0]||syn,desc:o[1]}}:{what:what,syn:syn,desc:[].concat(desc)};
+  P.command({names:[name],path:'/bin',noHelpFlag:!!noH,man:man,run:run});
 }
 function nameOf(p){return p.replace(/\/+$/,'').split('/').pop()}
 function operands(a){return a.filter(function(x){return x.charAt(0)!=='-'})}
@@ -67,7 +68,8 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   parent.kids[name]=n;
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
 });
-cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.',function(a){
+cmd('chmod','change who may do what to a file','chmod mode file ...',['mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.','',
+  'a symbolic mode has the form [who] op permission. who is a combination of u (user\'s permissions), g (group), o (others) and a (all, the same as ugo, and the default). op is + to add the permission, - to take it away, or = to set exactly that. permission is any combination of r (read), w (write) and x (execute): go-w, u=rwx, a+r.'],function(a){
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
@@ -95,7 +97,22 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
   });
 });
 
-cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints the lines that match. -v the lines that do not, -c only how many, -n with line numbers, -i ignoring case.',function(a,raw,words){
+cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function(pr){ /* -s on all; -h at Berkeley and GNU; -q -o -F and - for GNU's */
+  var gnu=pr.bash,bsd=pr.perror&&!gnu,sys5=pr.csh&&!pr.perror;
+  if(gnu)return [null,['prints the lines that match, with the file\'s name before each when there is more than one file. with no file, or when file is -, reads standard input.','',
+    '-c   suppress normal output; instead print a count of matching lines for each input file.',
+    '-F   interpret the pattern as a fixed string, not a regular expression.',
+    '-h   suppress the prefixing of file names on output.',
+    '-i   ignore case distinctions in patterns and input data.',
+    '-n   prefix each line of output with the 1-based line number within its input file.',
+    '-o   print only the matched (non-empty) parts of a matching line, with each such part on a separate output line.',
+    '-q   quiet; do not write anything to standard output. exit immediately with zero status if any match is found, even if an error was detected.',
+    '-s   suppress error messages about nonexistent or unreadable files.',
+    '-v   invert the sense of matching, to select non-matching lines.']];
+  return [bsd?'grep [ -cinvsh ] pattern [ file ... ]':'grep [ -cinvs ] pattern [ file ... ]',['prints the lines that match. -v the lines that do not, -c only how many, -n with line numbers, -i ignoring case.','',
+    sys5?'-s   error messages about files that do not exist or cannot be read are suppressed.':'-s   silent mode: nothing is printed (except error messages), only the status.'].concat(bsd?[
+    '-h   do not print filename headers with output lines.']:[])];
+},function(a,raw,words){
   var w=words.slice(1),fl=flags(w),rest=w.filter(function(x){return x.charAt(0)!=='-'||x==='-'&&P.profile.bash}),re; /* GNU's - : its input */
   if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
   var gnu=P.profile.bash,only=gnu&&/o/.test(fl),pat=gnu&&/F/.test(fl)?rest[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):rest[0]; /* GNU's -F: the pattern as it is; -o: just what matched */
@@ -134,7 +151,14 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]','prints 
   })});
   P.queue(function(){P.status(bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
 });
-cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how many lines, words and characters.',function(a){
+cmd('wc','count lines, words and characters','wc [ -lwc ] [ name ... ]',function(pr){
+  if(pr.bash)return [null,['prints how many lines, words and characters, for each file and, for more than one, in total. with no file, reads standard input.','',
+    '-c   print the byte counts',
+    '-l   print the newline counts',
+    '-w   print the word counts']];
+  return [null,['prints how many lines, words and characters, for each name and, for more than one, in total. with no name, reads the standard input.','',
+    'the options l, w and c may be used in any combination to specify that a subset of lines, words and characters are to be reported. they are given together, after one -: wc -lw.']];
+},function(a){
   function counts(L){ /* newlines, words and bytes: a last line with no newline is no line */
     var words=0,chars=0,x=L.open?1:0;
     L.forEach(function(l){var t=l.trim();if(t)words+=t.split(/\s+/).length;chars+=l.length+1});
@@ -301,7 +325,18 @@ function headOf(L,n,c,z){ /* the first n lines, or c bytes; z: lines end at a NU
   R.open=!!t&&!/\n$/.test(t);
   return R;
 }
-cmd('head','print the first lines','head [ -n ] [ file ... ]','prints the first n lines, normally 10.',function(a){
+cmd('head','print the first lines','head [ -n ] [ file ... ]',function(pr){
+  if(!pr.bash)return [null,['prints the first n lines, normally 10. a -n before a file holds for the files after it.']];
+  return [null,['print the first 10 lines of each file to standard output. with more than one file, precede each with a header giving the file name. with no file, or when file is -, read standard input.','',
+    '-c, --bytes=[-]NUM   print the first NUM bytes of each file; with the leading \'-\', print all but the last NUM bytes of each file',
+    '-n, --lines=[-]NUM   print the first NUM lines instead of the first 10; with the leading \'-\', print all but the last NUM lines of each file',
+    '-q, --quiet, --silent   never print headers giving file names',
+    '-v, --verbose   always print headers giving file names',
+    '-z, --zero-terminated   line delimiter is NUL, not newline',
+    '-NUM   as the first argument, the same as -n NUM.',
+    '',
+    'NUM may have a multiplier suffix: b 512, kB 1000, K 1024, MB 1000*1000, M 1024*1024, GB 1000*1000*1000, G 1024*1024*1024, and so on for T, P, E, Z, Y, R, Q. binary prefixes can be used, too: KiB=K, MiB=M, and so on.']];
+},function(a){
   var o=P.headArgs(a),many=o.F.length>1&&!o.q||o.v,first=true;
   if(o.err&&P.profile.bash){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1);return} /* GNU's: before it reads anything */
   if(!o.F.length&&!o.err){if(o.v)P.say(['==> standard input <==']);P.input([],function(L){P.say(headOf(L,o.n,o.c,o.z))})}
@@ -313,7 +348,10 @@ cmd('head','print the first lines','head [ -n ] [ file ... ]','prints the first 
   })});
   if(o.err){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1)}
 });
-cmd('tail','print the last lines','tail [ -n ] [ file ... ]','prints the last n lines, normally 10.',function(a){
+cmd('tail','print the last lines','tail [ -n ] [ file ... ]',function(pr){
+  return [null,pr.bash?['print the last 10 lines of the files, taken as one, to standard output. with no file, read standard input.','',
+    '-NUM   print the last NUM lines instead of the last 10.']:['prints the last n lines, normally 10.']];
+},function(a){
   var n=count(a,10);P.input(operands(a),function(L){var R=n?L.slice(-n):[];R.open=!!L.open&&R.length>0;P.say(R)});
 });
 cmd('tr','change characters','tr string1 string2','changes each character of string1 into the matching one of string2. ranges like a-z work.',function(a,raw,words){
@@ -330,7 +368,10 @@ cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it r
   });
 });
 
-cmd('cal','print a calendar','cal [ month ] year','prints a month, or a whole year, of the real calendar. cal 9 1752 is worth a look.',function(a){
+cmd('cal','print a calendar','cal [ month ] year',function(pr){ /* System V's (IRIX) cal with no argument: this month */
+  return pr.year<1990?[null,['prints a month, or a whole year, of the real calendar. cal 9 1752 is worth a look.']]:
+    ['cal [ [ month ] year ]',['prints a month, or a whole year, of the real calendar. with no argument, prints the current month. cal 9 1752 is worth a look.']];
+},function(a){
   var MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
   /* day of the week of the first of a month, the way cal itself counts: Julian to September 1752, then Gregorian */
   function dow(y,m){
@@ -379,7 +420,26 @@ cmd('make','maintain program groups','make [ name ... ]','brings each name up to
 cmd('true','succeed','true','does nothing, successfully.',function(){P.status(0)});
 cmd('false','fail','false','does nothing, unsuccessfully.',function(){P.status(1)});
 cmd('tty','print the name of this terminal','tty','prints the name of this terminal.',function(){P.typeLine(P.profile.csh?'/dev/tty02':'/dev/tty0')});
-cmd('stty','set the speed of the line','stty [ speed ]','with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.',function(a){
+cmd('stty','set the speed of the line','stty [ speed ]',function(pr){
+  var D=['with a speed in baud, such as 300, 1200 or 9600, runs the line at that speed: ten bits a character, and you can read along. stty 0 goes back to normal. with no speed, reports it.'];
+  if(!pr.teletype)return [null,D];
+  return ['stty [ option ... ]',D.concat(['', /* V7's stty(1), for the modes the Teletype Model 33's line acts on */
+    'on the teletype (see teletype), it reports the current settings of the options, and takes these as well, one after another:',
+    '0   hang up phone line immediately: you are logged out.',
+    'raw   raw mode input (no erase, kill, interrupt, quit, eot; parity bit passed back).',
+    '-raw   negate raw mode.',
+    'cooked   same as -raw.',
+    'cbreak   make each character available to read as received; no erase and kill.',
+    '-cbreak   make characters available to read only when newline is received.',
+    'echo   echo back every character typed.',
+    '-echo   do not echo characters.',
+    'lcase   map upper case to lower case.',
+    '-lcase   do not map case.',
+    'ek   reset erase and kill characters back to normal # and @.',
+    'erase c   set erase character to c. c can be of the form ^X which is interpreted as a control X.',
+    'kill c   set kill character to c. ^X works here also.',
+    'the rest of version 7\'s options (even, odd, nl, tabs, cr0 to cr3, tty33 and the like) are taken and change nothing.'])];
+},function(a){
   var T=P.teletype&&P.teletype();
   if(T){ /* V7 on a Teletype Model 33: the modes getty set for it (ANYP ECHO CRMOD XTABS LCASE CR1), told as V7's stty told them;
             lcase, echo, raw, cbreak, erase, kill and ek change the line; speed 0 hangs it up, which logs out */
@@ -417,7 +477,12 @@ cmd('file','guess what a file is','file file ...','says what sort of thing each 
     P.typeLine(x+':\t'+k);
   });
 });
-cmd('sh','run a shell script','sh file','runs the commands in a file, one line at a time.',function(a,raw){
+cmd('sh','run a shell script','sh file',function(pr){
+  return ['sh [ -c string ] [ file [ arg ... ] ]',['runs the commands in a file, one line at a time. each arg is passed to the script: $1, $2 and so on, with the file\'s name as $0.'].concat(
+    pr.csh&&pr.perror?['with no file, at the terminal, starts a bourne shell, with its $ prompt, until exit or end of file (^D).']:[],[
+    '',
+    '-c string   runs the commands in string instead.'])];
+},function(a,raw){
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
   var c=a[0]==='-c'&&/^\s*\S+\s+-c\s+(.*)$/.exec(raw||''); /* sh -c 'a command' */
   if(c){P.runScript([P.unquote(c[1])]);return}
@@ -531,7 +596,7 @@ function testExpr(w){
   }
   return r.v;
 }
-cmd('test','check a condition','test expr','succeeds or fails, and says nothing. -f file, -d folder, -r readable, -w writable, -s not empty, -z or -n a string, = and != strings, -eq -ne -lt -le -gt -ge numbers, ! not, -a and, -o or.',function(a,raw,words){P.status(testExpr(words.slice(1))?0:1)},true);
+cmd('test','check a condition','test expr',['succeeds or fails, and says nothing. -f file, -d folder, -r readable, -w writable, -s not empty, -z or -n a string, = and != strings, -eq -ne -lt -le -gt -ge numbers, ! not, -a and, -o or. a string on its own is true if it is not empty.','','[ expr ], with the ] as its own last word, is the same as test expr.'],function(a,raw,words){P.status(testExpr(words.slice(1))?0:1)},true);
 builtin(['['],function(a,raw,words){
   var w=words.slice(1);
   if(w[w.length-1]!==']'){P.typeLine('[: missing ]','err');return}
@@ -558,7 +623,19 @@ cmd('printenv','print the environment','printenv [ name ]','prints the environme
   if(!a[0]){showEnv();return}
   if(P.has(P.env,a[0]))P.typeLine(P.env[a[0]]);
 });
-cmd('set','print the shell variables','set','prints the variables the shell knows about.',function(){
+cmd('set','print the shell variables','set',function(pr){ /* the page of csh's set (csh.js) and bash's (machines/linux) too */
+  if(pr.csh)return ['set [ name [ = word ] ] ...',['prints the variables the shell knows about.','',
+    'set name   sets name to the null string.',
+    'set name = word   sets name to the single word.',
+    'set name = ( wordlist )   sets name to the list of words in wordlist; file names in it are expanded.',
+    'several may be given on one line.'].concat(pr.perror?['','in a bourne shell (sh), set only prints its variables.']:[])];
+  if(pr.bash)return ['set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [-] [arg ...]',['with no arguments, prints the variables the shell knows about.','',
+    'the options, and -o with an option name, are taken and change nothing here.',
+    '--   assign any remaining arguments to the positional parameters.',
+    '-    the same, when arguments follow it.',
+    'arg ...   the first word that is not an option, and those after it, become the positional parameters $1, $2 ... ($# and $@).']];
+  return [null,['prints the variables the shell knows about.']];
+},function(){
   P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> '].concat(P.envRows()));
 });
 cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they are the same file.',function(a){
