@@ -49,7 +49,7 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
   var n=P.find(a[0]);
   if(!n||n.type==='d'||n.prot){P.oops('cp',a[0],n,'cp: cannot open '+a[0]);return}
   var to=target(a[1],a[0]);
-  if(P.immutable(to)){P.notPermitted('cp',named(to,a));return} /* Debian's immutable attribute */
+  if(P.immutable(to,true)){P.notPermitted('cp',named(to,a));return} /* Debian's immutable attribute */
   if(!P.writeFile(to,P.text(n),false))P.oopsW('cp',a[1],'cp: cannot create '+a[1]);
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
@@ -72,7 +72,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
     if(n&&!n.prot&&P.isImmutable(n)){P.notPermitted('chmod',x);return}
-    if(!n||!P.canWrite(P.pathOf(n))||n.prot){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
+    if(!n||n.prot||!P.mayChmod(n)){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
     var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
     if(/^[0-7]{3}$/.test(a[0])){
       m=t+a[0].split('').map(function(c){c=+c;return (c&4?'r':'-')+(c&2?'w':'-')+(c&1?'x':'-')}).join('');
@@ -325,7 +325,7 @@ cmd('tr','change characters','tr string1 string2','changes each character of str
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
   var app=/a/.test(flags(a)),F=operands(a);
   P.input([],function(L){
-    F.forEach(function(x){if(!P.writeFile(x,L,app)){if(P.immutable(P.norm(x)))P.notPermitted('tee',x);else P.typeLine('tee: cannot open '+x,'err')}});
+    F.forEach(function(x){if(!P.writeFile(x,L,app)){if(P.immutable(P.norm(x),true))P.notPermitted('tee',x);else P.typeLine('tee: cannot open '+x,'err')}});
     P.say(L);
   });
 });
