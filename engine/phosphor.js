@@ -2157,7 +2157,7 @@ function braces(s){ /* brace expansion, word by word, outside quotes and `comman
                        and no x={a,b} assignment), 4.3BSD csh's {a,b} (sh.glob.c: its {a} is a, and a { with no } is Missing }) */
   if(s.indexOf('{')<0||PROFILE.dos||PROFILE.noUnix||!PROFILE.bash&&!CSH)return s;
   var out='',w=null,j;
-  function flush(){if(w===null)return;if(CSH)w=w.replace(/\$(\w+)(?=\{)/g,'${$1}'); /* csh works out $x before its braces: $x{a,b} is the value, then a or b */
+  function flush(){if(w===null)return;if(CSH)w=w.replace(/'[^']*'|"[^"]*"|\\[\s\S]|\$(\w+)(?=\{)/g,function(m,n){return n?'${'+n+'}':m}); /* csh works out $x before its braces: $x{a,b} is the value, then a or b; quoted or escaped text is left as typed */
     out+=w.indexOf('{')<0||PROFILE.bash&&/^[A-Za-z_]\w*(\[[^\]]*\])?\+?=/.test(w)||CSH&&/^\{\}?$/.test(w)?w:brace1(w).join(' ');w=null}
   for(var i=0;i<s.length;i++){
     var c=s.charAt(i);
