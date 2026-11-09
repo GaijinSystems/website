@@ -135,7 +135,8 @@ function letGo(){return new Promise(function(r){dscW.push(r)})} /* when the term
 V.letGo=function(){dscW.splice(0).forEach(function(r){r()})};
 function release(){if(V.attnWait){var r=V.attnWait;V.attnWait=null;r()}} /* what waited for the attention's line goes on */
 /* CMS going on beside the attention's read: the command or EXEC cut short, its ready message, then the console stack */
-function goOn(){V.carryOn();P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()})}
+function goOn(){V.carryOn();nextCms()}
+function nextCms(){P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()})} /* the next CMS command, once what is queued is done, unless CP has the terminal */
 function cmsNext(){
   if(V.owe){V.owe=false;V.ready(V.rc||0)}
   stackNext();
@@ -177,7 +178,7 @@ V.waitDsc=function(k){
   V.side=P.aside(function(){
     P.queue(function(){return was&&was.end()});
     P.queue(k);
-    P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()});
+    nextCms();
   });
 };
 /* The line end in a line typed: CP passes it on as X'15' (DMKQCN), and DMSCRD, reading the line, takes what comes

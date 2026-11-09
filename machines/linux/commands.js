@@ -253,9 +253,10 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
   'prints its arguments as the format says: %s a string, %d a number, %x hex, %o octal, %c a character, %b a string with backslash escapes, %q quoted for the shell, %% a %; widths and precisions as in C. the format is used again while arguments are left. -v var puts the output in var.',
   function(a,raw,w){
     var W=w.slice(1),to=null,at=P.bashVars.at();
-    if(W[0]==='-v'){if(W.length<2){err(at+'printf: -v: option requires an argument');err('printf: usage: printf [-v var] format [arguments]');P.queue(function(){P.status(2)});return}to=W[1];W=W.slice(2)}
+    function usage(){err('printf: usage: printf [-v var] format [arguments]');P.queue(function(){P.status(2)})}
+    if(W[0]==='-v'){if(W.length<2){err(at+'printf: -v: option requires an argument');usage();return}to=W[1];W=W.slice(2)}
     if(W[0]==='--')W=W.slice(1);
-    if(!W.length){err('printf: usage: printf [-v var] format [arguments]');P.queue(function(){P.status(2)});return}
+    if(!W.length){usage();return}
     var F=W[0],A=W.slice(1),k=0,out='',bad=false,stop=false;
     function arg(){return k<A.length?A[k++]:undefined}
     function num(x,conv){ /* an integer word: 'c is its character's code; 0x and 0 prefixes; a word that is not all number is an error, with the part that was */
@@ -263,21 +264,23 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
       if(/^['"]/.test(x))return BigInt(x.length>1?x.codePointAt(1):0);
       var m=/^\s*([-+]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)/.exec(x),v=BigInt(0);
       if(m){var d=m[2];v=/^0[xX]/.test(d)?BigInt(d):/^0./.test(d)?BigInt('0o'+d.slice(1)):BigInt(d);if(m[1]==='-')v=-v}
-      if(!m||m[0].length<x.length){flush();err(at+'printf: '+x+': invalid number');bad=true}
+      if(!m||m[0].length<x.length)badNum(x);
       return v;
     }
+    function badNum(x){flush();err(at+'printf: '+x+': invalid number');bad=true}
     function flo(x){
       if(x===undefined||x==='')return 0;
       if(/^['"]/.test(x))return x.length>1?x.codePointAt(1):0;
       var m=/^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?|^\s*[-+]?(inf|nan)/i.exec(x),v=m?parseFloat(m[0]):0;
-      if(!m||m[0].length<x.length){flush();err(at+'printf: '+x+': invalid number');bad=true}
+      if(!m||m[0].length<x.length)badNum(x);
       return v;
     }
     function flush(){ /* what it has made so far goes out before an error: bash writes as it goes */
       if(to!==null||!out)return;
-      var L=out.split('\n'),last=L.pop();L.forEach(function(l){P.typeLine(l)});if(last)P.typeLine(last,null,null,{open:true});out='';
+      var L=out.split('\n'),last=L.pop();if(last)L.push(last);L.open=!!last;lines(L);out='';
     }
     function pad(s,fl,wd){if(wd===null||s.length>=wd)return s;return fl.indexOf('-')>=0?s+' '.repeat(wd-s.length):' '.repeat(wd-s.length)+s}
+    function strOut(s,fl,wd,pr){return pad(pr!==null?s.slice(0,pr):s,fl,wd)}
     function intOut(v,c,fl,wd,pr){
       var neg=false,s;
       if(c==='d'||c==='i'){neg=v<BigInt(0);s=(neg?-v:v).toString()}
@@ -306,23 +309,33 @@ cmd('printf','','formats and prints ARGUMENTS under control of the FORMAT','prin
       if(fl.indexOf('0')>=0&&fl.indexOf('-')<0&&wd!==null&&isFinite(v))return pre+s.padStart(wd-pre.length,'0');
       return pad(pre+s,fl,wd);
     }
+    var T=[]; /* the format read once: {s: text}, a conversion {fl, wd, pr, cv} as written, or {bad: one with no format character}, the last */
+    for(var i=0;i<F.length;i++){
+      var c=F.charAt(i);
+      if(c==='\\'){var e=/^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)?/.exec(F.slice(i))[0];c=pfEsc(e,false).s;i+=e.length-1}
+      else if(c==='%'){
+        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([a-zA-Z%])?/.exec(F.slice(i)),cv=m[4];
+        if(!cv||!/[sbqcdiouxXeEfFgG%]/.test(cv)){T.push({bad:F.slice(i,i+m[0].length)});break}
+        i+=m[0].length-1;
+        if(cv!=='%'){T.push({fl:m[1],wd:m[2]===undefined?null:m[2],pr:m[3]===undefined?null:m[3],cv:cv});continue}
+      }
+      if(T.length&&T[T.length-1].s!==undefined)T[T.length-1].s+=c;else T.push({s:c});
+    }
     do{
       var took=false;
-      for(var i=0;i<F.length&&!stop;i++){
-        var c=F.charAt(i);
-        if(c==='\\'){var e=/^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)?/.exec(F.slice(i))[0];out+=pfEsc(e,false).s;i+=e.length-1;continue}
-        if(c!=='%'){out+=c;continue}
-        var m=/^%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([a-zA-Z%])?/.exec(F.slice(i)),fl=m[1],wd=m[2]===undefined?null:m[2],pr=m[3]===undefined?null:m[3],cv=m[4];
-        if(!cv||!/[sbqcdiouxXeEfFgG%]/.test(cv)){flush();err(at+"printf: `"+F.slice(i,i+m[0].length)+"': missing format character");P.queue(function(){P.status(1)});stop=true;bad=null;break}
-        i+=m[0].length-1;
-        if(cv==='%'){out+='%';continue}
+      for(var j=0;j<T.length&&!stop;j++){
+        var tk=T[j];
+        if(tk.s!==undefined){out+=tk.s;continue}
+        if(tk.bad!==undefined){flush();err(at+"printf: `"+tk.bad+"': missing format character");P.queue(function(){P.status(1)});stop=true;bad=null;break}
+        var fl=tk.fl,wd=tk.wd,pr=tk.pr;cv=tk.cv;
         if(wd==='*'){took=true;wd=Number(num(arg()));if(wd<0){fl+='-';wd=-wd}}else if(wd!==null)wd=+wd;
         if(pr==='*'){took=true;pr=Number(num(arg()));if(pr<0)pr=null}else if(pr!==null)pr=+pr||0;
         var x=arg();if(x!==undefined)took=true;
-        if(cv==='s'){var t=x===undefined?'':x;out+=pad(pr!==null?t.slice(0,pr):t,fl,wd)}
-        else if(cv==='b'){var r=pfEsc(x===undefined?'':x,true);out+=pad(pr!==null?r.s.slice(0,pr):r.s,fl,wd);if(r.stop)stop=true}
-        else if(cv==='q'){var q=pfQuote(x===undefined?'':x);out+=pad(pr!==null?q.slice(0,pr):q,fl,wd)}
-        else if(cv==='c'){out+=pad(x===undefined?'':x.charAt(0),fl,wd)}
+        var sx=x===undefined?'':x;
+        if(cv==='s')out+=strOut(sx,fl,wd,pr);
+        else if(cv==='b'){var r=pfEsc(sx,true);out+=strOut(r.s,fl,wd,pr);if(r.stop)stop=true}
+        else if(cv==='q')out+=strOut(pfQuote(sx),fl,wd,pr);
+        else if(cv==='c')out+=pad(sx.charAt(0),fl,wd);
         else if(/[diouxX]/.test(cv))out+=intOut(num(x),cv,fl,wd,pr);
         else out+=floOut(flo(x),cv,fl,wd,pr);
       }
