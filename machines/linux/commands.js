@@ -22,6 +22,7 @@ P.setup(function(){
     return S.user+'@'+S.hostname+':'+w+(S.user==='root'?'# ':'$ ');
   }
   P.setPrompt(ps1);
+  P.subPrompt=ps1; /* what a game's shell escape prompts with: bash's PS1, not a C shell's % */
   Object.defineProperty(P.profile,'rootPrompt',{get:ps1,configurable:true}); /* root's prompt is the same PS1, ending in # */
   var bye=P.cmds.exit; /* a login shell says so as it goes */
   if(bye)P.cmds.exit=P.cmds.logout=function(a,raw,w){
@@ -366,13 +367,15 @@ cmd('unset','','unset values and attributes of shell variables and functions','u
 cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... [-] [NAME=VALUE]... [COMMAND [ARG]...]','with no command, prints the environment, one NAME=value to a line.',function(){
   var E=envAll();lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));
 });
-cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION...] [SECTION] PAGE...','prints the manual page for each page named. the section number, if given, is accepted and changes nothing here.',function(a){
-  var w=a.filter(function(x){return !/^\d\w*$/.test(x)&&x.charAt(0)!=='-'});
+cmd('man','/usr/bin','an interface to the system reference manuals','man [OPTION...] [SECTION] PAGE...','prints the manual page for each page named. a section number, if given, is checked for the games in /usr/local/games, whose pages are in section 6; for the rest it is accepted and changes nothing here.',function(a){
+  var w=a.filter(function(x){return !/^\d\w*$/.test(x)&&x.charAt(0)!=='-'}),sec=a.filter(function(x){return /^\d\w*$/.test(x)})[0];
   if(!w.length){P.say(['What manual page do you want?',"For example, try 'man man'."]);P.status(1);return}
   w.forEach(function(x,i){
     if(i)P.typeLine('');
-    if(P.has(P.man,x))P.say(P.manPage(x));
-    else{err('No manual entry for '+x);P.status(16)}
+    var p=P.has(P.man,x)?P.man[x]:null;
+    if(p&&p.sec&&sec&&String(p.sec)!==sec.charAt(0))p=null; /* a page with its own section: man 1 rogue looks in section 1 */
+    if(p){var L=P.manPage(x);if(p.sec)L[0]=x.toUpperCase()+'('+p.sec+')';P.say(L)}
+    else{err('No manual entry for '+x+(sec&&P.has(P.man,x)?' in section '+sec:''));P.status(16)}
   });
 },{core:true,help:'the manual'});
 function homeOf(u){return u==='root'?'/root':'/home/'+u}

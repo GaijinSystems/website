@@ -291,7 +291,7 @@ function run(words){
     if(P.keep&&!P.piped()){
       var back=P.keep(); /* a child shell: a cd in it stays there */
       for(;;){
-        pr('% ');
+        pr(P.subPrompt?P.subPrompt():'% '); /* the shell's prompt: csh's on 4.3BSD */
         var l=yield;
         if(l===null||/^\s*(exit|logout)\s*$/.test(l))break;
         if(l!==P.INT&&l.trim())P.runScript([l]);

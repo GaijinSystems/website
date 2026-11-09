@@ -5767,7 +5767,7 @@ function session(argv){
   }
   function sh(){
     var line;
-    P.queue(function(){return P.readLine('% ',true).then(function(l){line=l})},true);
+    P.queue(function(){return P.readLine(P.subPrompt?P.subPrompt():'% ',true).then(function(l){line=l})},true);
     P.queue(function(){
       if(line===null||/^\s*(exit|logout)\s*$/.test(line)){
         P.say(['']);

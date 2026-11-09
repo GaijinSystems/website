@@ -56,7 +56,7 @@ P.command({names:['btlgammon'],run:function(){
     if(P.piped())return;
     var back=P.keep();
     for(;;){
-      pr('% ');
+      pr(P.subPrompt?P.subPrompt():'% '); /* the shell's prompt: csh's on 4.3BSD */
       var v=yield;
       if(v===null||v===undefined||/^\s*(exit|logout)\s*$/.test(v)){back();return}
       if(v.trim())P.runScript([v]);
