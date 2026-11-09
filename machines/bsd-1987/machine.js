@@ -8,6 +8,8 @@ badge:     PHOSPHOR-9
 installed: 1986-06-06 19:55
 user:      guest
 homes:     /usr
+# the guest's own: what csh reads at start, login and logout, and sh at login
+guest files: .cshrc, .login, .logout, .profile
 case:      sensitive
 root password: vaxen
 mail notice: You have mail.

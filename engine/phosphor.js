@@ -153,7 +153,7 @@ var CAT=PH.machine&&PH.catalog[PH.machine]; /* the machine's catalog entry; none
 /* ---------- content (parsed from every Phosphor.content block, in load order) ---------- */
 var SITE=(location.hostname||'').toLowerCase(); /* the real server this page came from ('' when opened as a file) */
 var PROFILE=(function(){
-  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
+  var P={name:'OPERATOR',email:'',speed:1,upper:true,sound:true,protected:[],guestFiles:[],homes:'/usr',loginPrompt:'login: ',rootName:'root',rootPrompt:'# ',loginFailed:'Login incorrect',lsOwner:8,lsSize:8,mailNotice:'you have mail.',notFound:'%s: not found',
     cord:{turns:7,desktop:0,width:18,thickness:3.2,gap:1.8,straight:7.35,sway:2.5},
     title:'',badge:'PHOSPHOR-9',year:CAT&&CAT.year||1979,installed:'',user:'guest',hostname:'',source:'',prompt:'$ ',
     offline:'the network is down.',off:[],machine:'',machines:'',effects:'auto',
@@ -174,6 +174,9 @@ var PROFILE=(function(){
     else if(k==='teletype')P.teletype=yes(v);           /* a Teletype Model 33 instead of the glass, where the machine has one (V7) */
     else if(k==='effects'){var fx=v.toLowerCase();if(/^(auto|full|lite)$/.test(fx))P.effects=fx;else P.problems.push('effects: auto, full or lite')}
     else if(k==='protected')P.protected=P.protected.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean));
+    else if(k==='guest files')P.guestFiles=P.guestFiles.concat(v.split(',').map(function(x){return x.trim()}).filter(Boolean)); /* the guest's own: the machine's shell startup files, and the site's choice */
+    else if(k==='core mode'){if(/^-[-r][-w]-[-r][-w]-[-r][-w]-$/.test(v))P.coreMode=v} /* a core dump's mode, as the kernel made it (Linux: -rw-------) */
+    else if(k==='immutable')P.immutable=yes(v);           /* the site owner's files in the home carry Linux's immutable attribute (chattr +i) */
     else if(k==='not found')P.notFound=v;
     else if(k==='ls columns'){var lc=v.split(/\s+/);P.lsOwner=+lc[0]||8;P.lsSize=+lc[1]||8;P.lsTight=lc[2]==='tight'}
     else if(k==='mail notice')P.mailNotice=v;
@@ -713,6 +716,7 @@ function oops(who,x,n,old){ /* a file that would not open: the old wording, or B
 }
 function oopsW(who,x,old){ /* the same for a file that could not be made: no such folder, or not allowed there */
   var up=String(x).replace(/\/+[^\/]*$/,'')||'/';
+  if(immutable(norm(x))){notPermitted(who,x);return}
   if(PROFILE.dos&&!PROFILE.dcl&&!who){typeLine('File creation error','err');return} /* COMMAND.COM's redirection: no room, or a read-only file there */
   typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
 }
@@ -1022,11 +1026,26 @@ function chunk(a,n){var o=[];for(var i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));
 function globRe(p,flags){return new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$',flags)}
 function isRoot(){return !!RP&&PROFILE.fold(ST.user)===PROFILE.fold(PROFILE.rootName)} /* the super-user now, not someone su'd to from root */
 var ATTRS=PROFILE.dos&&!PROFILE.dcl; /* DOS and CP/M: no owners, only a read-only attribute, which anyone may clear */
-function mayAlter(n){ /* may who is logged in change, replace or remove this file? root may; on DOS and CP/M, a file without
-  the read-only attribute; elsewhere, their own, or one anyone may write. The site's files and the system's are someone else's */
-  if(!n||n.dev||isRoot())return true;
+var OWNED=!PROFILE.noUnix&&!PROFILE.dos; /* the Unix machines: a folder takes what its owner and its mode allow */
+var IMM=OWNED&&!!PROFILE.immutable; /* Debian: ro is the immutable attribute (chattr +i), which stops root too */
+function mayAlter(n){ /* may who is logged in change, replace or remove this file? root may, but not an immutable one; on DOS and CP/M,
+  a file without the read-only attribute; elsewhere, their own, or one anyone may write. The site's files and the system's are someone else's */
+  if(!n||n.dev)return true;
+  if(IMM&&n.ro)return false;
+  if(isRoot())return true;
   if(ATTRS)return !n.ro;
   return n.owner===ST.user||modeOf(n).charAt(8)==='w';
+}
+function immutable(abs){ /* is it Linux's immutable attribute that stops a change to abs: on the file, or on the folder it is in */
+  if(!IMM)return false;
+  var ex=find(abs,true),dir=find(dirOf(abs),true);
+  return !!(ex&&ex!==ROOT&&ex.ro||dir&&dir.ro);
+}
+function notPermitted(who,x,to){ /* EPERM, in the words of GNU's tools and bash: what the immutable attribute gets */
+  var q=function(s){return "'"+s+"'"},E=': Operation not permitted';
+  typeLine(who==='mv'?'mv: cannot move '+q(x)+' to '+q(to)+E:who==='cp'?'cp: cannot create regular file '+q(x)+E:who==='touch'?'touch: cannot touch '+q(x)+E:
+    who==='chmod'?'chmod: changing permissions of '+q(x)+E:who==='rmdir'?'rmdir: failed to remove '+q(x)+E:who==='mkdir'?'mkdir: cannot create directory '+q(x)+E:
+    who==='rm'?'rm: cannot remove '+q(x)+E:who==='ln'?'ln: failed to create hard link '+q(x)+' => '+q(to)+E:(who||'bash')+': '+x+E,'err');
 }
 function canWrite(abs){ /* your home folder, or a folder anyone may write in; nothing else, and nothing locked or someone else's */
   var up=dirOf(abs),dir=find(up),ex=find(abs,true);
@@ -1034,10 +1053,11 @@ function canWrite(abs){ /* your home folder, or a folder anyone may write in; no
   return mayPut(up,dir);
 }
 function mayPut(up,dir){ /* the folder part of canWrite (dir: the folder up names): what writeFile asks, once it has seen to the file itself */
-  if(!dir||dir.type!=='d'||dir.prot)return false;
+  if(!dir||dir.type!=='d'||dir.prot||IMM&&dir.ro)return false;
   var at=pathOf(dir);
   if(find(up,true)!==dir)return false; /* find's cat photo01 finds photo01.pic is not for making files; a folder reached by a link (Debian's /bin) is */
-  return isRoot()||/^drwxrwxrw[xt]$/.test(dir.mode||'')||ST.home==='/'||at===ST.home||at.indexOf(ST.home+'/')===0;
+  if(isRoot()||/^drwxrwxrw[xt]$/.test(dir.mode||'')||ST.home==='/'||at===ST.home)return true;
+  return OWNED?dir.owner===ST.user&&modeOf(dir).charAt(2)==='w':at.indexOf(ST.home+'/')===0; /* Unix: a folder of yours you may write in, so not the site owner's (dr-xr-xr-x); elsewhere, anything in the home */
 }
 var DISK=4194304; /* the most a file may hold, in bytes: cat f >> f in a loop fills the disk, not the browser */
 function writeFile(p,lines,append){ /* false if it cannot be written */
@@ -1274,7 +1294,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,dirOf:dirOf,
   envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
   piped:function(){return !!SINK},bre:bre,INT:INT,
-  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,writeFile:writeFile,
+  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
   status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){if(!SUB)LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},teletype:function(){return TELE.on?TELE:null}, /* the Teletype Model 33's line: lcase, speed */
   teletypeMode:function(on){ /* the teletype command: null where it is not offered; on or off, remembered in this browser */
@@ -1318,6 +1338,38 @@ PROFILE.protected.forEach(function(p){
   if(ex&&ex!==ROOT)ex.prot=true;
   else put(abs,dir?'d':'f',{prot:true,size:dir?0:/\.pic$/.test(abs)?16384:2048});
 });
+/* Whose the home's files are, on the Unix machines: the guest's home folder is the guest's, and so are the shell startup
+   files in it (the machine's guest files:) and whatever the site's guest files: names (a folder, and everything in it). Every other file and folder the
+   site gives stays the site owner's, read-only in its mode (-r--r--r--, dr-xr-xr-x; a locked one -r--------), so the guest
+   cannot change it, nor add to or take from its folders; on Debian it carries the immutable attribute as well. A locked
+   file stays the owner's even in a guest folder. The site's files outside the home are read-only too. */
+if(OWNED&&OWNER!==ST.user)(function(){
+  var G=PROFILE.guestFiles.map(function(p){return norm(home(p.replace(/\/+$/,'')))}),H=find(ST.home,true),seen=new Set();
+  function ro(n,imm){
+    n.mode=n.type==='d'?(n.prot?'dr-x------':'dr-xr-xr-x'):n.prot?'-r--------':'-r--r--r--';
+    if(imm&&IMM)n.ro=true;
+  }
+  (function walk(d,at){Object.keys(d.kids).forEach(function(k){
+    var n=d.kids[k],p=at+'/'+k;
+    if(seen.has(n))return;
+    seen.add(n);
+    if(n.owner===OWNER&&!n.mode&&!n.dev){
+      if(!n.prot&&G.some(function(g){return p===g||p.indexOf(g+'/')===0})){
+        n.owner=ST.user;
+        if(k==='core'&&n.type==='f'&&PROFILE.coreMode)n.mode=PROFILE.coreMode; /* a core dump, as the kernel wrote it */
+      }
+      else ro(n,true);
+    }
+    if(n.type==='d')walk(n,p);
+  })})(H,ST.home);
+  H.owner=ST.user;
+  PROFILE.files.map(function(f){return f.name}).concat(PROFILE.dirs,PROFILE.protected).forEach(function(p){
+    var abs=norm(p.replace(/\/+$/,''));
+    if(abs===ST.home||abs.indexOf(ST.home+'/')===0)return;
+    var n=find(abs,true);
+    if(n&&n!==ROOT&&n.owner===OWNER&&!n.mode&&!n.dev)ro(n,false);
+  });
+})();
 
 /* ---------- the visitor's files, kept in this browser (persist:, unless the machine keeps its own) ----------
    What differs from the tree as it booted: what the guest made, changed or removed in their home, and what root changed

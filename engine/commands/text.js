@@ -33,11 +33,13 @@ cmd('rmdir','remove an empty folder','rmdir dir ...','removes each folder named,
     if(n.type!=='d'){P.typeLine('rmdir: '+x+' not a directory','err');return}
     if(P.st.cwd===at||P.st.cwd.indexOf(at+'/')===0){P.typeLine('rmdir: cannot remove current directory','err');return}
     if(P.inUse(at)){P.typeLine('rmdir: '+x+' not removed','err');return} /* where su left you */
+    if(!n.prot&&P.immutable(at)){P.notPermitted('rmdir',x);return} /* before the kernel looks inside */
     if(Object.keys(n.kids).length){P.typeLine(P.profile.perror?'rmdir: '+x+': Directory not empty':'rmdir: '+x+' not empty','err');return}
     if(n.prot||n===P.root||!P.canWrite(at)){P.typeLine('rmdir: '+x+' not removed','err');return}
     delete n.parent.kids[n.name];
   });
 });
+function named(to,a){return to===P.norm(a[1])?a[1]:a[1].replace(/\/+$/,'')+'/'+nameOf(a[0])} /* the target as GNU names it: into a folder, folder/name */
 function target(to,from){ /* copying or moving into a folder keeps the name */
   var d=P.find(to,true);
   return d&&d.type==='d'?P.norm(to)+'/'+nameOf(from):P.norm(to);
@@ -46,11 +48,14 @@ cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: cp [-ip] f1 f2; or: cp [-irp] f1 ... fn d2':'Usage: cp: f1 f2; or cp f1 ... fn d2');return}
   var n=P.find(a[0]);
   if(!n||n.type==='d'||n.prot){P.oops('cp',a[0],n,'cp: cannot open '+a[0]);return}
-  if(!P.writeFile(target(a[1],a[0]),P.text(n),false))P.oopsW('cp',a[1],'cp: cannot create '+a[1]);
+  var to=target(a[1],a[0]);
+  if(P.immutable(to)){P.notPermitted('cp',named(to,a));return} /* Debian's immutable attribute */
+  if(!P.writeFile(to,P.text(n),false))P.oopsW('cp',a[1],'cp: cannot create '+a[1]);
 });
 cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or moves it into file2 if that is a folder.',function(a){
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
   var n=P.find(a[0],true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true);
+  if(n&&!n.prot&&(P.immutable(from)||P.immutable(to)&&there!==n)){P.notPermitted('mv',a[0],named(to,a));return}
   if(n&&!n.prot&&there&&there!==n&&there.type!=='d'&&(there.prot||!P.mayAlter(there))&&P.canWrite(from)){P.typeLine('mv: cannot unlink '+a[1],'err');return} /* a locked file, or someone else's, in the way */
   if(!n||n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
   if(there&&there!==n&&there.type==='d'){P.typeLine('mv: '+a[1]+' is a directory','err');return}
@@ -66,6 +71,7 @@ cmd('chmod','change who may do what to a file','chmod mode file ...','mode is an
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');return}
   a.slice(1).forEach(function(x){
     var n=P.find(x,true);
+    if(n&&!n.prot&&n.ro&&P.immutable(P.pathOf(n))){P.notPermitted('chmod',x);return}
     if(!n||!P.canWrite(P.pathOf(n))||n.prot){if(n&&P.profile.perror)P.typeLine('chmod: '+x+': Not owner','err');else P.oops('chmod',x,n,"chmod: can't access "+x);return}
     var t=n.type==='d'?'d':'-',m=n.mode||(t==='d'?'drwxr-xr-x':'-rw-r--r--');
     if(/^[0-7]{3}$/.test(a[0])){
@@ -319,7 +325,7 @@ cmd('tr','change characters','tr string1 string2','changes each character of str
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
   var app=/a/.test(flags(a)),F=operands(a);
   P.input([],function(L){
-    F.forEach(function(x){if(!P.writeFile(x,L,app))P.typeLine('tee: cannot open '+x,'err')});
+    F.forEach(function(x){if(!P.writeFile(x,L,app)){if(P.immutable(P.norm(x)))P.notPermitted('tee',x);else P.typeLine('tee: cannot open '+x,'err')}});
     P.say(L);
   });
 });
@@ -559,6 +565,7 @@ cmd('ln','make a link','ln target [ newname ]','gives a file a second name. they
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.named(a[0]),to=P.norm(a[1]||a[0].split('/').pop());
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
+  if(!P.find(to,true)&&(n.ro&&P.immutable(P.pathOf(n))||P.immutable(to))){P.notPermitted('ln',a[1]||a[0].split('/').pop(),a[0]);return} /* no hard link to an immutable file, nor in an immutable folder */
   if(P.find(to,true)||!P.canWrite(to)){P.typeLine('ln: cannot create '+(a[1]||a[0]),'err');return}
   var dir=P.find(P.dirOf(to),true);
   dir.kids[to.split('/').pop()]=n;
