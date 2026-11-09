@@ -718,7 +718,7 @@ function oops(who,x,n,old){ /* a file that would not open: the old wording, or B
 }
 function oopsW(who,x,old){ /* the same for a file that could not be made: no such folder, or not allowed there */
   var up=String(x).replace(/\/+[^\/]*$/,'')||'/';
-  if(immutable(norm(x))){notPermitted(who,x);return}
+  if(immutable(norm(x),who!=='mkdir')){notPermitted(who,x);return}
   if(PROFILE.dos&&!PROFILE.dcl&&!who){typeLine('File creation error','err');return} /* COMMAND.COM's redirection: no room, or a read-only file there */
   typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
 }
@@ -1039,10 +1039,12 @@ function mayAlter(n){ /* may who is logged in change, replace or remove this fil
   return n.owner===ST.user||modeOf(n).charAt(8)==='w';
 }
 function isImmutable(n){return IMM&&!!n.ro} /* does this file carry Linux's immutable attribute */
-function immutable(abs){ /* is it Linux's immutable attribute that stops a change to abs: on the file, or on the folder it is in */
+function immutable(abs,write){ /* is it Linux's immutable attribute that stops a change to abs: on the file, or on the folder it is in.
+  write: only writing to it, which a folder's attribute stops only for a file not there yet (it guards the folder's names, not their files) */
   if(!IMM)return false;
   var dir=find(dirOf(abs),true),key=abs.slice(abs.lastIndexOf('/')+1);
   var ex=abs!==norm(abs)?find(abs,true):dir&&dir.type==='d'&&has(dir.kids,key)?dir.kids[key]:null; /* the entry in its folder, unless abs has . or .. in it */
+  if(write&&ex&&ex!==ROOT)return !!ex.ro;
   return !!(ex&&ex!==ROOT&&ex.ro||dir&&dir.ro);
 }
 function notPermitted(who,x,to){ /* EPERM, in the words of GNU's tools and bash: what the immutable attribute gets */
@@ -1055,6 +1057,7 @@ function canWrite(abs){ /* your home folder, or a folder anyone may write in; no
   if(ex&&ex!==ROOT&&!mayAlter(ex)&&ex.parent===dir&&ex.name===abs.slice(abs.lastIndexOf('/')+1))return false; /* only its own name: a link the visitor made to it is theirs to remove or rename; writing through it is writeFile's to refuse */
   return mayPut(up,dir);
 }
+function mayChmod(n){return OWNED?isRoot()||n.owner===ST.user:canWrite(pathOf(n))} /* chmod(2) on Unix: the file's owner, or root (EPERM else; its folder does not count); elsewhere, what canWrite allows */
 function mayPut(up,dir){ /* the folder part of canWrite (dir: the folder up names): what writeFile asks, once it has seen to the file itself */
   if(!dir||dir.type!=='d'||dir.prot||IMM&&dir.ro)return false;
   var at=pathOf(dir);
@@ -1066,7 +1069,7 @@ var DISK=4194304; /* the most a file may hold, in bytes: cat f >> f in a loop fi
 function writeFile(p,lines,append){ /* false if it cannot be written */
   var abs=norm(p),ex=find(abs,true);
   if(ex&&ex.dev)return !ex.prot; /* /dev/null and friends swallow it */
-  if(ex&&(ex.type==='d'||ex.prot||ex.parent.prot||!mayAlter(ex))||!mayPut(dirOf(abs),find(dirOf(abs))))return false;
+  if(ex&&(ex.type==='d'||ex.prot||ex.parent.prot||!mayAlter(ex))||(ex&&OWNED?named(abs)!==ex:!mayPut(dirOf(abs),find(dirOf(abs)))))return false; /* on Unix a file that is there (and reached through no locked folder) takes what the file allows; its folder counts only for making one */
   var old=ex&&append?textOf(ex):[],L=old.open&&lines.length?old.slice(0,-1).concat([old[old.length-1]+plain(lineOf(lines[0])[0])],lines.slice(1)):old.concat(lines); /* after a last line with no newline, what comes goes on in it */
   L.open=lines.length?!!lines.open:old.open;
   if(bsize(L)>DISK){ /* what fits goes in, and the rest is lost, the way a full disk did it */
@@ -1298,7 +1301,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,dirOf:dirOf,
   envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
   piped:function(){return !!SINK},bre:bre,INT:INT,
-  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,mayPut:function(dir){return mayPut(pathOf(dir),dir)},isImmutable:isImmutable,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
+  fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,mayChmod:mayChmod,mayPut:function(dir){return mayPut(pathOf(dir),dir)},isImmutable:isImmutable,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
   status:function(n){STATUS=n},lastStatus:function(){return PREV},globRe:globRe,glob:glob,loop:function(what){if(!SUB)LOOP=what},inScript:function(){return SCRIPTS>0},
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},teletype:function(){return TELE.on?TELE:null}, /* the Teletype Model 33's line: lcase, speed */
   teletypeMode:function(on){ /* the teletype command: null where it is not offered; on or off, remembered in this browser */
@@ -1417,8 +1420,10 @@ function firsts(M){ /* node -> the path it is kept under: its own place, unless 
   return F;
 }
 function val(x){return x===undefined?null:x}
-function sig(n){return {n:n,b:n.body,d:+n.date||0,f:FIELDS.map(function(k){return val(n[k])})}}
-function same(a,n){return a.n===n&&a.b===n.body&&a.d===(+n.date||0)&&FIELDS.every(function(k,i){return a.f[i]===val(n[k])})}
+var ASU=null; /* while the boot home is kept under its own name: the login name whose files are kept as the boot user's */
+function field(n,k){return (k==='owner'||k==='group')&&ASU!==null&&n[k]===ASU?PROFILE.user:n[k]}
+function sig(n){return {n:n,b:n.body,d:+n.date||0,f:FIELDS.map(function(k){return val(field(n,k))})}}
+function same(a,n){return a.n===n&&a.b===n.body&&a.d===(+n.date||0)&&FIELDS.every(function(k,i){return a.f[i]===val(field(n,k))})}
 function was(a){ /* what the file was at boot, as a number */
   if(a.h===undefined)a.h=hash(JSON.stringify([a.f,typeof a.b==='function'?'':a.b]),2147483647);
   return a.h;
@@ -1426,7 +1431,7 @@ function was(a){ /* what the file was at boot, as a number */
 function ser(n,p,at){ /* at: where it is kept; anywhere else it is a link */
   if(at!==p)return {t:'l',to:at};
   var o={t:n.type,d:+n.date||0},q=ORIG.get(n),src=q!==undefined&&BASE.get(q);
-  FIELDS.slice(1).forEach(function(k){if(n[k]!=null&&n[k]!==false)o[k]=n[k]});
+  FIELDS.slice(1).forEach(function(k){var v=field(n,k);if(v!=null&&v!==false)o[k]=v});
   if(q!==undefined&&q!==p)o.o=q; /* moved: from where */
   if(n.type==='f'&&n.body!=null){
     if(typeof n.body==='function'&&src&&src.b===n.body)o.g=1; /* made as it is read: made again after a reload */
@@ -1437,6 +1442,7 @@ function ser(n,p,at){ /* at: where it is kept; anywhere else it is a link */
 }
 function keepFiles(){ /* false when something more than before could not be kept: the disk is full */
   if(!KEEP||!BASE)return true;
+  ASU=homeAt()?RP?RP.user:ST.user:null;
   var now=tree(),keep={},gone={},any=false;
   if(LAST&&LAST.size===now.size&&Array.from(now).every(function(e){var a=LAST.get(e[0]);return a&&same(a,e[1])}))return true; /* nothing changed since */
   var at=firsts(now);
@@ -3941,7 +3947,11 @@ function login(name){
   PENDROOT=n===PROFILE.rootName&&PROFILE.rootPassword?{name:n,word:PROFILE.rootPassword}:n===PROFILE.alsoRoot?{name:n,word:PROFILE.alsoRootWord}:null;
   if(PENDROOT||(PROFILE.closedDoor&&n!==ST.user&&n!==PROFILE.user)||n===PROFILE.rootName||n===OWNER||!LOGIN_NAME.test(n)||(n!==ST.user&&usr&&usr.kids[n])){prompt('Password:','password');return}
   var h=!PROFILE.home&&usr&&usr.kids[ST.user]; /* the home folder follows whoever logs in */
-  if(h&&n!==ST.user){delete usr.kids[ST.user];h.name=n;usr.kids[n]=h}
+  if(h&&n!==ST.user){ /* and what was the last login's in it is the new one's; the site owner's files stay theirs */
+    delete usr.kids[ST.user];h.name=n;usr.kids[n]=h;
+    var old=ST.user,seen=new Set();
+    (function walk(d){if(seen.has(d))return;seen.add(d);if(d.owner===old)d.owner=n;if(d.group===old)d.group=n;if(d.type==='d')Object.keys(d.kids).forEach(function(k){walk(d.kids[k])})})(h);
+  }
   ST.user=n;ST.home=PROFILE.home||PROFILE.homes+'/'+n;ST.cwd=ST.home;ST.login=now();
   welcome();prompt();
 }
