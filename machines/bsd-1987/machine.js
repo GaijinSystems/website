@@ -6,6 +6,7 @@ Phosphor.content(String.raw`
 
 badge:     PHOSPHOR-9
 installed: 1986-06-06 19:55
+hostname:  vax
 user:      guest
 homes:     /usr
 # the guest's own: what csh reads at start, login and logout, and sh at login
@@ -132,7 +133,7 @@ alias la 'ls -a'
 alias ll 'ls -l'
 alias lla 'ls -l -a'
 
-== file: .adventure ==
+== file: .exfiltrated/.adventure ==
 ~ saved game - colossal cave
 you are in a maze of twisty little passages, all alike.
 score: 36 of 350.

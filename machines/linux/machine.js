@@ -7,6 +7,7 @@ Phosphor.content(String.raw`
 
 badge:       PHOSPHOR-9
 installed:   2025-08-21 10:14
+hostname:    website
 user:        guest
 homes:       /home
 case:        sensitive
