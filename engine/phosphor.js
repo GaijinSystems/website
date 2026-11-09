@@ -450,15 +450,17 @@ function ttPrint(t){ /* what the driver sends and the type box prints: with LCAS
   }
   return o;
 }
-function ttFit(s,col){ /* the carriage stops at the 72nd column: what comes after it there strikes over the same place (a space strikes
-                         nothing). XTABS: a tab goes out as spaces to the next eighth column, as the driver counts them */
+function ttTab(col){return 8-(col&7)} /* XTABS: the driver sends a tab as this many spaces, to the next eighth column */
+function ttPut(o,c,col){ /* o with c put at column col: the carriage stops at the 72nd column, and what comes after it there strikes over the
+                            same place, as V7 did no wrapping (a space strikes nothing) */
+  return col>=TT_COLS&&o.length&&o.slice(-1)!=='\n'?(c===' '?o:o.slice(0,-1)+c):o+c;
+}
+function ttFit(s,col){ /* a line as the teletype prints it from column col (ttTab, ttPut) */
   var o='',c;col=col||0;
   for(var i=0;i<s.length;i++){
     c=s.charAt(i);
     if(c==='\n'||c==='\r'){o+=c;col=0;continue}
-    if(c==='\t'){s=s.slice(0,i+1)+' '.repeat(7-(col&7))+s.slice(i+1);c=' '}
-    if(col>=TT_COLS&&o.length&&o.slice(-1)!=='\n'){if(c!==' ')o=o.slice(0,-1)+c;col++;continue}
-    o+=c;col++;
+    for(var n=c==='\t'?ttTab(col):1;n--;col++)o=ttPut(o,c==='\t'?' ':c,col);
   }
   return o;
 }
@@ -629,9 +631,9 @@ function typeLine(text,cls,cb,opt){
         step();return;
       }
       if(TELE.on&&ch==='\u0007'){ttBell();setTimeout(step,TT_CH);return} /* BEL rings the teletype's bell */
-      if(TELE.on&&ch==='\t'){text=text.slice(0,i)+' '.repeat(7-(col&7))+text.slice(i);ch=' '} /* XTABS: the driver sends a tab as spaces to the next eighth column, each a character's time */
-      if(TELE.on&&col>=TT_COLS&&t.data.length&&ch!=='\n'){if(ch!==' ')t.data=t.data.slice(0,-1)+ch;col++} /* at the right margin the carriage stops: the rest strikes over its last column, as V7 did no wrapping (a space strikes nothing); the driver still counts */
-      else{t.data+=ch;if(TELE.on)col=ch==='\n'?0:col+1}
+      if(TELE.on&&ch==='\t'){text=text.slice(0,i)+' '.repeat(ttTab(col)-1)+text.slice(i);ch=' '} /* XTABS: the spaces, each a character's time */
+      if(TELE.on&&ch!=='\n'){var nd=ttPut(t.data,ch,col);if(nd!==t.data)t.data=nd;col++} /* the right margin: the driver still counts */
+      else{t.data+=ch;if(TELE.on)col=0}
       if(BAUD&&burst>1){burst--;step();return} /* a real line speed: no need to scroll for what nobody will see */
       scrollBottom();
       if(TELE.on)ttStrike(ch);else if(ch!==' ')click(.194);
@@ -1265,7 +1267,7 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
     window.dispatchEvent(new Event('resize')); /* the glass changed size: everything re-fits */
     return on;
   },
-  columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,programs:programs,chunk:chunk,dirOf:dirOf,
+  columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,dirOf:dirOf,
   envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
   piped:function(){return !!SINK},bre:bre,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,writeFile:writeFile,
@@ -1452,10 +1454,11 @@ function restoreFiles(){
     if(d&&d.type==='d')delete d.kids[p.split('/').pop()];
   });
   Object.keys(keep).sort().forEach(function(p){
-    var e=keep[p],a=BASE.get(p),x;
-    if(good(p)&&okEntry(e)&&e.t==='d'&&folder(p)&&(x=find(p,true))&&x!==ROOT&&x.type==='d'&&(e.h!==undefined?!a||was(a)!==e.h:!!a))return; /* a folder the site has made or changed since: the site's stays, and what was kept in it goes back in */
-    if(!good(p)||!okEntry(e)||(e.h!==undefined?!a||was(a)!==e.h:!!a)||!folder(p)){ /* the site's file changed, or the site has made one here since, or what it was in is not a folder now */
-      if(okEntry(e)&&e.t==='d'&&good(p)&&folder(p)&&(x=find(p,true))&&x!==ROOT&&x.type!=='d')CLASH.push(p); /* a folder of theirs where the site has put a file: said at boot */
+    var e=keep[p],a=BASE.get(p),ok=good(p)&&okEntry(e),chg=ok&&(e.h!==undefined?!a||was(a)!==e.h:!!a),f=ok&&folder(p),
+        x=ok&&e.t==='d'&&f?find(p,true):null; /* chg: the site has changed its file, or made one here, since. x: a folder of theirs, and what is there now */
+    if(x&&x!==ROOT&&x.type==='d'&&chg)return; /* a folder the site has made or changed since: the site's stays, and what was kept in it goes back in */
+    if(!ok||chg||!f){ /* the site's file changed, or the site has made one here since, or what it was in is not a folder now */
+      if(x&&x!==ROOT&&x.type!=='d')CLASH.push(p); /* a folder of theirs where the site has put a file: said at boot */
       dropped.add(p);return;
     }
     if(e.t==='l'){links.push(p);return}
@@ -1519,11 +1522,11 @@ function aliasOf(cmd){
   if(best&&CSH&&HISTSEL.test(best.to))return cshAliasArgs(best.to,parts.slice(best.from.length-1)); /* csh: \!* and the rest take the words; none are added after */
   return best?[best.to].concat(parts.slice(best.from.length)).join(' '):cmd.trim();
 }
-var HISTSEL=/!(\*|\^|\$|:(\*|\^|\$|-\d+|\d+(-\d*|\*)?))/;
+var HISTSEL=/!(\*|\^|\$|:(\*|\^|\$|-\d+|\d+(-\d*|\*)?))/,HISTSELS=new RegExp(HISTSEL.source,'g');
 function cshAliasArgs(to,W){ /* 4.3BSD csh (sh.parse.c's asyn3, sh.lex.c's getsel): an alias's !* !^ !$ !:n !:n-m !:n- !:n* and !:-m are the
                                 words of the command it stands for, the alias's own name word 0; a word that is not there is Bad ! arg selector. */
   var bad=false,last=W.length-1;
-  var out=to.replace(new RegExp(HISTSEL.source,'g'),function(m,a,b){
+  var out=to.replace(HISTSELS,function(m,a,b){
     var lo,hi,sel=b!==undefined?b:a,k;
     if(sel==='*'){lo=1;hi=last;if(hi<lo)return ''}
     else if(sel==='^')lo=hi=1;
@@ -1540,12 +1543,13 @@ function cshAliasArgs(to,W){ /* 4.3BSD csh (sh.parse.c's asyn3, sh.lex.c's getse
    the machine), sh runs it: V7's grammar, the $ prompt, its messages, and its builtins in place of csh's, until its exit or ^D, or the
    end of its script. BSH: one entry for each such shell running, tty: one reading the terminal */
 var BSH=[],BHID=null,BOURNE_OFF=['history','unset','setenv','unsetenv','unalias','if','@','rehash','end','limit','alias','jobs','fg','bg','logout','set'];
+var SHSET; /* sh's set (commands/text.js), found once */
 function grammar(sh){ /* the shell's grammar and builtins: sh's (true) or the machine's csh */
   if(!PH.bourne.on||sh===!CSH)return;
   if(sh){
     BHID={};BOURNE_OFF.forEach(function(k){if(has(CMDS,k)){BHID[k]=CMDS[k];delete CMDS[k]}});
-    var d=PH.defs.filter(function(x){return /commands\/text\.js$/.test(x.from||'')&&(x.names||[]).indexOf('set')>=0})[0];
-    if(d)CMDS.set=d.run; /* sh's set: the variables */
+    if(!SHSET)SHSET=PH.defs.filter(function(x){return /commands\/text\.js$/.test(x.from||'')&&(x.names||[]).indexOf('set')>=0})[0];
+    if(SHSET)CMDS.set=SHSET.run; /* sh's set: the variables */
   }
   else{delete CMDS.set;Object.keys(BHID).forEach(function(k){CMDS[k]=BHID[k]});BHID=null}
   CSH=!sh&&!!PROFILE.csh;varRe();
@@ -1595,8 +1599,12 @@ function runOne(s,words,src){
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
 var ARGS=[]; /* $0 $1 ... of the script that is running */
-var VAR,VAR_AT,VAR_ALL;varRe(); /* csh also has $?name: is it set */
-function varRe(){VAR=CSH?'\\$(\\?\\w+|#\\w+|\\w+\\[[^\\]\\s]*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}'+(PROFILE.bash?'|\\{[#!]?\\w+\\[[^\\]}]*\\]\\}|\\{#\\w+\\}|@':'')+'|\\?|\\$|#|\\*|!)';VAR_AT=new RegExp('^'+VAR);VAR_ALL=new RegExp(VAR,'g')}
+var VAR_AT,VAR_ALL,VARRES={};varRe(); /* csh also has $?name: is it set. VARRES: csh's and sh's pair, made once each */
+function varRe(){
+  var r=VARRES[CSH];
+  if(!r){var v=CSH?'\\$(\\?\\w+|#\\w+|\\w+\\[[^\\]\\s]*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}'+(PROFILE.bash?'|\\{[#!]?\\w+\\[[^\\]}]*\\]\\}|\\{#\\w+\\}|@':'')+'|\\?|\\$|#|\\*|!)';r=VARRES[CSH]=[new RegExp('^'+v),new RegExp(v,'g')]}
+  VAR_AT=r[0];VAR_ALL=r[1];
+}
 function varsIn(t,dq){var was=DQ;DQ=!!dq;try{return t.replace(VAR_ALL,function(m,k){return envOf(k)})}finally{DQ=was}} /* dq: inside " ", where "${x[@]}" is a word for each element */
 var PIPEST=[0]; /* bash's PIPESTATUS: the status of each command of the last pipeline */
 /* bash's arrays. ARR[name]: {A: associative, v: its elements but [0], which is ENV[name] (so $x is ${x[0]} and x=1 sets it), s: when each
@@ -1609,8 +1617,9 @@ function bucket(k){for(var h=2166136261,i=0;i<k.length;i++)h=(Math.imul(h,167776
    process's copy (keep, procGet) shares the arrays: one is copied only when it is changed after that (its g, older than AGEN) */
 var AGEN=0;
 function idxCmp(x,y){return x.length-y.length||(x<y?-1:x>y?1:0)}
+function assocCmp(a){return function(x,y){return bucket(x)-bucket(y)||(a.s[y]||0)-(a.s[x]||0)}} /* an associative array's order */
 function keysOf(a){ /* a's keys but 0, sorted, made once */
-  if(!a.K){var K=Object.keys(a.v);a.K=a.A?K.sort(function(x,y){return bucket(x)-bucket(y)||(a.s[y]||0)-(a.s[x]||0)}):K.sort(idxCmp)}
+  if(!a.K){var K=Object.keys(a.v);a.K=a.A?K.sort(assocCmp(a)):K.sort(idxCmp)}
   return a.K;
 }
 function arrKeys(n){ /* its keys, in bash's order (not to be changed) */
@@ -1618,7 +1627,7 @@ function arrKeys(n){ /* its keys, in bash's order (not to be changed) */
   var a=ARR[n],K=keysOf(a);
   if(!has(ENV,n))return K;
   if(!a.A)return ['0'].concat(K); /* 0 is the smallest */
-  return K.concat('0').sort(function(x,y){return bucket(x)-bucket(y)||(a.s[y]||0)-(a.s[x]||0)});
+  return K.concat('0').sort(assocCmp(a));
 }
 function arrLast(n){var K=isArr(n)?keysOf(ARR[n]):[];return K.length?K[K.length-1]:has(ENV,n)?'0':null} /* an indexed array's highest key */
 function arrGet(n,k){return k==='0'?(has(ENV,n)?ENV[n]:undefined):isArr(n)&&has(ARR[n].v,k)?ARR[n].v[k]:undefined}
@@ -1658,7 +1667,7 @@ function arrAt(n,i){ /* ${name[i]}: the element, or bash's error and nothing */
   if(k===null){typeLine('bash: '+n+': bad array subscript','err');return ''}
   var v=arrGet(n,k);return v===undefined?'':v;
 }
-function arrClone(){AGEN++;var o=Object.create(null);for(var n in ARR)o[n]=ARR[n];return o} /* a copy that shares each array until it changes (arrOwn) */
+function arrClone(){AGEN++;return Object.assign(Object.create(null),ARR)} /* a copy that shares each array until it changes (arrOwn) */
 function arrRefill(from){for(var n in ARR)delete ARR[n];Object.assign(ARR,from)}
 function setVar(n,v){ENV[n]=v}
 function dquote(v){return '"'+v.replace(/(["\\$`])/g,'\\$1')+'"'} /* a value as declare -p shows it */
@@ -1686,7 +1695,7 @@ var BASHVARS={ /* for bash's declare, export, readonly and unset */
     return true;
   }
 };
-BASHVARS.at=function(){return bashAt()}; /* how a builtin's error starts: bash: or, in a script, name: line N: */
+BASHVARS.at=bashAt; /* how a builtin's error starts: bash: or, in a script, name: line N: */
 PH.bashVars=BASHVARS;
 function asgOf(x){return (PROFILE.bash?/^([A-Za-z_]\w*)(?:\[([^\]]*)\])?(\+?)=([\s\S]*)$/:/^([A-Za-z_]\w*)()()=([\s\S]*)$/).exec(x)} /* an assignment word: [name, subscript, +, value] */
 function setAsg(m,decl){ /* do the assignment asgOf found: name=v, and bash's name[i]=v, name+=v, name=( ... ) and name+=( ... ). decl: declare's a or A
@@ -2004,11 +2013,13 @@ function treeOf(lines,end){ /* parseTree, or null once it has said what was wron
 }
 function skipEnd(s,i,depth){ /* where a quote, `command` or (outside ( ), at depth 0) { list; } at i ends: -1 when none starts there, -2 when a { is not closed */
   var j=quoteEnd(s,i);
-  return j>=0?j:!depth&&s.charAt(i)==='{'?groupEnd(s,i):PROFILE.bash&&/^(\[\[|\(\()/.test(s.substr(i,2))?dblEnd(s,i):-1; /* bash's [[ ]] and (( )): one command */
+  var c=s.charAt(i);
+  return j>=0?j:!depth&&c==='{'?groupEnd(s,i):PROFILE.bash&&(c==='['||c==='(')&&s.charAt(i+1)===c?dblEnd(s,i):-1; /* bash's [[ ]] and (( )): one command */
 }
 /* bash's [[ ]] and (( )), and brace expansion in bash and csh */
 function dblEnd(s,i){ /* bash: where a [[ ... ]] or (( ... )) that starts a command at i ends (its last ] or )), or -1 */
-  if(!PROFILE.bash||!atCmd(s,i))return -1;
+  var c=s.charAt(i);
+  if(!PROFILE.bash||c!=='['&&c!=='('||s.charAt(i+1)!==c||!atCmd(s,i))return -1;
   var two=s.substr(i,2),e;
   if(two==='(('){e=parenEnd(s,i);return e>0&&s.charAt(e-1)===')'&&parenEnd(s,i+1)===e-1?e:-1}
   if(two!=='[['||(i+2<s.length&&!/\s/.test(s.charAt(i+2))))return -1;
@@ -2034,7 +2045,10 @@ function dqWord(t,pat){ /* a word of [[ ]] or (( )): $names worked out, quotes t
   return o;
 }
 var POSIXCL={alpha:'a-zA-Z',digit:'0-9',alnum:'a-zA-Z0-9',upper:'A-Z',lower:'a-z',space:' \\t\\n\\r\\f\\v',blank:' \\t',punct:'!-\\/:-@\\[-`{-~',xdigit:'0-9A-Fa-f',word:'\\w',cntrl:'\\x00-\\x1f\\x7f',print:' -~',graph:'!-~'};
+var PATRES=new Map(); /* patRe's, by pattern (a few hundred at most) */
 function patRe(p){ /* a glob pattern from dqWord(t,true) as a RegExp: * ? [...] ([!...] too, and [:class:]), \x for x */
+  var r=PATRES.get(p);if(r)return r;
+  if(PATRES.size>200)PATRES.clear();
   var o='';
   for(var i=0;i<p.length;i++){
     var c=p.charAt(i),j;
@@ -2047,7 +2061,7 @@ function patRe(p){ /* a glob pattern from dqWord(t,true) as a RegExp: * ? [...] 
     }
     o+=c.replace(/[.+^${}()|\]\\\/]/g,'\\$&');
   }
-  return new RegExp('^'+o+'$');
+  r=new RegExp('^'+o+'$');PATRES.set(p,r);return r;
 }
 var CONDBIN=/^(==|=|!=|<|>|=~|-eq|-ne|-lt|-le|-gt|-ge|-nt|-ot|-ef)$/,CONDUN=/^-[abcdefghknoprstuvwxzGLNORS]$/;
 function condToks(t){ /* the tokens of [[ ]]: words as typed, and && || ( ) ! < > ; the word after =~ may hold ( ) and | */
@@ -2076,14 +2090,15 @@ function condParse(t,after){ /* [[ ]] read into a tree, or {bad:[what bash says]
   function word(x){return x&&x.w!==undefined}
   function fail(m){throw {condBad:m}}
   function near(){var x=T[k];return x?(x.op||x.w):']]'}
+  function nearErr(){fail(['bash: syntax error near `'+near()+"'"])}
   function or(){var l=and();while(tok()&&tok().op==='||'){k++;l={or:[l,and()]}}return l}
   function and(){var l=not();while(tok()&&tok().op==='&&'){k++;l={and:[l,not()]}}return l}
   function not(){if(tok()&&tok().w==='!'&&T[k+1]&&!(T[k+1].op&&/[<>]/.test(T[k+1].op))&&!(T[k+1].w!==undefined&&CONDBIN.test(T[k+1].w))){k++;return {not:not()}}return prim()}
   function prim(){
     var x=tok();
-    if(!x)fail(['bash: syntax error near `'+near()+"'"]);
-    if(x.op==='('){k++;var e=or();if(!tok()||tok().op!==')')fail(['bash: syntax error near `'+near()+"'"]);k++;return e}
-    if(!word(x))fail(['bash: syntax error near `'+near()+"'"]);
+    if(!x)nearErr();
+    if(x.op==='('){k++;var e=or();if(!tok()||tok().op!==')')nearErr();k++;return e}
+    if(!word(x))nearErr();
     k++;
     var n=tok(),op=n&&(n.op&&/[<>]/.test(n.op)?n.op:n.w!==undefined&&CONDBIN.test(n.w)?n.w:null);
     if(op){k++;var y=tok();if(!word(y))fail(['bash: unexpected argument `'+(y?y.op:']]')+"' to conditional binary operator",'bash: syntax error near `'+(y?y.op:']]')+"'"]);k++;return {bin:op,a:x.w,b:y.w}}
@@ -2092,7 +2107,7 @@ function condParse(t,after){ /* [[ ]] read into a tree, or {bad:[what bash says]
     return {one:x.w};
   }
   if(!T.length)return {bad:["bash: syntax error near `"+(after||'newline')+"'"]}; /* [[ ]]: bash takes the ]] for a word, and stops at what follows */
-  try{var e=or();if(k<T.length)fail(['bash: syntax error near `'+near()+"'"]);return e}catch(x){if(x&&x.condBad)return {bad:x.condBad};throw x}
+  try{var e=or();if(k<T.length)nearErr();return e}catch(x){if(x&&x.condBad)return {bad:x.condBad};throw x}
 }
 function condEval(e){ /* true or false; an arithmetic error is thrown on */
   if(e.or)return condEval(e.or[0])||condEval(e.or[1]);
@@ -2858,19 +2873,20 @@ function execSeg(seg){
     queue(function(){if(!back)return;JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
     return;
   }
-  try{seg=braces(seg)}catch(e){if(!e||!e.cshBrace)throw e;typeLine('Missing }.','err');queue(function(){STATUS=1});return} /* csh: error() */
+  if((seg=bracesOr(seg))===null){queue(function(){STATUS=1});return} /* csh: error() */
   var parts=PROFILE.dos||CSH&&/^\s*if\s*\(/.test(seg)?null:andOr(seg),dead=false;
   if(parts&&parts.length>1)queue(function(){tell()}); /* a && b &: one process for the lot */
-  if(!parts||parts.length<2){queue(function(){if(LOOP!=='abort'){SUBST=null;subPipe(seg,function(text){execText(text)})}});return}
+  if(!parts||parts.length<2){queue(function(){if(LOOP!=='abort'){subPipe(seg,function(text){execText(text)})}});return}
   parts.forEach(function(p){ /* cd /tmp && echo `pwd`: the pwd runs in /tmp */
     queue(function(){
       if(dead||LOGOUT||LOOP||skipped(p.op))return;
-      SUBST=null;subPipe(p.text,function(text){execText(text,function(){dead=true})});
+      subPipe(p.text,function(text){execText(text,function(){dead=true})});
     });
   });
 }
 function subPipe(s,then){ /* substitute, but in bash each command of a pipeline on its own: a $(( )) that goes wrong in one ends only that
                               process (it runs as false), and the rest of the pipeline and of the line go on */
+  SUBST=null;
   var P=PROFILE.bash&&s.indexOf('`')>=0?pipeRaw(s,true):[];
   if(P.length<2){substitute(s,then);return}
   var out='';
@@ -2935,7 +2951,7 @@ function synCheck(lines,last){ /* the first syntax error in lines, read as the s
         else if((km=t.match(/^(if|elif|while|until|!)(?=[\s(]|$)/)))t=t.slice(km[1].length); /* if(1): the keyword, then a ( ) */
       }
       if(!t.trim())return false;
-      try{parseList(t,{check:true})}catch(x){if(x&&x.syntax)bad=x.cond||[syntaxError(x.syntax,x.redir,x.paren)]}
+      try{parseList(t,{check:true})}catch(x){if(x&&x.syntax)bad=synMsgs(x)}
       return bad;
     });
     return bad;
@@ -2961,9 +2977,11 @@ function timeSay(t0,p){ /* bash's time: what the pipeline took, on the shell's e
   queue(function(){STATUS=st});
 }
 function synSay(msg){typeLine(msg,'err');if(!CSH&&/syntax error/.test(msg))queue(function(){STATUS=2})} /* bash and V7 sh: a syntax error's status is 2 (V7's synbad: exitsh(SYNBAD)); csh's error() sets 1 */
+function synMsgs(e){return e.cond||[syntaxError(e.syntax,e.redir,e.paren)]} /* what a syntax error says */
+function bracesOr(s){try{return braces(s)}catch(e){if(!e||!e.cshBrace)throw e;typeLine('Missing }.','err');return null}} /* braces, or null once csh has said Missing } */
 function misread(seg){ /* (a) b &: the shell reads the whole line before it forks, so a syntax error is said and no job starts */
   if(/`|\$\(/.test(seg))return false; /* what is substituted is read when the job runs */
-  try{parseList(seg)}catch(e){if(e&&e.syntax){(e.cond||[syntaxError(e.syntax,e.redir,e.paren)]).forEach(synSay);return true}}
+  try{parseList(seg)}catch(e){if(e&&e.syntax){synMsgs(e).forEach(synSay);return true}}
   return false;
 }
 function parsed(seg){ /* parseList, or null once it has said what was wrong */
@@ -2972,7 +2990,7 @@ function parsed(seg){ /* parseList, or null once it has said what was wrong */
     if(e&&e.undefinedVar)typeLine(e.msg||e.undefinedVar+': Undefined variable.','err');
     else if(e===NOMATCH)typeLine('No match.','err');
     else if(e&&e.arith!==undefined)arithBad(e);
-    else if(e&&e.syntax)(e.cond||[syntaxError(e.syntax,e.redir,e.paren)]).forEach(synSay);
+    else if(e&&e.syntax)synMsgs(e).forEach(synSay);
     else if(e&&e.cshBrace)typeLine('Missing }.','err');
     else throw e;
     return null;
@@ -3264,7 +3282,7 @@ function compLines(n,ind){
 function loopStmt(st){
   if(st.k==='cmd'){if(st.sl&&SCRLN)SCRLN.ln=st.sl;unaliased(st.t,execSeg);return} /* an alias may hold a ; */
   if(st.k==='for'){
-    var bw;try{bw=braces(st.words)}catch(e){if(!e||!e.cshBrace)throw e;typeLine('Missing }.','err');STATUS=1;return}
+    var bw=bracesOr(st.words);if(bw===null){STATUS=1;return}
     substitute(bw,function(text){
       var L=parsed('x x '+text); /* for's own words before the list: a ( in it is bash's token ( */
       if(!L)return;
@@ -3557,13 +3575,15 @@ function splitCmds(s){ /* on ; outside quotes.
   L.push(s.slice(start));
   return L;
 }
+var ARRASG=/[A-Za-z_]\w*(\[[^\]]*\])?\+?=\(/y; /* x=( or x+=(, where it is tried */
 function arrOpen(s){ /* bash: a x=( or x+=( that the line leaves open, outside quotes and comments: its ) is on a later line */
+  if(s.indexOf('=(')<0)return false;
   for(var i=0,j,m;i<s.length;i++){
     var c=s.charAt(i);
     if(c==='\\'){i++;continue}
     if((j=quoteEnd(s,i))>=0){i=j;continue}
     if(c==='#'&&(!i||/[\s;|&<>]/.test(s.charAt(i-1)))){var nl=s.indexOf('\n',i);if(nl<0)return false;i=nl;continue}
-    if((!i||/[\s;&|(]/.test(s.charAt(i-1)))&&(m=/^[A-Za-z_]\w*(\[[^\]]*\])?\+?=\(/.exec(s.slice(i)))){
+    if((!i||/[\s;&|(]/.test(s.charAt(i-1)))&&(ARRASG.lastIndex=i,m=ARRASG.exec(s))){
       if((j=parenEnd(s,i+m[0].length-1))<0)return true;
       i=j;
     }

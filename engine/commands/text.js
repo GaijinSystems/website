@@ -151,7 +151,7 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       var c={l:0,w:0,c:0},tok=false,N=['.','..'].concat(Object.keys(d.kids)),R=[],used=0;
       function put(x){c.c++;if(x>32&&x<127){if(!tok)c.w++;tok=true;return}if(x===10)c.l++;else if(x!==32&&x!==9)return;tok=false}
       if(v7){N.forEach(function(nm){
-        var ino=P.hash(nm,9973)+2,b=[ino&255,ino>>8&255];
+        var ino=P.ino(nm),b=[ino&255,ino>>8&255];
         for(var i=0;i<14;i++)b.push(i<nm.length?nm.charCodeAt(i)&255:0);
         b.forEach(put);
       });return c}
@@ -162,10 +162,9 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ file ]','prints how 
       });
       R[R.length-1].len+=512-used;
       R.forEach(function(r){
-        var ino=P.hash(r.nm,9973)+2,b=[ino&255,ino>>8&255,ino>>16&255,ino>>>24,r.len&255,r.len>>8,r.nm.length,0];
+        var ino=P.ino(r.nm),b=[ino&255,ino>>8&255,ino>>16&255,ino>>>24,r.len&255,r.len>>8,r.nm.length,0];
         for(var i=0;i<r.nm.length;i++)b.push(r.nm.charCodeAt(i)&255);
-        while(b.length<r.len)b.push(0);
-        b.forEach(put);
+        b.forEach(put);c.c+=r.len-b.length; /* the NULs that pad it: bytes, and nothing else to wc */
       });
       return c;
     };

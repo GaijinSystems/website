@@ -81,11 +81,12 @@ function bashAlias(W){ /* bash 5.2's alias builtin: each word is name=value, whi
 
 P.command({names:['unalias'],noHelpFlag:true,enabled:function(p){return p.bash}, /* bash 5.2's unalias [-a] name ...; csh's is in csh.js */
   run:function(a,raw,words){
-    var W=words.slice(1),bad=false,u='unalias: usage: unalias [-a] name [name ...]';
+    var W=words.slice(1),bad=false;
+    function usage(){P.typeLine('unalias: usage: unalias [-a] name [name ...]','err');P.queue(function(){P.status(2)})}
     if(W[0]==='-a'){P.aliases=[];return}
     if(W[0]==='--')W=W.slice(1);
-    else if(/^-./.test(W[0]||'')){P.typeLine('bash: unalias: '+W[0].slice(0,2)+': invalid option','err');P.typeLine(u,'err');P.queue(function(){P.status(2)});return}
-    if(!W.length){P.typeLine(u,'err');P.queue(function(){P.status(2)});return}
+    else if(/^-./.test(W[0]||'')){P.typeLine('bash: unalias: '+W[0].slice(0,2)+': invalid option','err');usage();return}
+    if(!W.length){usage();return}
     W.forEach(function(x){
       var n=P.aliases.length;P.aliases=P.aliases.filter(function(y){return y.from.join(' ')!==x});
       if(P.aliases.length===n){P.typeLine('bash: unalias: '+x+': not found','err');bad=true}
