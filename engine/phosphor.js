@@ -3661,7 +3661,7 @@ function loopStmt(st){
   }
 }
 function runScript(lines,args,dot){ /* a script: a tree of statements, inside the current step. dot: the . command's file, {name}: args are $1 ... (none: they stay) */
-  var keep=ARGS,keepSub=SUB,keepShell=SHID,keepAt=SCRLN,tree,ran=false,shown=lines,name=dot?dot.name:(args&&args[0])||(CSH?'csh':bashy()?'bash':'sh'),warns=[];
+  var keep=ARGS,keepSub=SUB,keepShell=SHID,keepAt=SCRLN,keepLS=null,keepLD=0,tree,ran=false,shown=lines,name=dot?dot.name:(args&&args[0])||(CSH?'csh':bashy()?'bash':'sh'),warns=[];
   if(!PROFILE.dos&&!PROFILE.noUnix)lines=hereJoin(lines,{ph:true,eof:function(op,n){ /* a here-document the script ends in: bash warns once, as it reads it (before that command runs); csh's heredoc gives up each time it runs */
     if(bashy())warns.push({ln:op.ln,msg:name+': line '+n+': warning: here-document at line '+(op.line+1)+" delimited by end-of-file (wanted `"+op.word+"')"});
     else if(CSH)op.err=op.word+': << terminator not found';
@@ -3700,7 +3700,7 @@ function runScript(lines,args,dot){ /* a script: a tree of statements, inside th
   queue(function(){return sleep(0)}); /* so that ^C can reach a script that keeps running itself */
   queue(function(){
     if(SCRIPTS>=32){typeLine(PROFILE.dcl?'%SYSTEM-F-EXQUOTA, process quota exceeded':PROFILE.dos?'Insufficient memory':CSH?'No more processes.':'sh: no more processes','err');return}
-    ran=true;SCRIPTS++;keepSub=SUB;SUB=0;keepShell=SHID;SHID=++SHIDS; /* a script's exit ends the script, wherever its output is going; its jobs are its own */
+    ran=true;SCRIPTS++;keepSub=SUB;SUB=0;keepShell=SHID;SHID=++SHIDS;if(!dot){keepLS=LOOPSUB;LOOPSUB=[];keepLD=LOOPD;LOOPD=0} /* a script's exit ends the script, wherever its output is going; its jobs and loops are its own: a break in it does not reach the caller's */
     if(PROFILE.dos){lines.forEach(function(l){queue(function(){if(LOOP)return;var s=dosLine(l);if(s.trim())execSeg(s)})});return} /* DCL's EXIT ends the procedure */
     ARGS=dot?(args?[ARGS[0]||''].concat(args):ARGS):args||['sh'];SCRLN={name:name,ln:1};
     var ln=null;
@@ -3714,7 +3714,7 @@ function runScript(lines,args,dot){ /* a script: a tree of statements, inside th
   });
   queue(function(){
     if(!ran)return; /* ^C got in first, or there were too many */
-    SCRIPTS--;SUB=keepSub;SHID=keepShell;SCRLN=keepAt;LOOP=null;
+    SCRIPTS--;SUB=keepSub;SHID=keepShell;SCRLN=keepAt;LOOP=null;if(!dot){LOOPSUB=keepLS;LOOPD=keepLD;LOOPN=0}
     if(!PROFILE.dos&&!(dot&&!args))ARGS=keep;
   },true);
 }
