@@ -64,7 +64,7 @@ P.command({names:['quiz'],run:function(a,raw,words){
   function fopen(f){
     if(!K)K=Object.assign({index:INDEX},P.quizk);
     if(f.indexOf(PATH)===0&&P.has(K,f.slice(PATH.length)))return K[f.slice(PATH.length)];
-    var n=P.find(f);
+    var n=P.unread(P.find(f));
     if(!n||n.type==='d'||n.prot)return null;
     return P.text(n).join('\n')+'\n';
   }

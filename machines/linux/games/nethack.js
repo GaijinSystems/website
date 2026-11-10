@@ -6251,9 +6251,9 @@ P.command({names:['nethack'],run:function(a,raw,words){
       if(!$FS)$FS=$loadFiles(parts,t0);else $syncFiles($FS,t0);
       /* nothing else runs this game here: a lock left by an earlier run that broke is stale */
       $FS.files.forEach(function(v,k){if(/^\/usr\/lib\/games\/nethack\/([0-9]+[^\/]*\.[0-9]+|[a-z]lock\.[0-9]+|perm_lock|record_lock|[0-9]+[^\/]*lock)$/.test(k))$FS.files.delete(k)});
-      var home=st.home||'/',rcp=home.replace(/\/$/,'')+'/.nethackrc',rc=P.find(rcp);
+      var home=st.home||'/',rcp=home.replace(/\/$/,'')+'/.nethackrc',rc=P.unread(P.find(rcp));
       $FS.files.delete(rcp);
-      if(rc&&rc.type!=='d'){var tx=P.text(rc).join('\n')+'\n',u=new Uint8Array(tx.length);for(var i=0;i<tx.length;i++)u[i]=tx.charCodeAt(i)&255;$FS.dirs.add(home);$FS.files.set(rcp,{data:u,size:u.length,mtime:t0})}
+      if(rc&&rc.type!=='d'&&!rc.prot){var tx=P.text(rc).join('\n')+'\n',u=new Uint8Array(tx.length);for(var i=0;i<tx.length;i++)u[i]=tx.charCodeAt(i)&255;$FS.dirs.add(home);$FS.files.set(rcp,{data:u,size:u.length,mtime:t0})}
       var vars={USER:user,LOGNAME:user,HOME:home,TERM:'vt100',SHELL:'/bin/sh'};
       if(P.env&&typeof P.env.NETHACKOPTIONS==='string')vars.NETHACKOPTIONS=P.env.NETHACKOPTIONS;
       sig=$keptSig($FS);

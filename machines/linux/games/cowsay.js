@@ -22,7 +22,7 @@ function fill(L,w){ /* as Perl's Text::Wrap fill: a paragraph starts at a line t
   return R;
 }
 function cow(name){ /* the picture, from the cowfile, or null */
-  var n=P.find(name.indexOf('/')>=0?name:COWS+'/'+name.replace(/\.cow$/,'')+'.cow');
+  var n=P.unread(P.find(name.indexOf('/')>=0?name:COWS+'/'+name.replace(/\.cow$/,'')+'.cow'));
   if(!n||n.type==='d'||n.prot)return null;
   var T=P.text(n),a=-1,b=-1;
   T.forEach(function(l,i){if(a<0&&/<<\s*"?EOC"?\s*;/.test(l))a=i;else if(a>=0&&b<0&&/^EOC\s*$/.test(l))b=i});
