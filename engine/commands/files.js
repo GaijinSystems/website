@@ -110,7 +110,7 @@ P.command({names:['cat'],core:true,help:'print a file',path:'/bin',
   run:function(a){
     if(!a.length){P.input([],function(L){P.say(L)});return} /* its pipe, or the keyboard until ^D */
     a.forEach(function(x){
-      var n=P.find(x);
+      var n=P.unread(P.find(x));
       if(!n||n.prot||n.type==='d')P.oops('',x,n,"cat: can't open "+x);
       else if(n.bin)P.typeLine('^G^A^@^@^D^P^@^@^@^@^@^@^A^@'+n.name+'^@^H^@^@','dim');
       else if(n.body)P.say(P.body(n));
@@ -124,7 +124,7 @@ P.command({names:['cd'],core:true,help:'change directory',
     'a locked folder is a bad directory.']},
   run:function(a){
     var t=a[0]||P.st.home,n=P.find(t);
-    if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){P.oops('',t,n&&!P.may(n,'x')?{prot:true}:n,t+': bad directory');P.status(1);P.loop('abort');return} /* sh's failed(baddir) and csh's error(): the rest of the line does not run */
+    if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){P.oops('',t,n&&!P.may(n,'x')?{prot:true}:n,t+': bad directory');P.failed(null);return} /* sh's failed(baddir) and csh's error(): the rest of the line does not run */
     P.st.cwd=P.pathOf(n);
   }});
 
@@ -133,12 +133,8 @@ P.command({names:['pwd'],core:true,path:'/bin',
     'prints the full name of the working directory.']},
   run:function(a,raw,w){
     if(P.profile.bash){ /* bash's own pwd: -L the working directory as cd left it (the default), -P with no symbolic links in it */
-      var W=(w||[]).slice(1),phys=false;
-      for(var i=0;i<W.length&&/^-./.test(W[i])&&W[i]!=='--';i++)for(var j=1;j<W[i].length;j++){
-        var c=W[i].charAt(j);
-        if(c==='P')phys=true;else if(c==='L')phys=false;
-        else{P.typeLine('bash: pwd: -'+c+': invalid option','err');P.typeLine('pwd: usage: pwd [-LP]','err');P.queue(function(){P.status(2)});return}
-      }
+      var phys=false;
+      if(!P.bashOpts('pwd',(w||[]).slice(1),'PL','pwd [-LP]',function(c){phys=c==='P'}))return;
       var n=phys&&P.find(P.st.cwd);
       if(n){P.typeLine(P.pathOf(n));return}
     }

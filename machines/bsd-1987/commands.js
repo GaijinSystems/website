@@ -28,12 +28,5 @@ P.command({names:['tunefs'],path:'/etc',
     P.typeLine('tunefs: '+a[a.length-1]+': cannot open','err');
   }});
 /* /bin/sh is the Bourne shell (4.3BSD's sh is V7's): sh at the terminal starts one, which exit or ^D ends; sh file and sh -c run theirs with it */
-P.setup(function(){
-  P.bourne.on=true;
-  var sh=P.cmds.sh;
-  if(sh)P.cmds.sh=function(a,raw,w){
-    if(!a.length&&!P.stdin()&&!P.subshell()&&!P.inScript()){P.bourne.start();return}
-    P.bourne.run(function(){sh(a,raw,w)});
-  };
-});
+P.setup(function(){P.bourne.wrapSh()});
 })(window.Phosphor);

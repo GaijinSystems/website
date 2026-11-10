@@ -191,7 +191,7 @@ P.command({names:['connect'],terminal:true,help:'plug into another machine',
   }});
 
 function shellOf(who){ /* the login shell /etc/passwd gives who, which su starts: 'csh', 'sh' (an empty field is /bin/sh), or null */
-  var f=P.find('/etc/passwd',true),r=f&&f.type==='f'&&P.text(f).map(function(l){return l.split(':')}).filter(function(x){return x[0]===who&&x.length>5})[0];
+  var r=P.passwd(who);
   return !r?null:/(^|\/)csh$/.test(r[6]||'')?'csh':!r[6]||/(^|\/)sh$/.test(r[6])?'sh':null;
 }
 P.command({names:['su'],path:'/bin',

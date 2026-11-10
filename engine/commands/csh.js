@@ -137,9 +137,9 @@ function cexp(W,k,brace,ig0){ /* 4.3BSD csh's exp() over words W from k: {n, k a
   function ftest(t,f){ /* -e -d -f -z -o: is it there, a directory, a file, empty, yours. -r -w -x: may you */
     var n=P.find(P.glob(tl(f))[0]),at=n&&P.pathOf(n);
     if(!n)return false;
-    if(t==='r')return !n.prot;
-    if(t==='w')return n.type==='d'?!n.prot&&P.canWrite(at+'/x'):n.dev?!n.prot:!n.prot&&!n.parent.prot&&P.mayAlter(n); /* a file: what writing to it allows (its own mode, not its folder's), as writeFile decides */
-    if(t==='x')return n.type==='d'||!!n.bin||/x/.test(n.mode||'');
+    if(t==='r')return !n.prot&&P.may(n,'r'); /* access(2): the mode's bits for who is logged in; root may read and write anything */
+    if(t==='w')return (n.type==='d'?!n.prot&&P.canWrite(at+'/x'):n.dev?!n.prot:!n.prot&&!n.parent.prot&&P.mayAlter(n))&&P.may(n,'w'); /* a file: what writing to it allows (its own mode, not its folder's), as writeFile decides */
+    if(t==='x')return !n.prot&&(P.st.user===P.profile.rootName?/x/.test(P.modeOf(n)):n.mode?P.may(n,'x'):n.type==='d'||!!n.bin); /* root: any x bit */
     return t==='d'?n.type==='d':t==='f'?n.type!=='d'&&!n.dev:t==='z'?n.type!=='d'&&P.fsize(n)===0:t==='o'?n.owner===P.st.user:true;
   }
   function e6(ig){
