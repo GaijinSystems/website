@@ -146,7 +146,7 @@ P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prin
     'prints its arguments, separated by spaces, and ends the line. -n leaves the line open: what comes next goes on in it.']},
   run:function(a,raw,words){
     var n=words[1]==='-n',t=words.slice(n?2:1).join(' ');
-    if(P.bourne.dash&&P.bourne.dash()){ /* dash's echo: -n and nothing else, and the backslash escapes always; \c ends it all, newline and all */
+    if(P.bourne.dash()){ /* dash's echo: -n and nothing else, and the backslash escapes always; \c ends it all, newline and all */
       var stop=false;t=t.replace(/\\(0[0-7]{0,3}|[abcfnrtv\\])/g,function(m,x){if(stop)return '';if(x==='c'){stop=true;return '\u0000'}return x.charAt(0)==='0'?String.fromCharCode(parseInt(x,8)&255):{a:'\x07',b:'\b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\'}[x]});
       if(stop){t=t.slice(0,t.indexOf('\u0000'));n=true}
       var L=t.split('\n');L.open=n;P.say(L);return;
@@ -244,7 +244,7 @@ P.command({names:['export'],noHelpFlag:true,enabled:function(p){return !p.bash&&
     var W=words.slice(1);
     if(!W.length){P.say(Object.keys(EXPORTED).sort().map(function(k){return 'export '+k}));return}
     for(var i=0;i<W.length;i++){
-      if(!/^[A-Za-z_]\w*$/.test(W[i])){P.typeLine(W[i]+': is not an identifier','err');P.status(1);P.loop('abort');return} /* V7's lookup: failed(nam, notid), and the rest of the line goes */
+      if(!/^[A-Za-z_]\w*$/.test(W[i])){P.failed(W[i]+': is not an identifier');return} /* V7's lookup: failed(nam, notid), and the rest of the line goes */
       EXPORTED[W[i]]=true;
     }
   }});

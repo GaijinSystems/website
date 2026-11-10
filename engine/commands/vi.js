@@ -36,7 +36,7 @@ function Vi(name,S){
     return '"'+f+'"'+(cut?' [Incomplete last line]':'')+' '+L.length+' line'+(L.length===1?'':'s')+', '+n+u+(n===1?'':'s')+(wrote&&P.profile.bash?' written':'');
   }
   function load(f){
-    var n=P.named(f);
+    var n=P.unread(P.named(f));
     if(!n&&P.find(f,true))n={prot:true}; /* behind a locked folder: there, and not to be read */
     if(n&&n.type==='d'){msg='"'+f+'" Is a directory';return}
     if(n&&n.prot){msg='"'+f+'" Permission denied';return}
@@ -397,7 +397,8 @@ function Vi(name,S){
         if(dirty&&!bang){msg='No write since last change (:edit! overrides)';return}
         load(arg.trim()||file);return;
       case 'r':case 'read':{
-        var n=P.named(arg.trim()||file);
+        var n=P.unread(P.named(arg.trim()||file));
+        if(n&&n.type!=='d'&&n.prot){msg='"'+arg.trim()+'" Permission denied';return} /* ex's rop: open failed, and why */
         if(!n||n.type==='d'||n.prot){msg='"'+arg.trim()+'" No such file or directory';return}
         snap();
         var T=P.text(n);

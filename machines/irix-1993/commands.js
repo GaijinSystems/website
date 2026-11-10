@@ -112,7 +112,7 @@ function Fsn(S,done){
     var it=items[sel];
     if(!it)return;
     if(it.up){go(P.dirOf(at));return}
-    if(it.node.prot){msg=it.name+': permission denied';return}
+    if(P.unread(it.node).prot){msg=it.name+': permission denied';return} /* locked, or its mode does not let you read it */
     if(it.node.type==='d'){go((at==='/'?'':at)+'/'+it.name);return}
     if(it.node.bin){msg=it.name+': a program. this is not the moment.';return}
     var t=P.text(it.node);
@@ -139,12 +139,5 @@ P.command({names:['fsn'],help:'browse the files in pictures',path:'/usr/sbin',
     P.program(Fsn);
   }});
 /* /bin/sh is System V's Bourne shell, not csh: sh at the terminal starts one, which exit or ^D ends; sh file and sh -c run theirs with it */
-P.setup(function(){
-  P.bourne.on=true;
-  var sh=P.cmds.sh;
-  if(sh)P.cmds.sh=function(a,raw,w){
-    if(!a.length&&!P.stdin()&&!P.subshell()&&!P.inScript()){P.bourne.start();return}
-    P.bourne.run(function(){sh(a,raw,w)});
-  };
-});
+P.setup(function(){P.bourne.wrapSh()});
 })(window.Phosphor);

@@ -3001,6 +3001,7 @@ var DINDX=[2,0,1,585,191,100,190,-1994,-1613,-1615,-1617,-1619,0,0,-1621,0,0,-16
 var READ={},STOP={};
 function Z(n){var a=new Array(n);for(var i=0;i<n;i++)a[i]=0;return a}
 function CZ(a,k,n){for(var i=0;i<n;i++)a[k+i]='\0'}
+function fmtErr(f,eof){var e=new RangeError('read');e.fmt=f;if(eof)e.eof=true;return e} /* a formatted read that failed (eof: at the end of the input), which f2c's runtime complains of */
 function DIV(a,b){if(b===0)throw new RangeError('divide');return Math.trunc(a/b)|0}
 function ICHAR(c){return c===0?0:String(c).charCodeAt(0)}
 P.command({names:['zork','dungeon'],run:function(a,raw,words){
@@ -3098,7 +3099,7 @@ function WSTART(f){
   };
 }
 function RSTART(f,l){
-  if(l===null){if(P.machine!=='linux')throw STOP;var z=new RangeError('read');z.fmt=f;z.eof=true;throw z} /* the end of the input: on Debian, f2c's runtime stops with its complaint */
+  if(l===null){if(P.machine!=='linux')throw STOP;throw fmtErr(f,true)} /* the end of the input: on Debian, f2c's runtime stops with its complaint */
   var pf=parseformat(f),F=pf.F,i=0,at=0,s=String(l);
   return function(){
     for(;;){
@@ -3118,7 +3119,7 @@ function RSTART(f,l){
     t=t.replace(/ /g,'');
     if(t==='')return 0;
     if(e.k==='Z'){if(!/^[0-9a-fA-F]+$/.test(t))throw new RangeError('read');return parseInt(t,16)|0}
-    if(!/^[-+]?[0-9]+$/.test(t)){var x=new RangeError('read');x.fmt=f;throw x} /* f2c's runtime stops here, with its complaint */
+    if(!/^[-+]?[0-9]+$/.test(t))throw fmtErr(f); /* f2c's runtime stops here, with its complaint */
     return parseInt(t,10)|0;
   };
 }

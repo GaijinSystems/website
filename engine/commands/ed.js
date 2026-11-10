@@ -111,7 +111,7 @@ function Ed(name){
     else dot=Math.min(at,buf.length);
   }
   function loadFile(f){
-    var n=P.named(f);
+    var n=P.unread(P.named(f));
     if(!n||n.type==='d'||n.prot)fail('cannot open input file');
     return P.text(n);
   }
@@ -296,7 +296,7 @@ function Ed(name){
     },true);
   }
   if(file){
-    var n0=P.named(file);
+    var n0=P.unread(P.named(file));
     if(n0&&n0.type!=='d'&&!n0.prot){var T=P.text(n0);buf=wrap(T);dot=buf.length;P.typeLine(String(bytes(T)))}
     else{P.typeLine('?'+file);if(n0)lastErr='cannot open input file'}
   }

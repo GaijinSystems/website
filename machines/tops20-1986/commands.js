@@ -56,7 +56,7 @@ function gens(L,S){ /* .n that one, .* all, none the newest */
   return newest(L);
 }
 function show(e){return up(e.name+'.'+e.ext+'.'+e.gen)}
-function said(S){return up((S.dev?S.dev+':':'')+S.name+(S.ext!==null?'.'+S.ext:'')+(S.gen!==null?'.'+S.gen:''))}
+function said(S){return up((S.dev?S.dev+':':'')+(S.name||'')+(S.ext!==null?'.'+S.ext:'')+(S.gen!==null?'.'+S.gen:''))}
 function find1(spec,dflt,all){ /* the one file a spec means, searching a list in order */
   var S=parse(spec,dflt);
   for(var i=0;i<S.dirs.length;i++){
@@ -404,6 +404,7 @@ function run(a,where,missing){ /* R and RUN: the program the first word names, t
   its own name, a program has the rest of the line in the rescan buffer */
   if(!a[0]){err('?Missing '+missing);return}
   var r=program(a[0].replace(/\/.*$/,''),where),sw=(a[0].match(/\/.*$/)||[''])[0]+a.slice(1).join('');
+  if(!r.S.name){err('?Missing '+missing);return} /* a switch or a device alone names no program: R /USE-SECTION:1, RUN SYS: */
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
   if(sw&&!/^(\/U(S(E(-(S(E(C(T(I(O(N)?)?)?)?)?)?)?)?)?)?:\d+)+$/i.test(sw)){err(sw.charAt(0)==='/'?'?Does not match switch - "'+up(sw.split('/')[1].split(':')[0])+'"':'?Not confirmed');return}
   runFile(r,[]);

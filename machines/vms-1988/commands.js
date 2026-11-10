@@ -92,19 +92,20 @@ function find(w){
 function split(words){ /* words, with qualifiers apart: DIR/SIZE *.COM */
   var a=[],q=[];
   words.forEach(function(w){
-    var parts=w.split('/');
-    if(parts[0])a.push(parts[0]);
-    parts.slice(1).forEach(function(x){if(x)q.push(x.toLowerCase())});
+    var p=w.split('/')[0];
+    if(p)a.push(p);
+    slashes(w).forEach(function(x){q.push(x.toLowerCase())});
   });
   return {a:a,q:q};
 }
-function has(q,name){return q.some(function(x){return name.indexOf(x.split('=')[0])===0})}
+function slashes(w){return w.split('/').slice(1).filter(Boolean)} /* the qualifiers in a word, as typed */
+function has(q,name){return q.some(function(x){var k=x.split('=')[0];return k&&name.indexOf(k)===0})}
 
 function plural(n,w){return n+' '+w+(n===1?'':'s')}
 verb('directory',3,function(a,q){
   /* a list, A.TXT,B.TXT: a spec with no directory takes the one before it (RMS's sticky default), and the files of
      specs in a row in one directory are listed under one heading, with a grand total when there is more than one */
-  var specs=a.length?a.join(',').split(',').filter(Boolean):['*.*;*'],any=false,dirPart='',groups=[],size=has(q,'size'),date=has(q,'date');
+  var specs=a.length?list(a):['*.*;*'],any=false,dirPart='',groups=[],size=has(q,'size'),date=has(q,'date');
   specs.forEach(function(spec){
     var m=spec.match(/^([a-z0-9$]+:)?\[[^\]]*\]/i);
     if(m)dirPart=m[0];else if(dirPart)spec=dirPart+spec.replace(/^[a-z0-9$]+:/i,'');
@@ -258,28 +259,32 @@ verb('set',3,function(a,q,raw){
 /* SET PROMPT[=string]: in quotes as it is, else in capitals with the blanks round it gone; no more than 32 characters; with
    none, $ again (the VMS 5.0 DCL Dictionary, SET PROMPT). For this process only: LOGOUT puts the default back */
 var PROMPT0=null; /* the prompts the site set, before the first SET PROMPT */
+function promptBack(){if(PROMPT0){P.profile.prompt=PROMPT0[0];P.profile.rootPrompt=PROMPT0[1]}} /* the site's prompts again */
 function setPrompt(raw){
   PROMPT0=PROMPT0||[P.profile.prompt,P.profile.rootPrompt];
-  var m=raw.replace(/^\s*\$?\s*/,'').match(/^\S*?\s+[^=\s\/]*(?:\s*=\s*((?:"(?:[^"]|"")*"|[^\/"])*))?/),v=m&&m[1]?m[1].trim():'';
-  if(!v){P.profile.prompt=PROMPT0[0];P.profile.rootPrompt=PROMPT0[1];return}
+  var m=raw.replace(/^\s*\$?\s*/,'').match(/^\S*?\s+[^=\s\/]*(?:\s*\/[^=\s\/"]*)*(?:\s*=\s*((?:"[^"]*"|[^\/"])*))?/),v=m&&m[1]?m[1].trim():'';
+  if(!v){promptBack();return}
   v=v.replace(/"((?:[^"]|"")*)"|([^"]+)/g,function(x,q,t){return q!==undefined?q.replace(/""/g,'"'):up(t)}).slice(0,32);
   P.profile.prompt=P.profile.rootPrompt=v;
 }
 function now(){return P.now()}
 function timeStr(d){return stamp(d)+':'+P.p2(d.getSeconds())}
 function nodeName(){return up(P.st.hostname)}
-verb('show',2,function(a,q,raw){
-  var w=(a[0]||'').toLowerCase(),S=P.st,me=up(S.user);
-  function is(n,min){return abbr(w,n,min)}
-  if(!w){need(raw,'_What: ');return}
-  if(is('time',2)||is('daytime',2)){P.typeLine('  '+timeStr(now()));return}
-  if(is('default',3)){P.typeLine('  '+dirName(S.cwd));return}
-  if(is('users',1)){
+/* SHOW's keywords: [name, shortest, its qualifiers, what it shows]. One table for both, so a word means the same keyword to each. SYMBOL and
+   SYSTEM need three letters: SY is either, and ambiguous (%DCL-W-ABKEYW), as DCL says of any keyword cut shorter than its own shortest */
+function showKey(w){
+  if(!w)return null;
+  var k=SHOWK.filter(function(x){return abbr(w,x[0],x[1])})[0];
+  return k||(SHOWK.some(function(x){return x[0].indexOf(w)===0})?'ambiguous':'unknown');
+}
+var SHOWK=[
+  ['time',2,[],function(){P.typeLine('  '+timeStr(now()))}],['daytime',2,[],function(){P.typeLine('  '+timeStr(now()))}],
+  ['default',3,[],function(){P.typeLine('  '+dirName(P.st.cwd))}],
+  ['users',1,['output'],function(me){
     say(['      VAX/VMS Interactive Users - Total = 2','','      '+timeStr(now()),'','    Username     Process Name      PID     Terminal',
       '    '+'OPERATOR'.padEnd(13)+'_TXA0:'.padEnd(13)+'20200127     TXA0:','    '+me.padEnd(13)+('_TXA2:').padEnd(13)+'20200134     TXA2:']);
-    return;
-  }
-  if(is('system',2)){
+  }],
+  ['system',3,['batch','full','network','output','process','subprocess'],function(){
     var T=now();
     say(['VAX/VMS V4.6  on node '+nodeName()+'  '+timeStr(T)+'   Uptime  12 04:17:08',
       '  Pid    Process Name    State  Pri      I/O       CPU       Page flts Ph.Mem',
@@ -290,24 +295,24 @@ verb('show',2,function(a,q,raw){
       '20200108 SYMBIONT_0001   HIB      4       42   0 00:00:00.51       65     44',
       '20200127 _TXA0:          LEF      4     3120   0 00:02:12.40     2714    301',
       '20200134 _TXA2:          CUR      4       31   0 00:00:01.02      402    187']);
-    return;
-  }
-  if(is('process',1)){
-    say(['',timeStr(now())+'   TXA2:          User: '+me,'Pid: 20200134   Proc. name: _TXA2:          UIC: [200,134]','Priority: 4   Default file spec: '+dirName(S.cwd)]);
-    return;
-  }
-  if(is('memory',1)){say(['              System Memory Resources on '+timeStr(now()),'','Physical Memory Usage (pages):     Total        Free      In Use    Modified','  Main Memory (8.00Mb)             16384        9120        6912         352']);return}
-  if(is('device',3)){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSRL4      41822   112   1']);return}
-  if(is('quota',1)){P.typeLine('User ['+me+'] has 412 blocks used, 9588 available, of 10000 authorized');return}
-  if(is('symbol',2)){showSymbol(a[1],q,raw);return}
-  if(is('terminal',2)){say(['Terminal: _TXA2:      Device_Type: VT100        Owner: '+me,'','   Input:    9600      LFfill:  0      Width:  80      Parity: None','   Output:   9600      CRfill:  0      Page:   24']);return}
-  err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0])+'\\');
-},function(a){ /* each SHOW keyword's own; an unknown keyword is IVKEYW, not IVQUAL */
-  var w=(a[0]||'').toLowerCase(),Q=[['symbol',2,['all','global','local','log']],['users',1,['output']],['system',2,['batch','full','network','output','process','subprocess']],
-    ['process',1,['accounting','all','continuous','identification','memory','output','privileges','quotas','subprocesses']],['memory',1,['all','files','full','output','physical_pages','pool','slots']],
-    ['devices',3,['allocated','brief','files','full','mounted','output','system','windows']],['quota',1,['disk','user']],['terminal',2,['output','permanent']],['time',2,[]],['daytime',2,[]],['default',3,[]]];
-  for(var i=0;i<Q.length;i++)if(abbr(w,Q[i][0],Q[i][1]))return Q[i][2];
-  return null;
+  }],
+  ['process',1,['accounting','all','continuous','identification','memory','output','privileges','quotas','subprocesses'],function(me){
+    say(['',timeStr(now())+'   TXA2:          User: '+me,'Pid: 20200134   Proc. name: _TXA2:          UIC: [200,134]','Priority: 4   Default file spec: '+dirName(P.st.cwd)]);
+  }],
+  ['memory',1,['all','files','full','output','physical_pages','pool','slots'],function(){say(['              System Memory Resources on '+timeStr(now()),'','Physical Memory Usage (pages):     Total        Free      In Use    Modified','  Main Memory (8.00Mb)             16384        9120        6912         352'])}],
+  ['devices',3,['allocated','brief','files','full','mounted','output','system','windows'],function(){say(['Device                  Device           Error    Volume         Free  Trans Mnt','Name                    Status           Count     Label        Blocks Count Cnt','DUA0:                   Mounted              0  VAXVMSRL4      41822   112   1'])}],
+  ['quota',1,['disk','user'],function(me){P.typeLine('User ['+me+'] has 412 blocks used, 9588 available, of 10000 authorized')}],
+  ['symbol',3,['all','global','local','log'],function(me,a,q,raw){showSymbol(a[1],q,raw)}],
+  ['terminal',2,['output','permanent'],function(me){say(['Terminal: _TXA2:      Device_Type: VT100        Owner: '+me,'','   Input:    9600      LFfill:  0      Width:  80      Parity: None','   Output:   9600      CRfill:  0      Page:   24'])}]];
+verb('show',2,function(a,q,raw){
+  var w=(a[0]||'').toLowerCase(),k=showKey(w);
+  if(!w){need(raw,'_What: ');return}
+  if(typeof k!=='string'){k[3](up(P.st.user),a,q,raw);return}
+  if(k==='ambiguous')err('%DCL-W-ABKEYW, ambiguous qualifier or keyword - supply more characters',' \\'+up(a[0])+'\\');
+  else err('%DCL-W-IVKEYW, unrecognized keyword - check validity and spelling',' \\'+up(a[0])+'\\');
+},function(a){ /* each SHOW keyword's own; an unknown keyword is IVKEYW (or ABKEYW), not IVQUAL */
+  var k=showKey((a[0]||'').toLowerCase());
+  return k&&typeof k!=='string'?k[2]:null;
 });
 verb('write',2,function(a,q,raw){
   var m=raw.match(/sys\$output\s+(.*)$/i);
@@ -318,7 +323,7 @@ verb('exit',3,function(){if(P.inScript())P.loop('exit')}); /* the end of a comma
 verb('logout',2,function(a,q){
   P.say(['  '+up(P.st.user)+'      logged out at '+timeStr(now())]);
   SYM={local:{},global:{}}; /* the process's symbols go with it, and its prompt */
-  if(PROMPT0){P.profile.prompt=PROMPT0[0];P.profile.rootPrompt=PROMPT0[1]}
+  promptBack();
   P.logout();
 },['brief','full','hangup']);
 verb('run',2,function(a){
@@ -351,7 +356,7 @@ function num(v){ /* a string where a number is wanted: its digits, or true (T or
 }
 function evaluate(src){ /* the value, or undefined after saying why */
   var T=[],i=0,m,re=/\s*(?:(\d+)|"((?:[^"]|"")*)"|([A-Za-z_$][\w$]*)|([-+*\/()]))/y;
-  src=src.replace(/^((?:[^"!]|"(?:[^"]|"")*")*)!.*$/,'$1'); /* a comment, outside quotes */
+  src=src.replace(/^([^"!]*(?:"[^"]*"[^"!]*)*)!.*$/,'$1'); /* a comment, outside quotes */
   while(!/^\s*$/.test(src.slice(i))){
     re.lastIndex=i;m=re.exec(src);
     if(!m)return bad();
@@ -433,11 +438,12 @@ function substitute(s){
   }
   return o;
 }
-var subbing=false;
-P.symbols=function(line){ /* the engine gives a line here first: MORIA :== RUN MORIA defines a symbol, though MORIA is a command */
-  if(!subbing&&line.indexOf("'")>=0){
+var DONE='\uE0F5'; /* at the start of a line its 'NAME's have been put in: when it runs (queued) they are not put in again */
+P.symbols=function(line){ /* the engine gives a line here first: MORIA :== RUN MORIA defines a symbol, though MORIA is a command. True: done; a string: the line to run */
+  if(line.charAt(0)===DONE){line=line.slice(1);return assign(line.trim())||line}
+  if(line.indexOf("'")>=0){
     var s=substitute(line);
-    if(s!==line){subbing=true;try{P.exec(s)}finally{subbing=false}return true}
+    if(s!==line){P.exec(DONE+s);return true}
   }
   return assign(line.trim());
 };
@@ -455,11 +461,12 @@ function showSymbol(name,q,raw){
 }
 function quals(raw){ /* the qualifiers typed, what is in quotes left out */
   var q=[];
-  raw.replace(/"(?:[^"]|"")*"/g,' ').trim().split(/\s+/).forEach(function(w){w.split('/').slice(1).forEach(function(x){if(x)q.push(x)})});
+  raw.replace(/"(?:[^"]|"")*"/g,' ').trim().split(/\s+/).forEach(function(w){q=q.concat(slashes(w))});
   return q;
 }
 /* a command: a verb from the table, @file, or a question for the operator */
 P.fallback=function(word,raw){
+  raw=raw.replace(/^([^"!]*(?:"[^"]*"[^"!]*)*)!.*$/,'$1'); /* a comment, outside quotes: no parameter or qualifier */
   var W=raw.trim().split(/\s+/);
   if(/^\$/.test(W[0])){W[0]=W[0].replace(/^\$+/,'');if(!W[0])W.shift()}
   if(!W.length||/^!/.test(W[0]))return true;
@@ -476,8 +483,8 @@ P.fallback=function(word,raw){
     return true;
   }
   var rest=W.slice(0);rest[0]=slash>0?W[0].slice(slash):'';
-  var parts=split(rest.filter(Boolean)),ok=typeof v.quals==='function'?v.quals(parts.a):v.quals,badQ=ok&&quals(raw.trim().replace(/^\$\s*/,'')).filter(function(x){var k=x.split('=')[0].toLowerCase();return !ok.some(function(n){return n.indexOf(k)===0||k.length>2&&k.slice(0,2)==='no'&&n.indexOf(k.slice(2))===0})})[0];
-  if(badQ){err('%DCL-W-IVQUAL, unrecognized qualifier - check validity, spelling, and placement',' \\'+up(badQ.split('=')[0])+'\\');return true}
+  var parts=split(rest.filter(Boolean)),ok=typeof v.quals==='function'?v.quals(parts.a):v.quals,badQ=ok&&quals(raw.trim().replace(/^\$\s*/,'')).filter(function(x){var k=x.split('=')[0].toLowerCase();return !k||!ok.some(function(n){return n.indexOf(k)===0||k.length>2&&k.slice(0,2)==='no'&&n.indexOf(k.slice(2))===0})})[0];
+  if(badQ){err('%DCL-W-IVQUAL, unrecognized qualifier - check validity, spelling, and placement',' \\'+up(badQ.split('=')[0]||badQ)+'\\');return true} /* /=X: no name, which names no qualifier */
   parts.a=parts.a.join(' ').replace(/\s*([,+])\s*/g,'$1').split(' ').filter(Boolean); /* A.TXT, B.TXT is one parameter, a list */
   if(v.max!==undefined&&parts.a.length>v.max){err('%DCL-W-MAXPARM, too many parameters - reenter command with fewer parameters',' \\'+up(parts.a[v.max])+'\\');return true}
   P.status(0);

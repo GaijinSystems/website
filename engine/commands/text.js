@@ -9,7 +9,7 @@ function cmd(name,what,syn,desc,run,noH){ /* desc: a line, a list of lines, or f
   var man=typeof desc==='function'?function(pr){var o=desc(pr);return {what:what,syn:o[0]||syn,desc:o[1]}}:{what:what,syn:syn,desc:[].concat(desc)};
   P.command({names:[name],path:'/bin',noHelpFlag:!!noH,man:man,run:run});
 }
-function nameOf(p){return p.replace(/\/+$/,'').split('/').pop()}
+function nameOf(p){return P.nameOf(p)}
 function operands(a){return a.filter(function(x){return x.charAt(0)!=='-'})}
 function flags(a){return a.filter(function(x){return x.charAt(0)==='-'}).join('')}
 
@@ -48,12 +48,7 @@ function target(to,from){ /* copying or moving into a folder keeps the name */
 /* GNU's cp and mv (coreutils 9.7, as Debian's are): their own words for each way it fails. The name a failure is told by is the one
    given (into a folder: folder/name). Debian's cp and mv in front of these take the options and loop over the sources; a.rec is cp's -r,
    a.verb its -v for what a folder holds, a.keep its -p */
-function why(p){ /* why stat(p) failed: a locked folder on the way, a file used as a folder, or nothing there */
-  if(P.shut(p))return 'Permission denied';
-  var s=P.norm(p).split('/').filter(Boolean);
-  for(var i=1;i<s.length;i++){var n=P.find('/'+s.slice(0,i).join('/'));if(!n)break;if(n.type!=='d')return 'Not a directory'}
-  return /\/$/.test(p)&&P.find(p)?'Not a directory':'No such file or directory';
-}
+function why(p){return P.why(p)}
 function gnuSrc(who,x,nofollow){ /* the file named x, or null after saying why not: a name ending in / must be a folder */
   var n=P.find(x,true,false,nofollow);
   if(n&&/\/$/.test(x)&&n.type!=='d'&&!(n.type==='s'&&(P.find(x)||{}).type==='d'))n=null;
@@ -69,19 +64,19 @@ function unseen(to,tn){ /* the target cannot even be looked for: a locked folder
   return w==='Permission denied'||w==='Not a directory'&&!/\/$/.test(tn)?w:null;
 }
 function gnuCp(a){
-  gnuCp.verb=!!a.verb;gnuCp.keep=!!a.keep;
-  var src=a[0],n=gnuSrc('cp',src);
+  var src=a[0],n=gnuSrc('cp',src),o={verb:!!a.verb,keep:!!a.keep};
   if(!n)return;
   var to=target(a[1],src),tn=named(to,a),there=P.find(to,true);
   if(n.type==='d'&&!a.rec){P.typeLine("cp: -r not specified; omitting directory '"+src+"'",'err');return}
-  if(unseen(to,tn)){P.typeLine("cp: cannot stat '"+tn+"': "+unseen(to,tn),'err');return}
-  if(n.type==='d'){copyDir(src,n,to,tn);return}
+  var u=unseen(to,tn);
+  if(u){P.typeLine("cp: cannot stat '"+tn+"': "+u,'err');return}
+  if(n.type==='d'){copyDir(src,n,to,tn,o);return}
   if(!there&&/\/$/.test(tn)){P.typeLine("cp: cannot create regular file '"+tn+"': Not a directory",'err');return}
   if(there===n){P.typeLine("cp: '"+src+"' and '"+tn+"' are the same file",'err');return}
   if(there&&there.type==='d'){P.typeLine("cp: cannot overwrite directory '"+tn+"' with non-directory",'err');return}
-  copyFile(src,n,to,tn);
+  copyFile(src,n,to,tn,o);
 }
-function copyFile(src,n,to,tn){
+function copyFile(src,n,to,tn,o){ /* o: verb (cp -v) and keep (cp -p) */
   if(n.prot||!P.may(n,'r')){P.typeLine("cp: cannot open '"+src+"' for reading: Permission denied",'err');return false}
   if(P.immutable(to,true)){P.notPermitted('cp',tn);return false} /* Debian's immutable attribute */
   if(!P.writeFile(to,P.text(n),false)){
@@ -89,10 +84,10 @@ function copyFile(src,n,to,tn){
     P.typeLine("cp: cannot create regular file '"+tn+"': "+(/\/$/.test(tn)?'Not a directory':!up?why(P.dirOf(to)):'Permission denied'),'err');return false;
   }
   var t=P.find(to);
-  if(gnuCp.keep&&t&&!t.dev){t.date=n.date;if(n.mode)t.mode=n.mode;if(P.st.user==='root')t.owner=n.owner}
+  if(o.keep&&t&&!t.dev){t.date=n.date;if(n.mode)t.mode=n.mode;if(P.st.user==='root')t.owner=n.owner}
   return true;
 }
-function copyDir(src,n,to,tn){ /* cp -r: the folder, then what is in it, in the order the folder lists them; a link is copied as a link */
+function copyDir(src,n,to,tn,o){ /* cp -r: the folder, then what is in it, in the order the folder lists them; a link is copied as a link */
   var from=P.pathOf(n),there=P.find(to,true);
   if(there&&there.type!=='d'){P.typeLine("cp: cannot overwrite non-directory '"+tn+"' with directory '"+src+"'",'err');return}
   if(to===from||to.indexOf(from+'/')===0){P.typeLine("cp: cannot copy a directory, '"+src+"', into itself, '"+tn+"'",'err');return}
@@ -105,13 +100,13 @@ function copyDir(src,n,to,tn){ /* cp -r: the folder, then what is in it, in the 
     }
     P.put(to,'d',{owner:P.st.user,date:P.now()});
   }
-  if(gnuCp.verb)P.typeLine("'"+src+"' -> '"+tn+"'");
+  if(o.verb)P.typeLine("'"+src+"' -> '"+tn+"'");
   if(n.prot||!P.may(n,'r')||!P.may(n,'x')){P.typeLine("cp: cannot access '"+src+"': Permission denied",'err');return}
   Object.keys(n.kids).forEach(function(k){
     var c=n.kids[k],s=src.replace(/\/+$/,'')+'/'+k,t=tn.replace(/\/+$/,'')+'/'+k,ta=to+'/'+k;
-    if(c.type==='d')copyDir(s,c,ta,t);
-    else if(c.type==='s'){var ex=P.find(ta,true,false,true);if(ex){P.typeLine("cp: cannot create symbolic link '"+t+"': File exists",'err');return}P.put(ta,'s',{sym:c.sym,owner:P.st.user,date:P.now(),mode:'lrwxrwxrwx',size:c.sym.length});if(gnuCp.verb)P.typeLine("'"+s+"' -> '"+t+"'")}
-    else if(copyFile(s,c,ta,t)&&gnuCp.verb)P.typeLine("'"+s+"' -> '"+t+"'");
+    if(c.type==='d')copyDir(s,c,ta,t,o);
+    else if(c.type==='s'){var ex=P.find(ta,true,false,true);if(ex){P.typeLine("cp: cannot create symbolic link '"+t+"': File exists",'err');return}P.symlink(ta,c.sym,'lrwxrwxrwx');if(o.verb)P.typeLine("'"+s+"' -> '"+t+"'")}
+    else if(copyFile(s,c,ta,t,o)&&o.verb)P.typeLine("'"+s+"' -> '"+t+"'");
   });
 }
 function gnuMv(a){
@@ -119,28 +114,29 @@ function gnuMv(a){
   if(!n)return;
   var from=P.norm(src),to=target(a[1],src),tn=named(to,a),there=P.find(to,true,false,true),was=P.pathOf(n),say=function(e){P.typeLine("mv: cannot move '"+src+"' to '"+tn+"': "+e,'err')};
   if(/(^|\/)\.\.?\/*$/.test(src)){say('Device or resource busy');return}
-  if(unseen(to,tn)){P.typeLine("mv: cannot stat '"+tn+"': "+unseen(to,tn),'err');return}
+  var u=unseen(to,tn),other=there&&there!==n; /* other: something else is there */
+  if(u){P.typeLine("mv: cannot stat '"+tn+"': "+u,'err');return}
   if(!there&&/\/$/.test(tn)&&n.type!=='d'){say('Not a directory');return}
   if(there===n&&from===P.pathOf(there)){P.typeLine("mv: '"+src+"' and '"+tn+"' are the same file",'err');return}
   if(n.type==='d'&&(to+'/').indexOf(was+'/')===0){P.typeLine("mv: cannot move '"+src+"' to a subdirectory of itself, '"+tn+"'",'err');return}
-  if(there&&there!==n&&there.type==='d'&&n.type!=='d'){P.typeLine("mv: cannot overwrite directory '"+tn+"' with non-directory",'err');return}
-  if(there&&there!==n&&there.type!=='d'&&n.type==='d'){P.typeLine("mv: cannot overwrite non-directory '"+tn+"' with directory '"+src+"'",'err');return}
+  if(other&&there.type==='d'&&n.type!=='d'){P.typeLine("mv: cannot overwrite directory '"+tn+"' with non-directory",'err');return}
+  if(other&&there.type!=='d'&&n.type==='d'){P.typeLine("mv: cannot overwrite non-directory '"+tn+"' with directory '"+src+"'",'err');return}
   if(there&&there.dev){P.typeLine("mv: inter-device move failed: '"+src+"' to '"+tn+"'; unable to remove target: Permission denied",'err');return} /* /dev is a file system of its own */
   if(!n.prot&&(P.immutable(from)||P.immutable(to)&&there!==n)){P.notPermitted('mv',src,tn);return}
   var up=P.find(P.dirOf(to));
   if(!up||up.type!=='d'){say(why(P.dirOf(to)));return}
-  if(sticky(from,n)||there&&there!==n&&sticky(to,there)){say('Operation not permitted');return}
+  if(sticky(from,n)||other&&sticky(to,there)){say('Operation not permitted');return}
   if(n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){say('Permission denied');return}
-  if(there&&there!==n&&there.type==='d'&&Object.keys(there.kids).length){P.typeLine("mv: cannot overwrite '"+tn+"': Directory not empty",'err');return}
+  if(other&&there.type==='d'&&Object.keys(there.kids).length){P.typeLine("mv: cannot overwrite '"+tn+"': Directory not empty",'err');return}
   var parent=up,name=to.split('/').pop();
-  delete P.find(P.dirOf(from),true).kids[from.split('/').pop()]; /* by the name given: a link has its own */
+  P.unlink(from); /* by the name given: a link has its own */
   parent.kids[name]=n;
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)}
 }
 cmd('cp','copy a file','cp file1 file2','copies file1 to file2, or into file2 if it is a folder.',function(a){
   if(P.profile.bash){gnuCp(a);return}
   if(a.length<2){P.typeLine(P.profile.perror?'Usage: cp [-ip] f1 f2; or: cp [-irp] f1 ... fn d2':'Usage: cp: f1 f2; or cp f1 ... fn d2');return}
-  var n=P.find(a[0]);
+  var n=P.unread(P.find(a[0])); /* a file its mode does not let you read: as a locked one */
   if(!n||n.type==='d'||n.prot){P.oops('cp',a[0],n,'cp: cannot open '+a[0]);return}
   var to=target(a[1],a[0]);
   if(P.immutable(to,true)){P.notPermitted('cp',named(to,a));return} /* Debian's immutable attribute */
@@ -158,7 +154,7 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   var was=P.pathOf(n);
   if((to+'/').indexOf(was+'/')===0&&to!==was){P.typeLine('mv: directory rename only','err');return}
   var parent=P.find(P.dirOf(to)),name=to.split('/').pop();
-  delete P.find(P.dirOf(from),true).kids[from.split('/').pop()]; /* by the name given: a link has its own */
+  P.unlink(from); /* by the name given: a link has its own */
   parent.kids[name]=n;
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
 });
@@ -170,27 +166,28 @@ cmd('chmod','change who may do what to a file','chmod mode file ...',['mode is a
   var gnu=P.profile.bash,bsd=P.profile.perror&&!gnu,W=a.slice(),rec=false,quiet=false;
   while(W.length>1&&/^-[Rf]+$/.test(W[0])){rec=rec||/R/.test(W[0]);quiet=quiet||/f/.test(W[0]);W.shift()}
   if(W.length<2){
-    if(gnu){P.typeLine(W.length?"chmod: missing operand after '"+W[0]+"'":'chmod: missing operand','err');P.typeLine("Try 'chmod --help' for more information.",'err')}
+    if(gnu)P.tryHelp('chmod',W.length?"missing operand after '"+W[0]+"'":'missing operand');
     else P.typeLine(bsd?'Usage: chmod [-Rf] [ugoa][+-=][rwxXstugo] file ...':'Usage: chmod [ugoa][+-=][rwxstugo] file ...');
     return;
   }
   var spec=W[0];
   if(newMode(spec,'-rw-r--r--')===null){
-    if(gnu){P.typeLine("chmod: invalid mode: '"+spec+"'",'err');P.typeLine("Try 'chmod --help' for more information.",'err')}
+    if(gnu)P.tryHelp('chmod',"invalid mode: '"+spec+"'");
     else P.typeLine('chmod: invalid mode','err');
     return;
   }
   function say(t){if(!quiet)P.typeLine(t,'err');else P.status(1)}
+  function noPerm(x){say(gnu?"chmod: changing permissions of '"+x+"': Operation not permitted":bsd?'chmod: '+x+': Not owner':"chmod: can't change "+x)}
   function one(x,n){
     if(P.isImmutable(n)){if(!quiet)P.notPermitted('chmod',x);return}
-    if(!P.mayChmod(n,x)){say(gnu?"chmod: changing permissions of '"+x+"': Operation not permitted":bsd?'chmod: '+x+': Not owner':"chmod: can't change "+x);return}
+    if(!P.mayChmod(n,x)){noPerm(x);return}
     n.mode=newMode(spec,P.modeOf(n));
     if(rec&&n.type==='d'&&!n.prot)Object.keys(n.kids).sort().forEach(function(k){var c=n.kids[k];if(c.parent===n&&c.type!=='s')one(x.replace(/\/+$/,'')+'/'+k,c)});
   }
   W.slice(1).forEach(function(x){
-    var n=P.shut(x)?null:P.find(x,true),why=n?'':P.shut(x)?'Permission denied':'No such file or directory';
+    var n=P.shut(x)?null:P.find(x,true),why=n?'':P.why(x,true);
     if(!n){say(gnu?"chmod: cannot access '"+x+"': "+why:bsd?'chmod: '+x+': '+why:"chmod: can't access "+x);return}
-    if(n.prot&&!P.mayChmod(n,x)){say(gnu?"chmod: changing permissions of '"+x+"': Operation not permitted":bsd?'chmod: '+x+': Not owner':"chmod: can't change "+x);return}
+    if(n.prot&&!P.mayChmod(n,x)){noPerm(x);return}
     one(x,n);
   });
 });
@@ -254,7 +251,7 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function
     var add=function(c,v){
       if(c==='e'){pats=(pats||[]).concat(v.split('\n'));return true}
       var n=P.find(v);
-      if(!n||n.type==='d'||n.prot||!P.may(n,'r')){P.typeLine('grep: '+v+': '+(!n?(P.shut(v)?'Permission denied':'No such file or directory'):n.type==='d'?'Is a directory':'Permission denied'),'err');P.queue(function(){P.status(2)});return false}
+      if(!n||n.type==='d'||n.prot||!P.may(n,'r')){P.typeLine('grep: '+v+': '+(!n?P.why(v,true):n.type==='d'?'Is a directory':'Permission denied'),'err');P.queue(function(){P.status(2)});return false}
       pats=(pats||[]).concat(P.text(n)); /* -f: a pattern a line; an empty file, none, which nothing matches */
       return true;
     };
@@ -309,7 +306,7 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function
   F.forEach(function(x){P.queue(function(){ /* in turn: GNU's - may wait for the keyboard */
     if(stop)return;
     if(gnu&&x==='-'){P.input([],function(L){if(scan(L,'(standard input)')&&quiet)stop=true});return}
-    var fx=P.fold(x),nd=P.find(fx);
+    var fx=P.fold(x),nd=P.unread(P.find(fx));
     if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([fx],function(){});bad=true;if(v7)stop=true;return}
     if(scan(P.text(nd),x)&&quiet&&gnu)stop=true;
   })});
@@ -366,7 +363,7 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ name ... ]',function
     var put=function(c,name){var o='';for(var i=0;i<wd.length;i++){var k=wd.charAt(i);if(c[k]!==undefined)o+=col(k,c[k])}P.typeLine(o+(name!==undefined?' '+name:''))};
     if(!A.length){P.input([],function(L){put(counts(L))});return}
     A.forEach(function(x){P.queue(function(){
-      var n=P.find(x),c;
+      var n=P.unread(P.find(x)),c;
       if(!n||n.prot){P.input([x],function(){});return} /* it says it cannot open it, and goes on with the next */
       c=n.type==='d'?dirCounts(n):counts(P.text(n));
       put(c,x);T.l+=c.l;T.w+=c.w;T.c+=c.c;
@@ -389,7 +386,7 @@ cmd('wc','count lines, words and characters','wc [ -lwc ] [ name ... ]',function
   function add(c){c.forEach(function(n,i){total[i]+=n})}
   if(!F.length){P.input([],function(L){row(picked(L))});return}
   F.forEach(function(x){P.queue(function(){
-    var n=P.find(x);
+    var n=P.unread(P.find(x));
     if(!n||n.prot){P.typeLine('wc: '+x+': '+(!n?'No such file or directory':'Permission denied'),'err');bad=true;return}
     if(n.type==='d'){row(total.map(function(){return 0}),x);P.typeLine('wc: '+x+': Is a directory','err');bad=true;return} /* it counts what it read, nothing, then says why it stopped */
     var c=picked(P.text(n));add(c);row(c,x);
@@ -505,7 +502,7 @@ cmd('head','print the first lines','head [ -n ] [ file ... ]',function(pr){
   if(o.err&&P.profile.bash){o.err.forEach(function(l){P.typeLine(l,'err')});P.status(1);return} /* GNU's: before it reads anything */
   if(!o.F.length&&!o.err){if(o.v)P.say(['==> standard input <==']);P.input([],function(L){P.say(headOf(L,o.n,o.c,o.z))})}
   o.F.forEach(function(x){P.queue(function(){ /* one after the other: standard input from the keyboard is read in its turn */
-    var std=x.f==='-'&&P.profile.bash,n=!std&&P.find(x.f);
+    var std=x.f==='-'&&P.profile.bash,n=!std&&P.unread(P.find(x.f));
     if(!std&&(!n||n.type==='d'||n.prot)){P.input([x.f],function(){});return} /* it says so */
     if(many)P.say((first?[]:['']).concat(['==> '+(std?'standard input':x.f)+' <==']));first=false; /* write_header: before it reads */
     P.input(std?[]:[x.f],function(L){P.say(headOf(L,x.n,o.c,o.z))});
@@ -530,7 +527,7 @@ cmd('tr','change characters','tr [ -cds ] [ string1 [ string2 ] ]',function(pr){
   if(W[0]==='--')W.shift();
   var c=/[cC]/.test(o),d=/d/.test(o),sq=/s/.test(o);
   if(gnu){
-    var bad=!W.length?'tr: missing operand':d&&!sq&&W.length>1?"tr: extra operand '"+W[1]+"'":!d&&!sq&&W.length<2?"tr: missing operand after '"+W[0]+"'":d&&sq&&W.length<2?"tr: missing operand after '"+W[0]+"'":W.length>2?"tr: extra operand '"+W[2]+"'":'';
+    var bad=!W.length?'tr: missing operand':d&&!sq&&W.length>1?"tr: extra operand '"+W[1]+"'":d===sq&&W.length<2?"tr: missing operand after '"+W[0]+"'":W.length>2?"tr: extra operand '"+W[2]+"'":'';
     if(bad){P.typeLine(bad,'err');if(/extra/.test(bad)&&d&&!sq)P.typeLine('Only one string may be given when deleting without squeezing repeats.','err');else if(/after/.test(bad))P.typeLine(d?'Two strings must be given when both deleting and squeezing repeats.':'Two strings must be given when translating.','err');P.typeLine("Try 'tr --help' for more information.",'err');return}
   }
   else if(W.length<(o?1:2)&&!P.profile.perror){P.typeLine('usage: '+P.man.tr.syn);return}
@@ -540,14 +537,16 @@ cmd('tr','change characters','tr [ -cds ] [ string1 [ string2 ] ]',function(pr){
     return s.replace(/(.)-(.)/g,function(m,x,y){var o='';for(var k=x.charCodeAt(0);k<=y.charCodeAt(0);k++)o+=String.fromCharCode(k);return o});
   }
   var from=span(W[0]||''),to=span(W[1]||''),tr=!d&&W.length>1,sqs=sq?(d||W.length<2?(d?to:from):to):'',sqc=sq&&!d&&W.length<2&&c;
-  function in1(ch){return (from.indexOf(ch)>=0)!==c}
+  var at=new Map(),sqset=new Set(sqs.split('')); /* each character of string1 and where it first is; the ones -s squeezes */
+  from.split('').forEach(function(ch,i){if(!at.has(ch))at.set(ch,i)});
+  function in1(ch){return at.has(ch)!==c}
   P.input([],function(L){ /* the input as one stream: a newline is a character like the rest (tr -cd 0-9 takes it away) */
     var l=L.join('\n')+(L.length&&!L.open?'\n':''),out='',last=null;
     for(var i=0;i<l.length;i++){
       var ch=l.charAt(i);
       if(d&&in1(ch))continue;
-      if(tr&&in1(ch))ch=c?to.charAt(to.length-1):to.charAt(Math.min(from.indexOf(ch),to.length-1));
-      if(sq&&ch===last&&(sqc?from.indexOf(ch)<0:sqs.indexOf(ch)>=0))continue;
+      if(tr&&in1(ch))ch=c?to.charAt(to.length-1):to.charAt(Math.min(at.get(ch),to.length-1));
+      if(sq&&ch===last&&(sqc?!at.has(ch):sqset.has(ch)))continue;
       out+=ch;last=ch;
     }
     var R=out?out.split('\n'):[];
@@ -602,10 +601,10 @@ cmd('sleep','wait a while','sleep seconds',function(pr){
   return [null,pr.bash?['waits for the sum of the times given. each is a number, which may have a fraction, and a suffix: s for seconds (the default), m minutes, h hours, d days. ctrl-c stops it early.']:['waits. ctrl-c stops it early.']];
 },function(a){
   if(P.profile.bash){ /* GNU's: NUMBER[SUFFIX]..., summed */
-    if(!a.length){P.typeLine('sleep: missing operand','err');P.typeLine("Try 'sleep --help' for more information.",'err');return}
+    if(!a.length){P.tryHelp('sleep','missing operand');return}
     var t=0,bad=null;
     a.forEach(function(x){var m=/^\+?(\d+\.?\d*|\.\d+)([smhd]?)$/.exec(x);if(!m){if(bad===null)bad=x;return}t+=+m[1]*{'':1,s:1,m:60,h:3600,d:86400}[m[2]]});
-    if(bad!==null){P.typeLine("sleep: invalid time interval '"+bad+"'",'err');P.typeLine("Try 'sleep --help' for more information.",'err');return}
+    if(bad!==null){P.tryHelp('sleep',"invalid time interval '"+bad+"'");return}
     P.queue(function(){return P.sleep(Math.min(600,t)*1000)});
     return;
   }
@@ -678,7 +677,7 @@ cmd('stty','set the speed of the line','stty [ speed ]',function(pr){
 });
 cmd('file','guess what a file is','file file ...','says what sort of thing each file seems to be.',function(a){
   a.forEach(function(x){
-    var n=P.find(x),k=!n?'cannot stat':n.type==='d'?'directory':n.dev?'character special ('+n.dev[0]+'/'+n.dev[1]+')':n.prot?'cannot open':n.bin?(P.profile.perror?'demand paged pure executable':'pure executable'):/\.c$/.test(n.name)?'c program text':'ascii text';
+    var n=P.unread(P.find(x)),k=!n?'cannot stat':n.type==='d'?'directory':n.dev?'character special ('+n.dev[0]+'/'+n.dev[1]+')':n.prot?'cannot open':n.bin?(P.profile.perror?'demand paged pure executable':'pure executable'):/\.c$/.test(n.name)?'c program text':'ascii text';
     P.typeLine(x+':\t'+k);
   });
 });
@@ -692,7 +691,12 @@ cmd('sh','run a shell script','sh file',function(pr){
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
   var c=a[0]==='-c'&&/^\s*\S+\s+(?:-c|'-c')\s+(.*)$/.exec(raw||''); /* sh -c 'a command'; '-c' as env passes it on */
   if(c){P.runScript([P.unquote(c[1])]);return}
-  var n=P.find(a[0]);
+  var n=P.unread(P.find(a[0]));
+  if(n&&n.prot&&n.type!=='d'&&P.profile.bash){ /* dash: sh: 0: cannot open f: ..., and exit 2; bash: bash: f: ..., and 126 */
+    if(dash()){P.typeLine('sh: 0: cannot open '+a[0]+': Permission denied','err');P.queue(function(){P.status(2)})}
+    else{P.typeLine('bash: '+a[0]+': Permission denied','err');P.queue(function(){P.status(126)})}
+    return;
+  }
   if(!n||n.type==='d'||n.prot){P.typeLine(a[0]+': cannot open','err');return}
   P.runScript(P.text(n),a.slice());
 });
@@ -700,14 +704,15 @@ cmd('sh','run a shell script','sh file',function(pr){
 function builtin(names,run){P.command({names:names,noHelpFlag:true,run:run})}
 builtin([':'],function(){P.status(0)});
 function cshNow(){return P.profile.csh&&!P.bourne.sh()}
-function dash(){return !!(P.bourne.dash&&P.bourne.dash())} /* Debian's /bin/sh running */
+function dash(){return !!P.bourne.dash()} /* Debian's /bin/sh running */
 function oldSh(){return !P.profile.bash&&(P.profile.perror||!P.profile.csh)} /* V7's sh, and 4.3BSD's, which is V7's; IRIX's is System V's */
-function shErr(x){P.typeLine(x,'err');P.status(1);P.loop('abort')} /* the Bourne shell's failed(): the rest of the line does not run */
+function shErr(x){P.failed(x)} /* the Bourne shell's failed(): the rest of the line does not run */
 function stoi(x){var m=/^\d+/.exec(x);if(!m){shErr(x+': bad number');return null}return +m[0]} /* V7's stoi: its leading digits */
 function bashN(name,a,fatal){ /* bash's get_numeric_arg: null after an error (fatal: the line ends, as break's does) */
   var x=a[0];
-  if(a.length>1){P.typeLine(P.bashAt()+name+': too many arguments','err');P.status(1);if(fatal)P.loop('abort');return null}
-  if(!/^\s*[-+]?\d+\s*$/.test(x)){P.typeLine(P.bashAt()+name+': '+x+': numeric argument required','err');P.status(1);if(fatal)P.loop('abort');return null}
+  function no(m){if(fatal)P.failed(P.bashAt()+name+': '+m);else{P.typeLine(P.bashAt()+name+': '+m,'err');P.status(1)}return null}
+  if(a.length>1)return no('too many arguments');
+  if(!/^\s*[-+]?\d+\s*$/.test(x))return no(x+': numeric argument required');
   return parseInt(x,10);
 }
 function loopN(what,a){ /* break [n], continue [n]: bash's, and the Bourne shell's; csh's take no n, and V7's continue ignores one (xec.c) */
@@ -727,10 +732,10 @@ builtin(['.'],function(a,raw,words){ /* . file: its commands, read and run by th
   function no(m,st){P.typeLine(m,'err');P.status(st||1)}
   if(f===undefined){if(bash){no(P.bashAt()+me+': filename argument required');P.typeLine(me+': usage: '+me+' filename [arguments]','err');P.queue(function(){P.status(2)})}return}
   var at=f.indexOf('/')>=0?[f]:(P.env.PATH||'').split(':').map(function(d){return (d||'.')+'/'+f}).concat(bash?[f]:[]),n=null,i;
-  for(i=0;i<at.length;i++){var x=P.find(at[i]);if(x&&(x.type!=='d'||f.indexOf('/')>=0)){n=x;break}}
+  for(i=0;i<at.length;i++){var x=P.unread(P.find(at[i]));if(x&&(x.type!=='d'||f.indexOf('/')>=0)){n=x;break}}
   if(!n){if(bash)no(P.bashAt()+f+': No such file or directory');else shErr(f+': not found');return}
   if(n.type==='d'){if(bash)no(P.bashAt()+me+': '+f+': is a directory');else shErr(f+': not found');return}
-  if(n.prot){if(bash)no(P.bashAt()+f+': Permission denied');else shErr(f+': not found');return}
+  if(n.prot){if(dash())no(P.bashAt()+me+': cannot open '+f+': Permission denied',2);else if(bash)no(P.bashAt()+f+': Permission denied');else shErr(f+': not found');return} /* dash: sh: 1: .: cannot open f: Permission denied */
   P.runScript(P.text(n),bash&&words.length>2?words.slice(2):undefined,{name:f});
 });
 builtin(['shift'],function(a){
@@ -747,7 +752,7 @@ builtin(['shift'],function(a){
     var n=a.length?bashN('shift',a,false):1;
     if(n===null)return;
     if(n<0){P.typeLine(P.bashAt()+'shift: '+a[0]+': shift count out of range','err');P.status(1);return}
-    if(n>have){if(dash()){P.typeLine(P.bashAt()+"shift: can't shift that many",'err');P.status(2);P.loop('abort');return}P.status(1);return} /* dash: an error that ends the line */
+    if(n>have){if(dash()){P.failed(P.bashAt()+"shift: can't shift that many",2);return}P.status(1);return} /* dash: an error that ends the line */
     A.splice(1,n);P.status(0);return;
   }
   var m=oldSh()||!a.length?1:stoi(a[0]); /* V7's shift takes no n; System V's takes one */
@@ -775,7 +780,8 @@ builtin(['read'],function(a,raw,words){
     }
   }
   if(dash()&&!N.length){P.typeLine(P.bashAt()+'read: arg count','err');P.status(2);return} /* dash's read needs a name */
-  if(N.length&&!ID.test(N[0])){P.typeLine(bash?'bash: read: `'+N[0]+"': not a valid identifier":N[0]+': is not an identifier','err');P.status(1);if(!bash)P.loop('abort');return} /* the first name is looked at before it reads (V7's readvar, bash's read) */
+  function notId(k){if(bash){P.typeLine('bash: read: `'+k+"': not a valid identifier",'err');P.status(1)}else P.failed(k+': is not an identifier')}
+  if(N.length&&!ID.test(N[0])){notId(N[0]);return} /* the first name is looked at before it reads (V7's readvar, bash's read) */
   var esc=!(bash&&o.r),C=[],eof=false,more=false,cut=false; /* C: the line's characters, {c, q}: q when a backslash quoted it; more: a line that goes on */
   function next(then){ /* cut: the input ended in the middle of this line, with no newline: it is read, and read still says end of input (bash, V7's readvar) */
     if(S){var l=S.length?S.shift():null;if(l!==null&&!S.length&&S.open){S.open=false;cut=true}then(l)}else P.ask(o.p===undefined||more?null:o.p,then,false,!!o.s)} /* a pipe or <: its next line; else the keyboard (the prompt only once) */
@@ -794,7 +800,7 @@ builtin(['read'],function(a,raw,words){
     if(eof&&!C.length){N.forEach(function(k){if(ID.test(k))P.env[k]=''});if(bash&&!N.length)P.env.REPLY='';P.status(1);return} /* end of input: each name is set to nothing (V7's readvar, bash's read) */
     var all=C.map(function(x){return x.c}).join('');
     if(bash&&!N.length){P.env.REPLY=all;P.status(eof?1:0);return} /* no name: the line as it is, in REPLY */
-    for(var i=0;i<N.length;i++)if(!ID.test(N[i])){P.typeLine(bash?'bash: read: `'+N[i]+"': not a valid identifier":N[i]+': is not an identifier','err');P.status(1);if(!bash)P.loop('abort');return}
+    for(var i=0;i<N.length;i++)if(!ID.test(N[i])){notId(N[i]);return}
     var V=N.map(function(){return ''}),j=0,n=0;
     if(bash){ /* bash's read.def and get_word_from_string: a word ends at an IFS character, with the IFS white space around it, and runs
                  of that white space are one break; the last name takes the rest, less the IFS white space at its end, unless that rest
@@ -923,8 +929,9 @@ cmd('ln','make a link','ln target [ newname ]',function(pr){
     var tail=a[1].split('/').pop(),name=a[2]||tail,at=P.norm(name),d=P.find(at);
     if(d&&d.type==='d'){name=name.replace(/\/+$/,'')+'/'+tail;at=P.norm(name)} /* into a folder: its last name */
     var ex=P.find(at,true,false,true);
+    if(a[1].length>1023){P.typeLine(bsd?name+': File name too long':'ln: cannot create '+name,'err');return} /* symlink(2): a path of MAXPATHLEN (1024) or more is ENAMETOOLONG */
     if(ex||!P.canWrite(at)){if(!bsd)P.typeLine('ln: cannot create '+name,'err');else if(ex)P.typeLine(name+': File exists','err');else P.oopsW('',name);return} /* 4.3BSD: perror(to) */
-    P.put(at,'s',{sym:a[1],owner:P.st.user,date:P.now(),mode:'lrwxr-xr-x',size:a[1].length}); /* 0777 less the umask */
+    P.symlink(at,a[1],'lrwxr-xr-x'); /* 0777 less the umask */
     return;
   }
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
