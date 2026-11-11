@@ -20,7 +20,7 @@ sound:     on
 # the V7 machine's teletype command (a Teletype Model 33; off for each visitor until they turn it on)
 teletype:  yes
 source:    https://github.com/GaijinSystems/phosphor
-protected: .exfiltrated/photo01.pic, .exfiltrated/photo02.pic, .exfiltrated/photo03.pic, .exfiltrated/secrets, .exfiltrated/.old/terminal.rom
+protected: /home/gaijin/photo01.pic, /home/gaijin/photo02.pic, /home/gaijin/photo03.pic, /home/gaijin/secrets, .old/terminal.rom
 guest files: .profile, .trash
 # persist:  no
 

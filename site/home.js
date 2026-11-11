@@ -6,35 +6,35 @@
    Do not type a backtick, or a dollar sign followed by {, between the two backticks. */
 Phosphor.content(String.raw`
 
-# Retired and discontinued projects, moved here from the letter. Read it with: cat .exfiltrated/attic
-== file: .exfiltrated/attic ==
+# Retired and discontinued projects, moved here from the letter. Read it with: cat attic
+== file: attic ==
 retired and discontinued projects:
 ~   nothing up here yet.
 
-== file: .exfiltrated/now ==
+== file: /home/gaijin/now ==
 what i am doing now:
   ~ (placeholder - edit the now section)
 
-== file: .exfiltrated/notes/todo ==
+== file: /home/gaijin/notes/todo ==
 [x] warm up the tube
 [x] teach it ls
 [ ] teach it vi
 [ ] find out who keeps logging in as guest
 [ ] empty the trash
 
-== file: .exfiltrated/notes/ideas ==
+== file: /home/gaijin/notes/ideas ==
 - a terminal that remembers you.
 ~   (no.)
 - a printer that only prints in lowercase.
 - more phosphor.
 
-== file: .exfiltrated/src/hello.c ==
+== file: /home/gaijin/src/hello.c ==
 main()
 {
     printf("hello, world\n");
 }
 
-== file: .exfiltrated/secrets ==
+== file: /home/gaijin/secrets ==
 so you know the word.
 there is not much of a secret. there never was. the machine is warm, and now it is yours.
 ~ the old hands synced three times before they threw the switch.
@@ -49,7 +49,7 @@ export PATH TERM
 stty erase '^h' kill '^u'
 umask 022
 
-== file: .exfiltrated/.plan ==
+== file: /home/gaijin/.plan ==
 plan for this week:
   1. keep the tube warm.
   2. answer the mail.
@@ -93,7 +93,7 @@ there is nothing else down here.
 ~ the last operator was careless. read what is kept in /etc.
 ~ go back up: cd ..
 
-== file: .exfiltrated/.old/readme.v8 ==
+== file: .old/readme.v8 ==
 this is a phosphor-8 video terminal.
 it is plugged into the wall.
 please do not lick it.
