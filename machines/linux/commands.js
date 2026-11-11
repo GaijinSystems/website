@@ -11,9 +11,10 @@ var D=P.debian={ /* what the machine is, for this file and fs.js */
     '/vmlinuz':'boot/vmlinuz-6.12.111+deb13-amd64','/initrd.img':'boot/initrd.img-6.12.111+deb13-amd64','/usr/games/cowthink':'cowsay','/usr/bin/python3':'python3.13'},
   loads:loads
 };
-var BOOT=null,OLD=null,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
+var BOOT=null,STK=[],RUN=0; /* the shells su started, newest last: what each says as it ends ('exit', or 'logout' after su -), and who and where to go back to */
 P.setup(function(){
   BOOT=new Date(P.st.login.getTime()-52e3); /* the machine came up as the terminal did */
+  P.env.SHLVL='1'; /* bash's shell level: the login shell's is 1 */
   exported(); /* what the session starts with is exported */
   function ps1(){
     var S=P.st;
@@ -28,7 +29,14 @@ P.setup(function(){
   var bye=P.cmds.exit; /* a login shell says so as it goes */
   if(bye)P.cmds.exit=P.cmds.logout=function(a,raw,w){
     if(RUN&&!P.subshell()&&!P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* in su -c's line: only that shell ends */
-    if(P.bourne.leave(a[0]===undefined?P.lastStatus():parseInt(a[0],10)||0))return; /* dash at the terminal: back to bash, saying nothing */
+    var nb=P.bourne.top()==='bash'&&!P.subshell()&&!P.inScript(); /* a bash started at the terminal: exit says so, and logout is not its */
+    if(nb&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
+    if(P.bourne.canLeave()){ /* dash at the terminal: back to the shell it was started from, saying nothing */
+      var st=a[0]===undefined?P.lastStatus():parseInt(a[0],10)||0;
+      if(nb)P.typeLine('exit');
+      if(P.stoppedWarn())return; /* bash says exit first, then There are stopped jobs. (exit_builtin, exit_or_logout) */
+      P.bourne.leave(st);P.loop('exit');return;
+    }
     if(!P.subshell()&&!P.inScript()){
       var top=STK[STK.length-1];
       if(top&&top.say==='exit'&&w&&w[0]==='logout'){err('bash: logout: not login shell: use `exit\'');P.status(1);return}
@@ -42,6 +50,15 @@ P.setup(function(){
                            the first word that is no option) are the positional parameters, $1 $2 ... $# and $@, silently */
   if(shown)P.cmds.set=function(a,raw,w){
     var W=w.slice(1),i=0,pos=null;
+    if(!W.length&&P.bourne.dash()){ /* dash's set: every variable, sorted, its value in single quotes (var.c's showvars, single_quote) */
+      var V=Object.create(null),D={IFS:' \t\n',OPTIND:'1',PS1:P.st.user==='root'?'# ':'$ ',PS2:'> ',PS4:'+ '},S=P.bourne.shells();
+      D.PPID=String(S.length>1?S[S.length-2].pid:662);
+      Object.keys(D).forEach(function(k){V[k]=D[k]});
+      Object.keys(P.env).forEach(function(k){if(typeof P.env[k]==='string')V[k]=P.env[k]});
+      ['HOME','LOGNAME','USER'].forEach(function(k){if(!(k in V)&&P.bashVars.value(k)!==null)V[k]=P.vars('$'+k)});
+      lines([].concat.apply([],Object.keys(V).sort().map(function(k){return (k+"='"+V[k].replace(/'+/g,function(q){return '\'"'+q+'"\''})+"'").split('\n')})));
+      return;
+    }
     if(!W.length){shown(a,raw,w);return}
     for(;i<W.length;i++){
       var x=W[i];
@@ -58,7 +75,28 @@ P.setup(function(){
   if(src&&P.cmds['.'])P.cmds.source=function(a,raw,w){if(w.length<2)src(a,raw,w);else if(P.bourne.dash()){err(P.bashAt()+w[0]+': not found');P.queue(function(){P.status(127)})}else P.cmds['.'](a,raw,w)};
   var sh=P.bourne.wrapSh(); /* /bin/sh is dash: sh at the terminal starts one, which exit or ^D ends; sh file, sh -c and #!/bin/sh scripts run theirs with it */
   if(sh){
-    P.cmds.bash=function(a,raw,w){if(!a.length&&!P.stdin())return;P.bourne.bash(function(){sh(a,raw,w)})}; /* bash on its own: you are in one already */
+    P.cmds.bash=function(a,raw,w){
+      if(!a.length&&!P.stdin()){ /* bash on its own, at the terminal: a new one, a child process, until its exit or ^D */
+        if(P.subshell()||P.inScript())return;
+        P.bourne.start(true);
+        unexported(Object.keys(P.env).concat(P.bashVars.names())).forEach(function(k){P.bashVars.unset(k)}); /* it has only what was exported */
+        level();pwd();return;
+      }
+      var back=P.keep();level();pwd();P.bourne.bash(function(){sh(a,raw,w)});P.queue(back,true); /* bash -c and bash file: a process of its own */
+    };
+    P.bashLevel=level;
+    var dsh=P.cmds.sh;
+    P.cmds.sh=function(a,raw,w){ /* dash started with no PATH sets its own default, a variable it does not export (dash's var.c: defpathvar); and PWD, exported */
+      var path=!P.has(P.env,'PATH');
+      var X=exported(),was=X.PATH,d=P.bourne.depth(),had=!path&&P.has(P.env,'PWD');
+      dsh(a,raw,w);
+      if(P.bourne.depth()>d&&P.bourne.top()==='sh')unexported(Object.keys(P.env)).forEach(function(k){delete P.env[k]}); /* a dash at the terminal has only what was exported */
+      if(had)return;
+      pwd();
+      if(path){P.env.PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';X.PATH=false}
+      function back(){X.PATH=was}
+      if(P.bourne.depth()>d&&P.bourne.top()==='sh')P.bourne.later(d,null,back);else P.queue(back,true); /* at the terminal: until it ends */
+    };
     P.paths.bash='/usr/bin';
   }
   var GNU={cat:['concatenate files and print on the standard output','cat [OPTION]... [FILE]...'],pwd:['print name of current/working directory','pwd [OPTION]...'],
@@ -130,6 +168,7 @@ function human(b,suffix){ /* 4.0K, 13K, 1.9G: GNU rounds up */
 
 /* ---------- the shell ---------- */
 var BUILTIN=['.',':','[','alias','bg','break','cd','command','continue','declare','echo','exit','export','false','fg','help','history','jobs','kill','let','local','logout','printf','pwd','read','readonly','set','shift','source','test','true','type','typeset','umask','unalias','unset','wait'];
+P.builtin=function(w){return BUILTIN.indexOf(w)>=0}; /* the shell's own commands: it forks for none of them */
 cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
   ['changes the working directory to dir, or to your home directory if there is none. cd - goes back to the one before, and says where that is.','',
   '-L   force symbolic links to be followed: resolve symbolic links in dir after processing instances of .. (the default)',
@@ -142,15 +181,25 @@ cmd('cd','','change the shell working directory','cd [-L|[-P [-e]] [-@]] [dir]',
     var W=w.slice(1),phys=false;
     if(!P.bashOpts('cd',W,'PLe','cd [-L|[-P [-e]] [-@]] [dir]',function(c){if(c!=='e')phys=c==='P'}))return;
     if(W.length>1){err('bash: cd: too many arguments');return}
-    var t=W.length?W[0]:P.st.home,back=t==='-';
-    if(back){if(OLD===null){err('bash: cd: OLDPWD not set');return}t=OLD}
+    var h=W.length?null:P.homeVar(); /* no dir: $HOME. Unset, bash says so and dash does nothing; empty, neither does anything */
+    if(!W.length&&h===null&&!P.bourne.dash()){err(P.bashAt()+'cd: HOME not set');return}
+    if(!W.length&&!h)return;
+    var t=W.length?W[0]:h,back=t==='-';
+    if(back){ /* cd -: $OLDPWD, as it is now (bash's cd.def, dash's cd.c bltinlookup). dash: unset or empty, it stays and says where it is; bash: empty, an empty line */
+      var o=P.has(P.env,'OLDPWD')?String(P.env.OLDPWD):null,dash=P.bourne.dash();
+      if(o===null&&!dash){err('bash: cd: OLDPWD not set');return}
+      if(!o){P.typeLine(dash?P.st.cwd:'');return}
+      t=o;
+    }
     var n=P.find(t);
     if((!n||n.type!=='d'||n.prot||!P.may(n,'x'))&&P.bourne.dash()){err(P.bashAt()+"cd: can't cd to "+t);P.status(2);return} /* dash's */
     if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){err('bash: cd: '+t+': '+(!n&&!P.shut(t)?'No such file or directory':n&&n.type!=='d'?'Not a directory':'Permission denied'));return}
-    OLD=P.st.cwd;P.env.OLDPWD=OLD;
+    if(P.bourne.dash())P.env.OLDPWD=P.st.cwd; /* dash: the directory it was in (cd.c's curdir) */
+    else if(P.has(P.env,'PWD'))P.env.OLDPWD=String(P.env.PWD);else delete P.env.OLDPWD; /* bash's bindpwd: $PWD as it is, even one assigned; none, and OLDPWD is unset too */
     var log=P.norm(t);
     P.st.cwd=phys||P.find(log)!==n?P.pathOf(n):log;
-    if(back)P.typeLine(P.st.cwd);
+    PWDO=null;pwdVar();
+    if(back)P.typeLine(P.bourne.dash()?P.st.cwd:t); /* bash prints $OLDPWD as it was given (cd.def: printf dirname), dash the directory it is now in */
   },{core:true,help:'change directory'});
 /* bash's own list is the engine's (for !n and the arrows): -c, -d, -s and -p change a copy and put it back */
 cmd('history','','display the command history','history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]',['lists the commands typed so far, numbered. with n, only the last n. -c clears the list, -d offset deletes one entry. !n runs number n again, and !! the last one.','',
@@ -183,6 +232,7 @@ cmd('history','','display the command history','history [-c] [-d offset] [n] or 
   if(o&&isNaN(n)){bad(o+': numeric argument required',1);return}
   lines(H.slice(from).map(function(l,i){return String(from+i+1).padStart(5)+'  '+l}));
 });
+var DASHSPECIAL=['.',':','break','continue','eval','exec','exit','export','local','readonly','return','set','shift','times','trap','unset'],DASHNOT=['declare','typeset','let','history','logout','help','source']; /* dash's type: its special builtins, and bash's it does not have */
 function where(x){
   if(P.has(P.paths,x)&&P.has(P.cmds,x))return P.paths[x]+'/'+x;
   return null;
@@ -192,7 +242,8 @@ cmd('type','','display information about command type','type [-afptP] name [name
   w.slice(1).filter(function(x){return x.charAt(0)!=='-'}).forEach(function(x){
     var al=P.aliases.filter(function(y){return y.from.length===1&&y.from[0]===x})[0],f;
     if(al)P.typeLine(x+' is aliased to `'+al.to+"'");
-    else if(BUILTIN.indexOf(x)>=0)P.typeLine(x+' is a shell builtin');
+    else if(P.bourne.dash()&&DASHSPECIAL.indexOf(x)>=0)P.typeLine(x+' is a special shell builtin');
+    else if(BUILTIN.indexOf(x)>=0&&!(P.bourne.dash()&&DASHNOT.indexOf(x)>=0))P.typeLine(x+' is a shell builtin');
     else if((f=where(x)))P.typeLine(x+' is '+f);
     else{if(P.bourne.dash())P.typeLine(x+': not found');else err('bash: type: '+x+': not found');bad=true}
   });
@@ -223,8 +274,19 @@ cmd('export','','set export attribute for shell variables','export [-fn] [name[=
     exported()[m[1]]=!un;P.bashVars.asg(x);
   });
 });
+/* PWD: the directory cd went to, or what was assigned to it since (bash's and dash's cd set it, unset or not) */
+var PWDO=null;
+function pwdVar(){Object.defineProperty(P.env,'PWD',{get:function(){return PWDO!==null?PWDO:P.st.cwd},set:function(v){v=String(v);PWDO=v===P.st.cwd?null:v},enumerable:true,configurable:true})}
+D.pwd=pwdVar; /* the login shell's, for fs.js */
+function pwd(){ /* a shell starting sets PWD: the one it was given if that is the directory it is in (bash's set_working_directory, dash's getpwd) */
+  var d=Object.getOwnPropertyDescriptor(P.env,'PWD'),v=d&&String(d.get?d.get():d.value);
+  if(d&&v!==P.st.cwd&&(v.charAt(0)!=='/'||P.find(v,true)!==P.find(P.st.cwd,true)))v=null;
+  pwdVar();PWDO=null;if(v!=null)P.env.PWD=v;
+}
+function level(){P.env.SHLVL=String((parseInt(P.env.SHLVL,10)||0)+1);exported().SHLVL=true} /* a bash starting: its SHLVL is one more than it was given, exported (variables.c's adjust_shell_level) */
 var EXP=null; /* the exported names, which declare -p shows with -x: the ones the session started with, and export's */
-function exported(){if(!EXP){EXP=Object.create(null);Object.keys(P.env).concat(['HOME','LOGNAME','USER']).forEach(function(k){EXP[k]=true})}return EXP}
+function unexported(K){return K.filter(function(k){return !exported()[k]&&!/^(PWD|HOME|USER|LOGNAME)$/.test(k)})} /* those a new shell does not get */
+function exported(){if(!EXP){EXP=Object.create(null);Object.keys(P.env).concat(['HOME','LOGNAME','USER','TERM','SHELL','LANG','MAIL','INFOCOM_PATH']).forEach(function(k){EXP[k]=true})}return EXP}
 function declared(n){ /* declare -p's line for n, or null when it is not set */
   var V=P.bashVars,k=V.kind(n),v=V.value(n);
   if(!k&&v===null)return null;
@@ -443,16 +505,17 @@ cmd('env','/usr/bin','run a program in a modified environment','env [OPTION]... 
   if(i>=W.length){lines(Object.keys(E).sort().map(function(k){return k+'='+E[k]}));return}
   var c=W[i],at=c.indexOf('/')>=0?P.find(c):null;
   if(c.indexOf('/')>=0?!at||at.type==='d':!P.has(P.paths,c)){err("env: '"+c+"': No such file or directory");P.queue(function(){P.status(127)});return}
-  var keep=Object.assign({},P.env),q=function(s){return "'"+s.replace(/'/g,"'\\''")+"'"};
+  var keep=Object.assign({},P.env),pwd0=Object.getOwnPropertyDescriptor(P.env,'PWD'),q=function(s){return "'"+s.replace(/'/g,"'\\''")+"'"};
   Object.keys(P.env).forEach(function(k){if(!P.has(E,k))delete P.env[k]});
   Object.keys(E).forEach(function(k){P.env[k]=E[k]});
   var X=exported(),gone=['HOME','LOGNAME','USER'].filter(function(k){return !P.has(E,k)}),was=gone.map(function(k){return X[k]});
   gone.forEach(function(k){X[k]=false}); /* those the session sets itself are left out of the program's environment as export -n leaves them out */
+  var ek=Object.keys(E),wasE=ek.map(function(k){return X[k]});ek.forEach(function(k){X[k]=true}); /* and what it gives the program is in its environment: a shell it starts has them */
   var own=P.ownEnv(true); /* HOME, USER and LOGNAME too: a shell it runs expands what it got, not the session's own */
   var d=P.bourne.depth();
   P.exec(W.slice(i).map(q).join(' '));
   P.queue(function(){
-    function back(){Object.keys(P.env).forEach(function(k){delete P.env[k]});Object.assign(P.env,keep);gone.forEach(function(k,j){X[k]=was[j]});P.ownEnv(own)} /* the program's environment was its own */
+    function back(){Object.keys(P.env).forEach(function(k){delete P.env[k]});if(pwd0)Object.defineProperty(P.env,'PWD',pwd0);Object.assign(P.env,keep);gone.forEach(function(k,j){X[k]=was[j]});ek.forEach(function(k,j){if(wasE[j]===undefined)delete X[k];else X[k]=wasE[j]});P.ownEnv(own)} /* the program's environment was its own */
     if(!P.bourne.later(d,keep,back))back(); /* a shell it started at the terminal has it until it ends */
   },true);
 });
@@ -583,6 +646,7 @@ cmd('tty','/usr/bin','print the file name of the terminal connected to standard 
    line's (below 115200 the output comes at that speed), the rest change only what stty reports */
 var TSANE={intr:3,quit:28,erase:127,kill:21,eof:4,eol:0,eol2:0,swtch:0,start:17,stop:19,susp:26,rprnt:18,werase:23,lnext:22,discard:15};
 var TT={speed:115200,rows:0,cols:0,line:0,f:{c:0x400|0x80|0x800|0x30,i:0x100|0x400|0x1000,o:1|4,l:1|2|8|0x10|0x20|0x800},cc:Object.assign({},TSANE,{min:1,time:0})};
+P.echoCtl=function(){return !!(TT.f.l&0x200)}; /* echoctl: the tty echoes ^C as ^C; agetty leaves it off, and then it echoes nothing */
 /* stty.c's mode_info: [name, field, bits, mask, how]. how: S set by sane, U unset by sane, R may be negated (-name) */
 var TMODE=[['parenb','c',0x100,0,'R'],['parodd','c',0x200,0,'R'],['cmspar','c',0x40000000,0,'R'],['cs5','c',0,0x30,''],['cs6','c',0x10,0x30,''],['cs7','c',0x20,0x30,''],['cs8','c',0x30,0x30,''],
   ['hupcl','c',0x400,0,'R'],['hup','c',0x400,0,'RO'],['cstopb','c',0x40,0,'R'],['cread','c',0x80,0,'SR'],['clocal','c',0x800,0,'R'],['crtscts','c',0x80000000,0,'R'],
@@ -607,7 +671,7 @@ var TCOMBO={evenp:['parenb -parodd cs7','-parenb cs8'],parity:['parenb -parodd c
   cbreak:['-icanon','icanon'],pass8:['-parenb -istrip cs8','parenb istrip cs7'],litout:['-parenb -istrip -opost cs8','parenb istrip opost cs7'],decctlq:['-ixany','ixany'],tabs:['tab0','tab3'],
   lcase:['xcase iuclc olcuc','-xcase -iuclc -olcuc'],crt:['echoe echoctl echoke'],dec:['echoe echoctl echoke -ixany intr=3 erase=127 kill=21']};
 TCOMBO.cooked=[TCOMBO.raw[1],TCOMBO.raw[0]];TCOMBO.LCASE=TCOMBO.lcase;
-function ttyChar(c){return c===0?'<undef>':c===127?'^?':c<32?'^'+String.fromCharCode(c+64):c>127?'M-'+ttyChar(c-128):String.fromCharCode(c)}
+function ttyChar(c){return c===0?'<undef>':c===127?'^?':c<32?'^'+String.fromCharCode(c+64):c>127?'M-'+(c===128?'^@':ttyChar(c-128)):String.fromCharCode(c)} /* GNU stty's visible(): 128 is M-^@, only 0 is <undef> */
 function ttyMode(m){var T=TT.f[m[1]];return m[3]?(T&m[3])===m[2]:(T&m[2])===m[2]}
 function ttyShow(all){ /* display_all and display_changed, wrapped as wrapf does at 80 columns (a serial line has none of its own) */
   var L=[],col=0,cur='',max=TT.cols||80;
@@ -671,8 +735,11 @@ cmd('stty','/usr/bin','change and print terminal line settings','stty [-F DEVICE
   if(style&&S.length){err('stty: when specifying an output style, modes may not be set');P.queue(function(){P.status(1)});return}
   if(style==='g'){P.typeLine(ttySave());return}
   if(style==='a'||!S.length){P.say(ttyShow(style==='a'));return}
-  var was=JSON.stringify(TT),num=function(v){return /^(0x[0-9a-f]+|0[0-7]*|[1-9]\d*)$/i.test(v)?parseInt(v,/^0x/i.test(v)?16:/^0\d/.test(v)?8:10):NaN},
-      big=function(v){return BigInt(/^0[0-7]/.test(v)?'0o'+v.slice(1):v)}, /* the exact value, for one larger than a double holds */
+  var was=JSON.stringify(TT),num=function(v){var x=big(v);return x===null?NaN:Number(x)},
+      big=function(v){ /* integer_arg's xnumtoumax: base 0 (0x hex, 0 octal), blanks and a + before it, and a suffix b (512) or B (1024). The exact value, or null */
+        var m=/^\s*\+?(0x[0-9a-f]+|0[0-7]*|[1-9]\d*)([bB]?)$/i.exec(v);if(!m)return null;
+        var d=m[1];return BigInt(/^0x/i.test(d)?d:/^0[0-7]/.test(d)?'0o'+d.slice(1):d)*(m[2]==='b'?512n:m[2]==='B'?1024n:1n);
+      },
       over=function(v){undo("invalid integer argument: '"+v+"': Value too large for defined data type")}; /* integer_arg: more than the setting's maximum */
   var warned=false;
   function undo(m,help){TT=JSON.parse(was);if(help)bad(m);else{err('stty: '+m);P.queue(function(){P.status(1)})}} /* a setting that is wrong: none of them is made */
@@ -770,6 +837,149 @@ cmd(['less','more'],'/usr/bin','display the contents of a file in a terminal','l
   });
 });
 
+/* ---------- coreutils 9.7's cut and diffutils 3.10's cmp, on the bytes of each file (UTF-8) ---------- */
+var TE=new TextEncoder(),TD=new TextDecoder();
+function bytesOf(L){return TE.encode(L.join('\n')+(L.length&&!L.open?'\n':''))} /* a file's lines as its bytes */
+function openOr(me,x){ /* the file x to read, or null after me: x: why not */
+  var n=P.unread(P.find(x));
+  if(!n||n.prot||n.type==='d'){err(me+': '+x+': '+(!n&&P.shut(x)?'Permission denied':why(n)));return null}
+  return n;
+}
+function readEach(me,ops,each,done){ /* each file named (- or none: the standard input) in turn: each(its lines), or me: name: why, and status 1 */
+  var bad=false;
+  (ops.length?ops:['-']).forEach(function(x){
+    if(x==='-'){P.input([],function(L){each(L)});return}
+    P.queue(function(){
+      var n=openOr(me,x);
+      if(n)each(P.text(n));else bad=true;
+    });
+  });
+  P.queue(function(){done(bad)});
+}
+cmd('cut','/usr/bin','remove sections from each line of files','cut OPTION... [FILE]...',['Print selected parts of lines from each FILE to standard output. With no FILE, or when FILE is -, read standard input.','',
+  '-b, --bytes=LIST   select only these bytes',
+  '-c, --characters=LIST   select only these characters',
+  '-d, --delimiter=DELIM   use DELIM instead of TAB for field delimiter',
+  '-f, --fields=LIST   select only these fields; also print any line that contains no delimiter character, unless the -s option is specified',
+  '-n   (ignored)',
+  '--complement   complement the set of selected bytes, characters or fields',
+  '-s, --only-delimited   do not print lines not containing delimiters',
+  '--output-delimiter=STRING   use STRING as the output delimiter; the default is to use the input delimiter',
+  '-z, --zero-terminated   line delimiter is NUL, not newline','',
+  'Use one, and only one of -b, -c or -f. Each LIST is made up of one range, or many ranges separated by commas. Selected input is written in the same order that it is read, and is written exactly once. Each range is one of:','',
+  'N   N\'th byte, character or field, counted from 1','N-   from N\'th byte, character or field, to end of line','N-M   from N\'th to M\'th (included) byte, character or field','-M   from first to M\'th (included) byte, character or field'],function(a,raw,w){
+  var kind=null,list=null,delim=null,od=null,only=false,comp=false,zero=false;
+  function bad(m){P.tryHelp('cut',m,1);return true}
+  function opt(c,v){ /* each option as getopt gives it: false once it has said what is wrong, or after --help or --version */
+    if(c==='help'){P.say(['Usage: cut OPTION... [FILE]...']);return false}
+    if(c==='version'){P.say(['cut (GNU coreutils) 9.7','Packaged by Debian (9.7-3)','Copyright (C) 2025 Free Software Foundation, Inc.','License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.','This is free software: you are free to change and redistribute it.','There is NO WARRANTY, to the extent permitted by law.','','Written by David M. Ihnat, David MacKenzie, and Jim Meyering.']);return false}
+    c={bytes:'b',characters:'c',fields:'f',delimiter:'d','only-delimited':'s','zero-terminated':'z'}[c]||c;
+    if(c==='b'||c==='c'||c==='f'){if(kind)return !bad('only one list may be specified');kind=c;list=v;return true}
+    if(c==='d'){if(v.length>1&&TE.encode(v).length>1)return !bad('the delimiter must be a single character');delim=v===''?'\0':v;return true}
+    if(c==='s')only=true;else if(c==='z')zero=true;else if(c==='complement')comp=true;else if(c==='output-delimiter')od=v;
+    return true;
+  }
+  var g=gopts('cut',w.slice(1),'bcfdnsz',['bytes=','characters=','fields=','delimiter=','only-delimited','output-delimiter=','complement','zero-terminated','help','version'],'bcfd',opt);
+  if(!g)return;
+  var ops=g.ops;
+  if(!kind){bad('you must specify a list of bytes, characters, or fields');return}
+  if(delim!==null&&kind!=='f'){bad('an input delimiter may be specified only when operating on fields');return}
+  if(only&&kind!=='f'){err('cut: suppressing non-delimited lines makes sense');err('\tonly when operating on fields');err("Try 'cut --help' for more information.");P.queue(function(){P.status(1)});return}
+  /* set_fields: N, N-, N-M, -M, at commas (or blanks) */
+  var what=kind==='f'?'field':'byte/character',R=[];
+  var items=list.split(/[,\s]/);
+  for(var q=0;q<items.length;q++){
+    var it=items[q],r=/^(\d*)(-?)(\d*)$/.exec(it);
+    if(!r){bad(kind==='f'?"invalid field value '"+it.replace(/^[\d-]*/,'')+"'":"invalid byte/character position '"+it.replace(/^[\d-]*/,'')+"'");return}
+    if(it==='-'){bad('invalid range with no endpoint: -');return}
+    var lo=r[1]===''?(r[2]?1:0):+r[1],hi=r[2]?(r[3]===''?Infinity:+r[3]):lo;
+    if(lo===0){bad(kind==='f'?'fields are numbered from 1':'byte/character positions are numbered from 1');return} /* a lone 0 or a 0- start; 1-0 and -0 are decreasing ranges (coreutils' set_fields) */
+    if(hi<lo){bad('invalid decreasing range');return}
+    R.push([lo,hi]);
+  }
+  R.sort(function(x,y){return x[0]-y[0]});R=R.reduce(function(F,r){var l=F[F.length-1];if(l&&r[0]<=l[1]+1)l[1]=Math.max(l[1],r[1]);else F.push(r.slice());return F},[]); /* in order, and joined where they meet */
+  function sel(n){for(var s=false,q=0;q<R.length&&R[q][0]<=n;q++)if(n<=R[q][1]){s=true;break}return comp?!s:s} /* is the nth (from 1) one of those wanted */
+  var out=[],odB=od===null?null:TE.encode(od);
+  function line(t){ /* one line, as it comes out */
+    if(kind==='f'){
+      var dl=delim===null?'\t':delim;
+      if(t.indexOf(dl)<0){if(!only)out.push(t);return}
+      var F=t.split(dl);out.push(F.filter(function(f,i){return sel(i+1)}).join(od===null?dl:od));return;
+    }
+    var B=TE.encode(t),o=[],last=-1;
+    for(var k=0;k<B.length;k++)if(sel(k+1)){
+      if(odB&&last>=0&&last!==k-1)for(var y=0;y<odB.length;y++)o.push(odB[y]); /* between ranges */
+      o.push(B[k]);last=k;
+    }
+    out.push(TD.decode(new Uint8Array(o)));
+  }
+  readEach('cut',ops,function(L){
+    var recs;
+    if(!zero&&L.every(function(l){return typeof l==='string'&&!/[\n\uD800-\uDFFF]/.test(l)})){recs=L.slice();if(L.open&&recs[recs.length-1]==='')recs.pop()} /* the lines as they are: no UTF-8 round trip to change them */
+    else{recs=TD.decode(bytesOf(L)).split(zero?'\0':'\n');if(recs[recs.length-1]==='')recs.pop()}
+    recs.forEach(line);
+    lines(out);out=[];
+  },function(b){if(b)P.status(1)});
+});
+cmd('cmp','/usr/bin','compare two files byte by byte','cmp [OPTION]... FILE1 [FILE2 [SKIP1 [SKIP2]]]',['Compare two files byte by byte. The optional SKIP1 and SKIP2 specify the number of bytes to skip at the beginning of each file (zero by default).','',
+  '-b, --print-bytes   print differing bytes',
+  '-i, --ignore-initial=SKIP   skip first SKIP bytes of both inputs',
+  '-i, --ignore-initial=SKIP1:SKIP2   skip first SKIP1 bytes of FILE1 and first SKIP2 bytes of FILE2',
+  '-l, --verbose   output byte numbers and differing byte values',
+  '-n, --bytes=LIMIT   compare at most LIMIT bytes',
+  '-s, --quiet, --silent   suppress all normal output',
+  '-v, --version   output version information and exit','',
+  'SKIP values may be followed by the following multiplicative suffixes: kB 1000, K 1024, MB 1,000,000, M 1,048,576, GB 1,000,000,000, G 1,073,741,824, and so on for T, P, E, Z, Y.','',
+  'If a FILE is \'-\' or missing, read standard input. Exit status is 0 if inputs are the same, 1 if different, 2 if trouble.'],function(a,raw,w){
+  var pb=false,verb=false,quiet=false,skip=[0,0],limit=Infinity;
+  function trouble(m){err('cmp: '+m);err("cmp: Try 'cmp --help' for more information.");P.queue(function(){P.status(2)});return null}
+  function num(v){ /* a count with diffutils' suffixes: k K 1024, kB 1000, KiB 1024, and on for M G T P E Z Y */
+    var m=/^(\d+)(?:([kKMGTPEZY])(B|iB)?)?$/.exec(v);if(!m)return null;
+    var p='KMGTPEZY'.indexOf(m[2]?m[2].toUpperCase():'K')+1;return m[2]?+m[1]*Math.pow(m[3]==='B'?1000:1024,p):+m[1];
+  }
+  function opt(c,v){ /* each option as getopt gives it: false once it has said what is wrong, or after --help or --version */
+    if(c==='help'){P.say(['Usage: cmp [OPTION]... FILE1 [FILE2 [SKIP1 [SKIP2]]]']);return false}
+    if(c==='version'||c==='v'){P.say(['cmp (GNU diffutils) 3.10','Copyright (C) 2023 Free Software Foundation, Inc.','License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.','This is free software: you are free to change and redistribute it.','There is NO WARRANTY, to the extent permitted by law.','','Written by Torbjorn Granlund and David MacKenzie.']);return false}
+    c={'print-bytes':'b','ignore-initial':'i',verbose:'l',bytes:'n',quiet:'s',silent:'s'}[c]||c;
+    if(c==='b')pb=true;else if(c==='l')verb=true;else if(c==='s')quiet=true;
+    else if(c==='n'){var n=num(v);if(n===null)return trouble("invalid --bytes value '"+v+"'");limit=Math.min(limit,n)}
+    else if(c==='i'){var s=v.split(':'),a0=num(s[0]),a1=s.length>1?num(s[1]):a0;if(a0===null||a1===null||s.length>2)return trouble("invalid --ignore-initial value '"+v+"'");skip=[a0,a1]}
+    return true;
+  }
+  var g=gopts('cmp',w.slice(1),'bilnsv',['print-bytes','ignore-initial=','verbose','bytes=','quiet','silent','version','help'],'in',opt,trouble);
+  if(!g)return;
+  var ops=g.ops;
+  if(verb&&quiet){trouble('options -l and -s are incompatible');return}
+  if(!ops.length){trouble("missing operand after 'cmp'");return}
+  if(ops.length>4){trouble("extra operand '"+ops[4]+"'");return}
+  for(var q=2;q<ops.length;q++){var sk=num(ops[q]);if(sk===null){trouble("invalid --ignore-initial value '"+ops[q]+"'");return}skip[q-2]=sk}
+  var F=[ops[0],ops[1]===undefined?'-':ops[1]],B=[null,null];
+  for(var f=0;f<2;f++){if(F[f]==='-')continue;var n=openOr('cmp',F[f]);if(!n){P.queue(function(){P.status(2)});return}B[f]=bytesOf(P.text(n))}
+  function run(){
+    var X=B[0].subarray(Math.min(skip[0],B[0].length)),Y=B[1].subarray(Math.min(skip[1],B[1].length)),len=Math.min(X.length,Y.length,limit),diff=false,R=[];
+    function lineAt(Z,k){for(var l=1,i=0;i<k;i++)if(Z[i]===10)l++;return l} /* the line the byte at k is on */
+    function ch(c){return c>=128?'M-'+ch(c-128):c<32?'^'+String.fromCharCode(c+64):c===127?'^?':String.fromCharCode(c)} /* sprintc */
+    var wd=String(Math.min(X.length,Y.length,limit)).length;
+    for(var k=0;k<len;k++){
+      if(X[k]===Y[k])continue;
+      diff=true;
+      if(quiet)break;
+      if(!verb){P.typeLine(F[0]+' '+F[1]+' differ: '+(pb?'byte':'char')+' '+(k+1)+', line '+lineAt(X,k)+(pb?' is '+X[k].toString(8).padStart(3)+' '+ch(X[k])+' '+Y[k].toString(8).padStart(3)+' '+ch(Y[k]):''));break}
+      R.push(String(k+1).padStart(wd)+' '+X[k].toString(8).padStart(3)+' '+(pb?ch(X[k]).padEnd(4)+' ':'')+Y[k].toString(8).padStart(3)+(pb?' '+ch(Y[k]):''));
+    }
+    if(R.length)lines(R);
+    var shortOne=X.length<Y.length?0:1;
+    if(X.length!==Y.length&&len<limit&&(verb||!diff)){ /* one ended first, with no difference before (with -l, whatever came before) */
+      diff=true;
+      var Z=shortOne?Y:X,nm=F[shortOne];
+      if(!quiet)err('cmp: EOF on '+nm+(Z.length?' after byte '+Z.length+(verb?'':', line '+lineAt(Z,Z.length-1)):' which is empty'));
+    }
+    P.queue(function(){P.status(diff?1:0)});
+  }
+  if(B[0]&&B[1]){run();return}
+  P.input([],function(L){var s=bytesOf(L);if(!B[0])B[0]=s;if(!B[1])B[1]=s;run()});
+});
+
 /* ---------- cat, rm and mkdir, with GNU's messages; the work is the engine's ---------- */
 function why(n){return !n?'No such file or directory':n.type==='d'?'Is a directory':'Permission denied'}
 cmd('cat','/usr/bin','concatenate files and print on the standard output','cat [OPTION]... [FILE]...',['prints each file in turn, or its standard input. -n numbers the lines. with no file, or when file is -, it reads standard input.','',
@@ -839,10 +1049,11 @@ cmd('mkdir','/usr/bin','make directories','mkdir [OPTION]... DIRECTORY...',['mak
 });
 
 /* ---------- coreutils 9.7's touch, rmdir, ln and readlink, and the options of cp and mv; the copying and moving is the engine's ---------- */
-function gopts(me,W,short,longs,argful){ /* GNU getopt over the words: {o: letters and long names given, v: their arguments, ops}, or null after
-                                        saying what is wrong. short: the letters; argful: those taking an argument (and long names in longs with =) */
+function gopts(me,W,short,longs,argful,each,say){ /* GNU getopt over the words: {o: letters and long names given, v: their arguments, ops}, or null after
+                                        saying what is wrong. short: the letters; argful: those taking an argument (and long names in longs with =).
+                                        each(name, argument): called for each option as it comes, false to stop there (null); say: what says a usage error */
   var r={o:{},v:{},ops:[]},end=false;
-  function no(t){return P.tryHelp(me,t,1)}
+  function no(t){return say?say(t):P.tryHelp(me,t,1)}
   for(var i=0;i<W.length;i++){
     var x=W[i],m;
     if(end||x==='-'||x.charAt(0)!=='-'){r.ops.push(x);continue}
@@ -851,16 +1062,19 @@ function gopts(me,W,short,longs,argful){ /* GNU getopt over the words: {o: lette
       var L=longs.filter(function(l){return l.replace(/=$/,'').indexOf(m[1])===0}),ex=longs.filter(function(l){return l.replace(/=$/,'')===m[1]});
       if(ex.length)L=ex;
       if(L.length!==1)return no((L.length?'option':'unrecognized option')+" '"+x+"'"+(L.length?' is ambiguous':''));
-      var k=L[0].replace(/=$/,'');
-      if(/=$/.test(L[0])){var v=m[2]!==undefined?m[2]:W[++i];if(v===undefined)return no("option '--"+k+"' requires an argument");r.v[k]=v}
+      var k=L[0].replace(/=$/,''),v=undefined;
+      if(/=$/.test(L[0])){v=m[2]!==undefined?m[2]:W[++i];if(v===undefined)return no("option '--"+k+"' requires an argument");r.v[k]=v}
       else if(m[2]!==undefined)return no("option '--"+k+"' doesn't allow an argument");
-      r.o[k]=true;continue;
+      r.o[k]=true;
+      if(each&&!each(k,v))return null;
+      continue;
     }
     for(var j=1;j<x.length;j++){
       var c=x.charAt(j);
       if(short.indexOf(c)<0)return no("invalid option -- '"+c+"'");
       r.o[c]=true;
-      if(argful.indexOf(c)>=0){var w=j+1<x.length?x.slice(j+1):W[++i];if(w===undefined)return no("option requires an argument -- '"+c+"'");r.v[c]=w;break}
+      if(argful.indexOf(c)>=0){var w=j+1<x.length?x.slice(j+1):W[++i];if(w===undefined)return no("option requires an argument -- '"+c+"'");r.v[c]=w;if(each&&!each(c,w))return null;break}
+      if(each&&!each(c))return null;
     }
   }
   return r;
@@ -908,6 +1122,7 @@ cmd('touch','/usr/bin','change file timestamps','touch [OPTION]... FILE...',['up
     var n=P.find(x,true);
     if(!n&&(g.o.c||g.o['no-create']))return;
     if(n&&n.type==='d'){if(n.prot||!P.mayAlter(n)){err("touch: cannot touch '"+x+"': Permission denied");return}n.date=t===null?P.now():new Date(t);return} /* a folder's times */
+    if(n&&P.unwritable(n)&&!P.isImmutable(n)&&n.owner===P.st.user){n.date=t===null?P.now():new Date(t);return} /* utimensat(2): the owner sets the times of a file it may not write */
     if(!P.writeFile(x,[],true)){if(P.immutable(P.norm(x),true))P.notPermitted('touch',x);else err("touch: cannot touch '"+x+"': "+(n?'Permission denied':gwhy(x)));return}
     if(t!==null)P.find(x,true).date=new Date(t);
   });
@@ -956,7 +1171,6 @@ P.setup(function(){ /* cp and mv: GNU's -i -f -n -v, cp's -r, and more than one 
       var mode=null;
       w.slice(1).forEach(function(x){if(/^-[^-]/.test(x))x.slice(1).split('').forEach(function(c){if(/[fin]/.test(c))mode=c});else if(/^--(interactive|force|no-clobber)$/.test(x))mode={interactive:'i',force:'f','no-clobber':'n'}[x.slice(2)]}); /* the last of them counts */
       if(v==='cp'&&(g.o.n||g.o['no-clobber']))mode='n'; /* cp: -n over -i */
-      if(mode==='n')err(v+': warning: behavior of -n is non-portable and may change in future; use --update=none instead');
       var O=g.ops;
       if(!O.length){P.tryHelp(v,'missing file operand');return}
       if(O.length<2){P.tryHelp(v,"missing destination file operand after '"+O[0]+"'");return}
@@ -968,14 +1182,19 @@ P.setup(function(){ /* cp and mv: GNU's -i -f -n -v, cp's -r, and more than one 
         var src=O[i],to=into(dest,src),there=P.find(to,true,false,true),sn=P.find(src,true,false,true),was=there&&there.date;
         function go(){
           var A=[src,dest],dir=v==='cp'&&sn&&sn.type==='d';
-          A.rec=!!(g.o.r||g.o.R||g.o.recursive);A.verb=!!verb;A.keep=!!g.o.p; /* cp -r: the engine's copies the folder, and with -v says each thing it copies */
+          A.rec=!!(g.o.r||g.o.R||g.o.recursive);A.verb=!!verb;A.keep=!!g.o.p;A.force=mode==='f'; /* cp -r: the engine's copies the folder, and with -v says each thing it copies */
           run(A,raw,[v,src,dest]);
           var t=P.find(to,true,false,true);
           if(verb&&!dir&&t&&(v==='cp'?sn&&t!==sn&&(!there||t.date!==was):t===sn&&!P.find(src,true,false,true)))P.typeLine((v==='mv'?'renamed ':'')+"'"+src+"' -> '"+to+"'"); /* once it is done */
           next(i+1);
         }
         if(there&&sn&&there!==sn&&mode==='n'){next(i+1);return} /* skipped, quietly */
-        if(there&&sn&&there!==sn&&mode==='i'){P.ask(v+": overwrite '"+to+"'? ",function(l){if(l===P.INT)return;if(l&&/^y/i.test(l))go();else next(i+1)});return}
+        var shut=there&&sn&&there!==sn&&P.unwritable(there); /* a file there it may not write: mv asks whether to replace it
+          when it may ask (the keyboard, and no -f), cp -i says so in its question; the mode as coreutils' copy.c prints it */
+        var q=shut&&(v==='mv'?mode==='i'||mode===null&&P.stdin()===null:mode==='i')?(v==='mv'?"mv: replace '"+to+"', overriding mode 0"+P.octMode(there)+' ('+P.modeOf(there).slice(1)+')? ':
+          "cp: unwritable '"+to+"' (mode 0"+P.octMode(there)+', '+P.modeOf(there).slice(1)+'); try anyway? '):null;
+        if(!q&&there&&sn&&there!==sn&&mode==='i')q=v+": overwrite '"+to+"'? ";
+        if(q){P.ask(q,function(l){if(l===P.INT)return;if(l&&/^y/i.test(l))go();else next(i+1)});return}
         go();
       })(0);
     };
@@ -1231,8 +1450,7 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
     if(sym&&link){files.push({name:w,n:sym,link:link});return}
     if(!n){err("ls: cannot access '"+w+"': "+P.why(w,true));bad=2;return}
     if(link||self||n.type!=='d')files.push({name:w,n:n,link:link});
-    else if(n.prot||!P.may(n,'r')){err("ls: cannot open directory '"+w+"': Permission denied");bad=2}
-    else dirs.push({name:w.replace(/^~(?=\/|$)/,P.st.home),n:n}); /* bash gave ls ~ as the home folder's name */
+    else dirs.push({name:w.replace(/^~(?=\/|$)/,P.st.home),n:n,arg:true}); /* bash gave ls ~ as the home folder's name. One it cannot open says so in its turn, after the files and their blank line */
   });
   var O=e2out(),first=true;
   function say(L){L.forEach(O.say)}
@@ -1248,7 +1466,7 @@ cmd('ls','/usr/bin','list directory contents','ls [OPTION]... [FILE]...',[
   var todo=sorter(dirs).reverse(),titled=want.length>1||rec;
   while(todo.length){
     var d=todo.pop(),n=d.n,at=P.pathOf(n);
-    if(n.prot||!P.may(n,'r')||d.name.length>=4096){O.err("ls: cannot open directory '"+d.name+"': "+(d.name.length<4096?'Permission denied':'File name too long'));bad=bad||1;continue}
+    if(n.prot||!P.may(n,'r')||d.name.length>=4096){O.err("ls: cannot open directory '"+d.name+"': "+(d.name.length<4096?'Permission denied':'File name too long'));bad=d.arg?2:bad||1;continue} /* one named on the line: status 2 */
     for(var up=d.up,loop=false;up&&!loop;up=up.up)loop=up.n===n;
     if(loop){O.err('ls: '+d.name+': not listing already-listed directory');bad=2;continue}
     var E=Object.keys(n.kids).filter(function(k){return all||almost||k.charAt(0)!=='.'}).map(function(k){
@@ -1436,6 +1654,7 @@ P.procs=function(){return procs().map(function(r){return {pid:r[1],mine:r[0]===P
 function comm(c){return c.replace(/^-/,'').split(' ')[0].replace(/^.*\//,'').replace(/^\[(.*)\]$/,'$1')} /* the command's name, as ps and top show it */
 function self(c){return [P.st.user,P.pidNow()||P.newPid(),662,11076,4224,'ttyS0','R+',hm(P.now()),'0:00',c]}
 function bgRows(me){return P.jobs().filter(function(j){return j.pid!==me}).map(function(j){return [P.st.user,j.pid,662,5476,1792,'ttyS0',j.stopped?'T':'S',hm(j.start),'0:00',j.cmd]})} /* what was started with &: sleeping, or stopped */
+function shRows(){var up=662;return P.bourne.shells().map(function(t){var r=t.bash?[P.st.user,t.pid,up,8084,4864,'ttyS0','S',hm(t.start),'0:00','bash']:[P.st.user,t.pid,up,2580,1536,'ttyS0','S',hm(t.start),'0:00','sh'];up=t.pid;return r})} /* the shells started at the terminal: dash (sh), bash */
 cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]',[
   'lists processes. with no options, those on your terminal. ps aux lists everyone\'s, with the user, cpu, memory and start time of each; ps -ef the same in the System V style.','',
   'a   with x, lift the BSD-style "only yourself" restriction too: every process',
@@ -1443,7 +1662,7 @@ cmd('ps','/usr/bin','report a snapshot of the current processes.','ps [options]'
   'x   lift the BSD-style "must have a tty" restriction: all your own processes',
   '-A, -e   select all processes',
   '-f   do full-format listing'],function(a,raw,w){
-  var f=a.join(' '),bsd=a.length&&a[0].charAt(0)!=='-',x=bsd?a[0]:'',every=/a.*x|x.*a/.test(x)||/(^|\s)-\w*[eA]/.test(f),mine=self('ps '+a.join(' ')),R=procs().concat(bgRows(mine[1]),[mine]);
+  var f=a.join(' '),bsd=a.length&&a[0].charAt(0)!=='-',x=bsd?a[0]:'',every=/a.*x|x.*a/.test(x)||/(^|\s)-\w*[eA]/.test(f),mine=self('ps '+a.join(' ')),R=procs().concat(shRows(),bgRows(mine[1]),[mine]);
   var T=P.st.user;
   if(!every)R=R.filter(function(r){return r[5]==='ttyS0'&&r[0]===T||bsd&&/x/.test(x)&&r[0]===T});
   if(bsd&&/u/.test(x)){
@@ -1633,7 +1852,7 @@ cmd('journalctl','/usr/bin','Print log entries from the systemd journal','journa
 /* packages: apt as anyone but root. Each is [name, version, description, installed size in kB if known, 'auto' if installed as a dependency] */
 var PKGS=[['apt','3.0.4','commandline package manager',4481],['base-files','13.8+deb13u7','Debian base system miscellaneous files',500],['bash','5.2.37-2+b10','GNU Bourne Again SHell',7196],
   ['coreutils','9.7-3','GNU core utilities',18457],['cowsay','3.03+dfsg2-8','configurable talking cow',92],['cmatrix','2.0-6','simulates the display from "The Matrix"',75],['cron','3.0pl1-197','process scheduling daemon',249],
-  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)',154],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files',316],
+  ['dbus','1.16.2-2','simple interprocess messaging system (system message bus)',154],['diffutils','1:3.10-4','File comparison utilities',1768],['fortune-mod','1:1.99.1-9','provides fortune cookies on demand',113],['fortunes-min','1:1.99.1-9','Data files containing selected fortune cookies',137,'auto'],['frotz','2.55+dfsg-2','interpreter of Z-code story-files',316],
   ['libao-common','1.2.2+20180113-1.2','Cross Platform Audio Output Library (Common files)',23,'auto'],['libao4','1.2.2+20180113-1.2','Cross Platform Audio Output Library',150,'auto'],['libflac14','1.5.0+ds-2','Free Lossless Audio Codec - runtime C library',479,'auto'],['libmodplug1','1:0.8.9.0-3+b2','shared libraries for mod music based on ModPlug',373,'auto'],['libmp3lame0','3.100-6+b3','MP3 encoding library',548,'auto'],['libmpg123-0t64','1.32.10-1','MPEG layer 1/2/3 audio decoder (shared library)',397,'auto'],['libogg0','1.3.5-3+b2','Ogg bitstream library',62,'auto'],['libopus0','1.5.2-2','Opus codec runtime library',3494,'auto'],['libsamplerate0','0.2.2-4+b2','Audio sample rate conversion library',1494,'auto'],['libsndfile1','1.2.2-2','Library for reading/writing audio files',595,'auto'],['libvorbis0a','1.3.7-3','decoder library for Vorbis General Audio Compression Codec',208,'auto'],['libvorbisenc2','1.3.7-3','encoder library for Vorbis General Audio Compression Codec',698,'auto'],
   ['grep','3.11-4','GNU grep, egrep and fgrep',1266],['iproute2','6.15.0-1','networking and traffic control tools',3774],['less','668-1','pager program similar to more',376],['librecode3','3.7.15-1','Shared library on which recode is based',1359,'auto'],
   ['linux-image-'+D.krel,'6.12.111-1','Linux 6.12 for 64-bit PCs (signed)'],['man-db','2.13.1-1','tools for reading manual pages',3153],['nethack-common','3.6.7-1+b2','dungeon crawl game - common files',2323,'auto'],['nethack-console','3.6.7-1+b2','dungeon crawl game - text-based interface',2821],['fastfetch','2.40.4+dfsg-1','neofetch-like tool for fetching system information',1805],
@@ -1658,13 +1877,13 @@ function pkg(n){return BYNAME.get(n)}
 /* root's apt on this offline box (apt 3.0.4 as it ran on trixie with networking off, these packages installed): what an install of each
    package not installed would bring, and the files it would fetch. f: [what Ign: and Err: name, the file's URL, where apt's error for it comes in its list] */
 var AVX={"bsdgames":{"a":["Installing:","  bsdgames","","Installing dependencies:","  libfl2  wamerican","","Suggested packages:","  mailutils"],"n":3,"dl":"1242 kB","sp":"3864 kB","deps":["libfl2","wamerican"],"sg":"mailutils","f":[["http://deb.debian.org/debian trixie/main amd64 wamerican all 2020.12.07-4","http://deb.debian.org/debian/pool/main/s/scowl/wamerican_2020.12.07-4_all.deb",0],["http://deb.debian.org/debian trixie/main amd64 libfl2 amd64 2.6.4-8.2+b4","http://deb.debian.org/debian/pool/main/f/flex/libfl2_2.6.4-8.2%2bb4_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 bsdgames amd64 2.17-35","http://deb.debian.org/debian/pool/main/b/bsdgames/bsdgames_2.17-35_amd64.deb",2]]},"cowsay-off":{"a":["Installing:","  cowsay-off"],"n":1,"dl":"8392 B","sp":"23.6 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 cowsay-off all 3.03+dfsg2-8","http://deb.debian.org/debian/pool/main/c/cowsay/cowsay-off_3.03%2bdfsg2-8_all.deb",0]]},"curl":{"a":["Installing:","  curl","","Installing dependencies:","  bash-completion  libldap2       librtmp1             libssh2-1t64","  libbrotli1       libnghttp2-14  libsasl2-2           publicsuffix","  libcurl4t64      libnghttp3-9   libsasl2-modules","  libldap-common   libpsl5t64     libsasl2-modules-db","","Suggested packages:","  libsasl2-modules-gssapi-mit        libsasl2-modules-otp","  | libsasl2-modules-gssapi-heimdal  libsasl2-modules-sql","  libsasl2-modules-ldap"],"n":15,"dl":"2459 kB","sp":"7366 kB","deps":["bash-completion","libbrotli1","libcurl4t64","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","publicsuffix"],"sg":"libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql","f":[["http://deb.debian.org/debian trixie/main amd64 bash-completion all 1:2.16.0-7","http://deb.debian.org/debian/pool/main/b/bash-completion/bash-completion_2.16.0-7_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",3],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl4t64 amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl4t64_8.14.1-2%2bdeb13u7_amd64.deb",10],["http://security.debian.org/debian-security trixie-security/main amd64 curl amd64 8.14.1-2+deb13u5","http://security.debian.org/debian-security/pool/updates/main/c/curl/curl_8.14.1-2%2bdeb13u5_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",13],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",14]]},"fortunes":{"a":["Installing:","  fortunes"],"n":1,"dl":"849 kB","sp":"2655 kB","deps":[],"sg":"","f":[["http://deb.debian.org/debian trixie/main amd64 fortunes all 1:1.99.1-9","http://deb.debian.org/debian/pool/main/f/fortune-mod/fortunes_1.99.1-9_all.deb",0]]},"git":{"a":["Installing:","  git","","Installing dependencies:","  git-man             libnghttp2-14             libsasl2-2","  libbrotli1          libnghttp3-9              libsasl2-modules","  libcurl3t64-gnutls  libngtcp2-16              libsasl2-modules-db","  liberror-perl       libngtcp2-crypto-gnutls8  libssh2-1t64","  libldap-common      libpsl5t64                patch","  libldap2            librtmp1                  publicsuffix","","Suggested packages:","  gettext-base  git-cvs                            libsasl2-modules-otp","  git-doc       git-mediawiki                      libsasl2-modules-sql","  git-email     git-svn                            ed","  git-gui       libsasl2-modules-gssapi-mit        diffutils-doc","  gitk          | libsasl2-modules-gssapi-heimdal","  gitweb        libsasl2-modules-ldap"],"n":19,"dl":"13.3 MB","sp":"58.2 MB","deps":["git-man","libbrotli1","libcurl3t64-gnutls","liberror-perl","libldap-common","libldap2","libnghttp2-14","libnghttp3-9","libngtcp2-16","libngtcp2-crypto-gnutls8","libpsl5t64","librtmp1","libsasl2-2","libsasl2-modules","libsasl2-modules-db","libssh2-1t64","patch","publicsuffix"],"sg":"gettext-base git-doc git-email git-gui gitk gitweb git-cvs git-mediawiki git-svn libsasl2-modules-gssapi-mit | libsasl2-modules-gssapi-heimdal libsasl2-modules-ldap libsasl2-modules-otp libsasl2-modules-sql ed diffutils-doc","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1","http://security.debian.org/debian-security/pool/updates/main/b/brotli/libbrotli1_1.1.0-2%2bdeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-9_amd64.deb",1],["http://security.debian.org/debian-security trixie-security/main amd64 libcurl3t64-gnutls amd64 8.14.1-2+deb13u7","http://security.debian.org/debian-security/pool/updates/main/c/curl/libcurl3t64-gnutls_8.14.1-2%2bdeb13u7_amd64.deb",11],["http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-9_amd64.deb",2],["http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-1_amd64.deb",3],["http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/nghttp2/libnghttp2-14_1.64.0-1.1%2bdeb13u1_amd64.deb",4],["http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1","http://deb.debian.org/debian/pool/main/n/nghttp3/libnghttp3-9_1.8.0-1_amd64.deb",5],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-16 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-16_1.11.0-1%2bdeb13u1_amd64.deb",6],["http://deb.debian.org/debian trixie/main amd64 libngtcp2-crypto-gnutls8 amd64 1.11.0-1+deb13u1","http://security.debian.org/debian-security/pool/updates/main/n/ngtcp2/libngtcp2-crypto-gnutls8_1.11.0-1%2bdeb13u1_amd64.deb",7],["http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1","http://deb.debian.org/debian/pool/main/libp/libpsl/libpsl5t64_0.21.2-1.1%2bb1_amd64.deb",8],["http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5","http://deb.debian.org/debian/pool/main/r/rtmpdump/librtmp1_2.4%2b20151223.gitfa8646d.1-2%2bb5_amd64.deb",9],["http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2","http://deb.debian.org/debian/pool/main/libs/libssh2/libssh2-1t64_1.11.1-1%2bdeb13u2_amd64.deb",10],["http://deb.debian.org/debian trixie/main amd64 liberror-perl all 0.17030-1","http://deb.debian.org/debian/pool/main/libe/liberror-perl/liberror-perl_0.17030-1_all.deb",12],["http://deb.debian.org/debian trixie/main amd64 git-man all 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git-man_2.47.3-0%2bdeb13u1_all.deb",13],["http://deb.debian.org/debian trixie/main amd64 git amd64 1:2.47.3-0+deb13u1","http://deb.debian.org/debian/pool/main/g/git/git_2.47.3-0%2bdeb13u1_amd64.deb",14],["http://deb.debian.org/debian trixie/main amd64 libldap-common all 2.6.10+dfsg-1","http://deb.debian.org/debian/pool/main/o/openldap/libldap-common_2.6.10%2bdfsg-1_all.deb",15],["http://deb.debian.org/debian trixie/main amd64 libsasl2-modules amd64 2.1.28+dfsg1-9","http://deb.debian.org/debian/pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28%2bdfsg1-9_amd64.deb",16],["http://deb.debian.org/debian trixie/main amd64 patch amd64 2.8-2","http://deb.debian.org/debian/pool/main/p/patch/patch_2.8-2_amd64.deb",17],["http://deb.debian.org/debian trixie/main amd64 publicsuffix all 20250328.1952-0.1","http://deb.debian.org/debian/pool/main/p/publicsuffix/publicsuffix_20250328.1952-0.1_all.deb",18]]},"htop":{"a":["Installing:","  htop","","Suggested packages:","  lm-sensors  lsof  strace"],"n":1,"dl":"171 kB","sp":"434 kB","deps":[],"sg":"lm-sensors lsof strace","f":[["http://deb.debian.org/debian trixie/main amd64 htop amd64 3.4.1-5","http://deb.debian.org/debian/pool/main/h/htop/htop_3.4.1-5_amd64.deb",0]]},"nano":{"a":["Installing:","  nano","","Suggested packages:","  hunspell"],"n":1,"dl":"645 kB","sp":"2907 kB","deps":[],"sg":"hunspell","f":[["http://deb.debian.org/debian trixie/main amd64 nano amd64 8.4-1","http://deb.debian.org/debian/pool/main/n/nano/nano_8.4-1_amd64.deb",0]]},"nginx":{"a":["Installing:","  nginx","","Installing dependencies:","  nginx-common","","Suggested packages:","  fcgiwrap  nginx-doc  ssl-cert"],"n":2,"dl":"725 kB","sp":"1906 kB","deps":["nginx-common"],"sg":"fcgiwrap nginx-doc ssl-cert","f":[["http://security.debian.org/debian-security trixie-security/main amd64 nginx-common all 1.26.3-3+deb13u10","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx-common_1.26.3-3%2bdeb13u10_all.deb",0],["http://security.debian.org/debian-security trixie-security/main amd64 nginx amd64 1.26.3-3+deb13u7","http://security.debian.org/debian-security/pool/updates/main/n/nginx/nginx_1.26.3-3%2bdeb13u7_amd64.deb",1]]},"tmux":{"a":["Installing:","  tmux","","Installing dependencies:","  libevent-core-2.1-7t64  libjemalloc2"],"n":3,"dl":"897 kB","sp":"2448 kB","deps":["libevent-core-2.1-7t64","libjemalloc2"],"sg":"","f":[["http://security.debian.org/debian-security trixie-security/main amd64 libevent-core-2.1-7t64 amd64 2.1.13-stable-1~deb13u1","http://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-core-2.1-7t64_2.1.13-stable-1%7edeb13u1_amd64.deb",0],["http://deb.debian.org/debian trixie/main amd64 libjemalloc2 amd64 5.3.0-3","http://deb.debian.org/debian/pool/main/j/jemalloc/libjemalloc2_5.3.0-3_amd64.deb",1],["http://deb.debian.org/debian trixie/main amd64 tmux amd64 3.5a-3","http://deb.debian.org/debian/pool/main/t/tmux/tmux_3.5a-3_amd64.deb",2]]}};
-var ESSENTIAL=/^(base-files|bash|coreutils|grep|tar|util-linux)$/; /* Essential: yes, of those here */
+var ESSENTIAL=/^(base-files|bash|coreutils|diffutils|grep|tar|util-linux)$/; /* Essential: yes, of those here */
 /* What is installed is kept in the file tree, as dpkg keeps it: /var/lib/dpkg/info/NAME.list while the package is there, and
    NAME.postrm while what it leaves behind after a remove is (dpkg -l's rc), so what root removes stays removed after a reload,
    as root's other changes to the files do. PD, from trixie's apt and dpkg (apt-get -s, dpkg -L, apt-cache show, and a real
    remove and purge of each): [flags: m it has manual pages, s shared libraries, a Multi-Arch: same, r it leaves its configuration;
    its files; what goes with it (what depends on it); what it leaves unneeded (installed as a dependency); its pool folder; its .deb's size] */
-var PD={"apt":["msr",366,[],[],"pool/updates/main/a/apt/",1453228],"base-files":["r",100,[],[],"pool/main/b/base-files/",88296],"bash":["mr",166,[],[],"pool/main/b/bash/",1500792],"cmatrix":["m",25,[],[],"pool/main/c/cmatrix/",33880],"coreutils":["ms",463,[],[],"pool/main/c/coreutils/",3023556],"cowsay":["m",68,[],[],"pool/main/c/cowsay/",21372],"cron":["mr",48,[],[],"pool/main/c/cron/",87416],"dbus":["r",33,[],[],"pool/main/d/dbus/",71632],"distro-info-data":["",11,["unattended-upgrades","python3-distro-info","python3-apt"],["libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info-data/",6792],"fastfetch":["m",59,[],[],"pool/main/f/fastfetch/",542872],"fortune-mod":["m",26,[],[],"pool/main/f/fortune-mod/",38704],"fortunes-min":["",23,[],[],"pool/main/f/fortune-mod/",56456],"frotz":["m",27,[],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/f/frotz/",114412],"grep":["m",163,[],[],"pool/main/g/grep/",431488],"iproute2":["mr",208,[],[],"pool/main/i/iproute2/",1089184],"less":["m",27,[],[],"pool/main/l/less/",161148],"libao-common":["mr",15,["frotz","libao4"],["libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",7912],"libao4":["sa",19,["frotz"],["libao-common","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",33688],"libflac14":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/f/flac/",209588],"libmodplug1":["sa",16,["frotz"],["libao-common","libao4","libflac14","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libm/libmodplug/",162276],"libmp3lame0":["sa",13,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/l/lame/",362660],"libmpg123-0t64":["sa",15,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/m/mpg123/",149184],"libogg0":["sa",13,["frotz","libsndfile1","libflac14","libvorbisenc2","libvorbis0a"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libopus0","libsamplerate0"],"pool/main/libo/libogg/",23812],"libopus0":["sa",11,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/o/opus/",2851932],"libpython3-stdlib":["a",8,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",10180],"libpython3.13-minimal":["sar",322,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13","libpython3.13-stdlib","python3-minimal","python3.13-minimal"],["distro-info-data","lsb-release","python-apt-common"],"pool/main/p/python3.13/",863168],"libpython3.13-stdlib":["sa",411,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13"],["distro-info-data","libpython3.13-minimal","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",1958624],"librecode3":["sa",12,["fortune-mod"],[],"pool/main/r/recode/",234660],"libsamplerate0":["sa",13,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsamplerate/",950084],"libsndfile1":["sa",12,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsndfile/",199172],"libvorbis0a":["sa",15,["frotz","libsndfile1","libvorbisenc2"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0"],"pool/main/libv/libvorbis/",89960],"libvorbisenc2":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a"],"pool/main/libv/libvorbis/",75432],"lsb-release":["m",12,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/l/lsb-release-minimal/",5912],"man-db":["msr",537,[],[],"pool/main/m/man-db/",1469060],"nethack-common":["mr",58,["nethack-console"],[],"pool/main/n/nethack/",617724],"nethack-console":["mr",23,[],["nethack-common"],"pool/main/n/nethack/",1240800],"openssh-server":["msr",74,[],[],"pool/main/o/openssh/",602372],"procps":["mr",249,["openssh-server","unattended-upgrades","ucf"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/procps/",882088],"python-apt-common":["",173,["unattended-upgrades","python3-apt"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",68248],"python3":["mr",35,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",28244],"python3-apt":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",164280],"python3-dbus":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/dbus-python/",98424],"python3-distro-info":["",17,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info/",7736],"python3-minimal":["m",28,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",27248],"python3.13":["m",34,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",757492],"python3.13-minimal":["mr",21,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","python3-minimal","python3.13"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common"],"pool/main/p/python3.13/",2224552],"sl":["m",33,[],[],"pool/main/s/sl/",13172],"sudo":["msr",249,[],[],"pool/main/s/sudo/",2086456],"systemd":["msr",1051,[],[],"pool/main/s/systemd/",3093632],"tar":["m",148,[],[],"pool/main/t/tar/",814968],"ucf":["mr",33,["openssh-server","unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/ucf/",43296],"unattended-upgrades":["mr",100,[],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/unattended-upgrades/",66912],"util-linux":["mr",295,[],[],"pool/main/u/util-linux/",1242392],"vim-tiny":["r",26,[],[],"pool/updates/main/v/vim/",776152]};
+var PD={"apt":["msr",366,[],[],"pool/updates/main/a/apt/",1453228],"base-files":["r",100,[],[],"pool/main/b/base-files/",88296],"bash":["mr",166,[],[],"pool/main/b/bash/",1500792],"cmatrix":["m",25,[],[],"pool/main/c/cmatrix/",33880],"coreutils":["ms",463,[],[],"pool/main/c/coreutils/",3023556],"cowsay":["m",68,[],[],"pool/main/c/cowsay/",21372],"cron":["mr",48,[],[],"pool/main/c/cron/",87416],"dbus":["r",33,[],[],"pool/main/d/dbus/",71632],"diffutils":["m",53,[],[],"pool/main/d/diffutils/",386504],"distro-info-data":["",11,["unattended-upgrades","python3-distro-info","python3-apt"],["libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info-data/",6792],"fastfetch":["m",59,[],[],"pool/main/f/fastfetch/",542872],"fortune-mod":["m",26,[],[],"pool/main/f/fortune-mod/",38704],"fortunes-min":["",23,[],[],"pool/main/f/fortune-mod/",56456],"frotz":["m",27,[],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/f/frotz/",114412],"grep":["m",163,[],[],"pool/main/g/grep/",431488],"iproute2":["mr",208,[],[],"pool/main/i/iproute2/",1089184],"less":["m",27,[],[],"pool/main/l/less/",161148],"libao-common":["mr",15,["frotz","libao4"],["libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",7912],"libao4":["sa",19,["frotz"],["libao-common","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/liba/libao/",33688],"libflac14":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/f/flac/",209588],"libmodplug1":["sa",16,["frotz"],["libao-common","libao4","libflac14","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libm/libmodplug/",162276],"libmp3lame0":["sa",13,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/l/lame/",362660],"libmpg123-0t64":["sa",15,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/m/mpg123/",149184],"libogg0":["sa",13,["frotz","libsndfile1","libflac14","libvorbisenc2","libvorbis0a"],["libao-common","libao4","libmodplug1","libmp3lame0","libmpg123-0t64","libopus0","libsamplerate0"],"pool/main/libo/libogg/",23812],"libopus0":["sa",11,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/o/opus/",2851932],"libpython3-stdlib":["a",8,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",10180],"libpython3.13-minimal":["sar",322,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13","libpython3.13-stdlib","python3-minimal","python3.13-minimal"],["distro-info-data","lsb-release","python-apt-common"],"pool/main/p/python3.13/",863168],"libpython3.13-stdlib":["sa",411,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","libpython3-stdlib","python3.13"],["distro-info-data","libpython3.13-minimal","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",1958624],"librecode3":["sa",12,["fortune-mod"],[],"pool/main/r/recode/",234660],"libsamplerate0":["sa",13,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsndfile1","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsamplerate/",950084],"libsndfile1":["sa",12,["frotz"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a","libvorbisenc2"],"pool/main/libs/libsndfile/",199172],"libvorbis0a":["sa",15,["frotz","libsndfile1","libvorbisenc2"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0"],"pool/main/libv/libvorbis/",89960],"libvorbisenc2":["sa",12,["frotz","libsndfile1"],["libao-common","libao4","libflac14","libmodplug1","libmp3lame0","libmpg123-0t64","libogg0","libopus0","libsamplerate0","libvorbis0a"],"pool/main/libv/libvorbis/",75432],"lsb-release":["m",12,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/l/lsb-release-minimal/",5912],"man-db":["msr",537,[],[],"pool/main/m/man-db/",1469060],"nethack-common":["mr",58,["nethack-console"],[],"pool/main/n/nethack/",617724],"nethack-console":["mr",23,[],["nethack-common"],"pool/main/n/nethack/",1240800],"openssh-server":["msr",74,[],[],"pool/main/o/openssh/",602372],"procps":["mr",249,["openssh-server","unattended-upgrades","ucf"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/procps/",882088],"python-apt-common":["",173,["unattended-upgrades","python3-apt"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",68248],"python3":["mr",35,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",28244],"python3-apt":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/p/python-apt/",164280],"python3-dbus":["s",41,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/dbus-python/",98424],"python3-distro-info":["",17,["unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-minimal","python3.13","python3.13-minimal"],"pool/main/d/distro-info/",7736],"python3-minimal":["m",28,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3.13","python3.13-minimal"],"pool/main/p/python3-defaults/",27248],"python3.13":["m",34,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3-minimal","python3.13-minimal"],"pool/main/p/python3.13/",757492],"python3.13-minimal":["mr",21,["unattended-upgrades","python3-apt","python3-dbus","python3-distro-info","python3","python3-minimal","python3.13"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common"],"pool/main/p/python3.13/",2224552],"sl":["m",33,[],[],"pool/main/s/sl/",13172],"sudo":["msr",249,[],[],"pool/main/s/sudo/",2086456],"systemd":["msr",1051,[],[],"pool/main/s/systemd/",3093632],"tar":["m",148,[],[],"pool/main/t/tar/",814968],"ucf":["mr",33,["openssh-server","unattended-upgrades"],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/ucf/",43296],"unattended-upgrades":["mr",100,[],["distro-info-data","libpython3-stdlib","libpython3.13-minimal","libpython3.13-stdlib","lsb-release","python-apt-common","python3","python3-apt","python3-dbus","python3-distro-info","python3-minimal","python3.13","python3.13-minimal"],"pool/main/u/unattended-upgrades/",66912],"util-linux":["mr",295,[],[],"pool/main/u/util-linux/",1242392],"vim-tiny":["r",26,[],[],"pool/updates/main/v/vim/",776152]};
 var DEPS={"systemd":["openssh-server depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "cron-daemon-common depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "openssh-server depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed.", "cron-daemon-common depends on systemd | systemd-standalone-sysusers | systemd-sysusers; however:", "  Package systemd is to be removed.", "  Package systemd-standalone-sysusers is not installed.", "  Package systemd-sysusers is not installed.", "  Package systemd which provides systemd-sysusers is to be removed."],"python3":["unattended-upgrades depends on python3.","python3-distro-info depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-dbus depends on python3 (<< 3.14).","python3-dbus depends on python3 (>= 3.13~).","python3-dbus depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any.","python3-apt depends on python3 (<< 3.14).","python3-apt depends on python3 (>= 3.13~).","python3-apt depends on python3:any."],"python3-minimal":["python3 depends on python3-minimal (= 3.13.5-1)."],"python3.13":["python3 depends on python3.13 (>= 3.13.5-1~)."],"python3.13-minimal":["python3.13 depends on python3.13-minimal (= 3.13.5-2+deb13u5).","python3-minimal depends on python3.13-minimal (>= 3.13.5-1~)."],"libpython3.13-minimal":["python3.13-minimal depends on libpython3.13-minimal (= 3.13.5-2+deb13u5).","libpython3.13-stdlib:amd64 depends on libpython3.13-minimal (= 3.13.5-2+deb13u5)."],"libpython3.13-stdlib":["python3.13 depends on libpython3.13-stdlib (= 3.13.5-2+deb13u5).","libpython3-stdlib:amd64 depends on libpython3.13-stdlib (>= 3.13.5-1~)."],"libpython3-stdlib":["python3 depends on libpython3-stdlib (= 3.13.5-1)."],"python3-apt":["unattended-upgrades depends on python3-apt (>= 1.9.6~)."],"python-apt-common":["python3-apt depends on python-apt-common."],"python3-dbus":["unattended-upgrades depends on python3-dbus."],"python3-distro-info":["unattended-upgrades depends on python3-distro-info."],"distro-info-data":["python3-distro-info depends on distro-info-data (>= 0.46).","python3-apt depends on distro-info-data."],"lsb-release":["unattended-upgrades depends on lsb-release."],"ucf":["unattended-upgrades depends on ucf.","openssh-server depends on ucf."],"procps":["ucf depends on procps.","openssh-server depends on procps."],"libao4":["frotz depends on libao4 (>= 1.1.0)."],"libao-common":["libao4:amd64 depends on libao-common."],"libogg0":["libvorbis0a:amd64 depends on libogg0 (>= 1.1.0).","libsndfile1:amd64 depends on libogg0 (>= 1.3.0).","libflac14:amd64 depends on libogg0 (>= 1.1.0)."],"nethack-common":["nethack-console depends on nethack-common (= 3.6.7-1+b2)."],"librecode3":["fortune-mod depends on librecode3 (>= 3.7)."],"libflac14":["libsndfile1:amd64 depends on libflac14 (>= 1.5.0)."],"libmp3lame0":["libsndfile1:amd64 depends on libmp3lame0 (>= 3.100)."],"libmpg123-0t64":["libsndfile1:amd64 depends on libmpg123-0t64 (>= 1.28.0)."],"libopus0":["libsndfile1:amd64 depends on libopus0 (>= 1.1)."],"libsamplerate0":["frotz depends on libsamplerate0 (>= 0.1.7)."],"libsndfile1":["frotz depends on libsndfile1 (>= 1.0.20)."],"libvorbis0a":["libvorbisenc2:amd64 depends on libvorbis0a (= 1.3.7-3).","libsndfile1:amd64 depends on libvorbis0a (>= 1.2.3)."],"libvorbisenc2":["libsndfile1:amd64 depends on libvorbisenc2 (>= 1.1.2)."],"libmodplug1":["frotz depends on libmodplug1 (>= 1:0.8.8.5)."]}; /* what dpkg -r says depends on each */
 var INFO='/var/lib/dpkg/info/',DB0=34852; /* the files dpkg knows of, with everything here installed */
 /* the program files each package brings that this terminal has, and the commands they are; vi, view, ex and nethack are alternatives */
@@ -1672,7 +1891,7 @@ var BINS={'cowsay':['/usr/games/cowsay','/usr/games/cowthink'],'cmatrix':['/usr/
   'frotz':['/usr/games/frotz'],'iproute2':['/usr/bin/ip','/usr/bin/ss'],'less':['/usr/bin/less'],'man-db':['/usr/bin/man','/usr/bin/apropos','/usr/bin/whatis'],'nethack-console':['/usr/games/nethack'],
   'fastfetch':['/usr/bin/fastfetch'],'openssh-server':['/usr/sbin/sshd'],'procps':['/usr/bin/free','/usr/bin/pgrep','/usr/bin/pkill','/usr/bin/ps','/usr/bin/top','/usr/bin/uptime','/usr/bin/w','/usr/bin/watch'],
   'sl':['/usr/games/sl'],'sudo':['/usr/bin/sudo','/usr/bin/sudoedit','/usr/sbin/visudo'],'unattended-upgrades':['/usr/bin/unattended-upgrade'],'vim-tiny':['/usr/bin/vi','/usr/bin/view','/usr/bin/ex','/usr/bin/vim.tiny'],
-  'python3-minimal':['/usr/bin/python3'],'python3.13-minimal':['/usr/bin/python3.13'],'lsb-release':['/usr/bin/lsb_release'],'apt':['/usr/bin/apt','/usr/bin/apt-get','/usr/bin/apt-cache']};
+  'diffutils':['/usr/bin/cmp'],'python3-minimal':['/usr/bin/python3'],'python3.13-minimal':['/usr/bin/python3.13'],'lsb-release':['/usr/bin/lsb_release'],'apt':['/usr/bin/apt','/usr/bin/apt-get','/usr/bin/apt-cache']};
 function installed(p){var e=typeof p==='string'?pkg(p):p;return !!e&&KNOWN.has(e)&&!!P.find(INFO+e[0]+'.list',true)}
 function residual(p,inst){var e=typeof p==='string'?pkg(p):p;return !!e&&KNOWN.has(e)&&!(inst!==undefined?inst:installed(e))&&!!P.find(INFO+e[0]+'.postrm',true)} /* inst: installed(p), when it is known */
 var RECORDED=false;
@@ -1815,6 +2034,9 @@ function offline(F,W,E,mid){ /* the fetch of each [name, URL]: Acquire::Retries 
 function wrap(words){ /* apt-get's lists: two spaces in, broken before 80 columns */
   var L=[],l='';words.forEach(function(w){if(l&&l.length+1+w.length>=80){L.push(l);l=''}l=(l?l+' ':'  ')+w});if(l)L.push(l);return L;
 }
+function readLists(get){ /* apt-get's Reading package lists... Done; apt 3.0's progress, which on a terminal it wipes as it goes; either, not on one: Reading package lists... */
+  if(P.piped())P.typeLine('Reading package lists...');else if(get===true)P.typeLine('Reading package lists... Done');
+}
 function rootApt(verb,o,get,E){ /* true if done: root on a box with no network (apt 3.0.4 and dpkg 1.22 on trixie, run so) */
   var names=o.ops.slice(1),reading=get===true?['Reading package lists... Done','Building dependency tree... Done','Reading state information... Done']:[];
   var none=get===true?'0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.':null,sum0=['Summary:','  Upgrading: 0, Installing: 0, Removing: 0, Not Upgrading: 0'];
@@ -1828,7 +2050,7 @@ function rootApt(verb,o,get,E){ /* true if done: root on a box with no network (
   if(/^(upgrade|full-upgrade|dist-upgrade)$/.test(verb)||verb==='autoremove'&&!orphans().length){lines(get===true?reading.concat(/upgrade/.test(verb)?['Calculating upgrade... Done']:[],[none]):sum0);return true}
   if(verb==='source'||verb==='build-dep'){ /* no deb-src lines in debian.sources */
     if(!names.length){err(E+'Must specify at least one package to '+(verb==='source'?'fetch source for':'check builddeps for'));P.queue(function(){P.status(100)});return true}
-    P.typeLine('Reading package lists... Done');err(E+"You must put some 'deb-src' URIs in your sources.list");P.queue(function(){P.status(100)});return true;
+    readLists(get);err(E+"You must put some 'deb-src' URIs in your sources.list");P.queue(function(){P.status(100)});return true;
   }
   if(verb==='satisfy'){
     if(!names.length){err(E+'Must specify at least one package to check builddeps for');P.queue(function(){P.status(100)});return true}
@@ -1950,7 +2172,7 @@ function apt(a,get){
   if(get!==2&&(verb==='source'||verb==='modernize-sources')&&rootApt(verb,o,get,E))return; /* neither needs root */
   if(!get&&verb==='edit-sources'){err(E+'Could not open file /etc/apt/sources.list - open (13: Permission denied)');P.queue(function(){P.status(100)});return}
   if(verb==='update'){
-    P.typeLine('Reading package lists...'); /* the lock fails before it gets to Done */
+    readLists(get); /* the lists are read before the lock fails */
     err(E+'Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)');err(E+'Unable to lock directory /var/lib/apt/lists/');P.queue(function(){P.status(100)});return;
   }
   if(NEED_ROOT.test(verb)){

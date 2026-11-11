@@ -7,7 +7,7 @@
 'use strict';
 
 function Vi(name,S){
-  var L=[''],r=0,c=0,top=0,mode='cmd',msg='',file=name||'',dirty=false,done;
+  var L=[''],r=0,c=0,top=0,mode='cmd',msg='',file=name||'',dirty=false,done,ro=false; /* ro: the file was not writable when it was read (ex's READONLY, vim's 'readonly') */
   var MAXCOUNT=100000,MAXTEXT=1000000; /* a count no one means: enough to do its work, not enough to hang the tab */
   var count=0,op=null,opCount=0,pending=null,reg='"',regs={},exLine='',exKind=':',marks={};
   var undo=null,snapped=false,uline=null,lastF=null,search=null,last=null,cur=[],changed=false,noRec=false,replaying=false;
@@ -33,22 +33,29 @@ function Vi(name,S){
   function info(){return '"'+(file||'No file')+'"'+(dirty?' [Modified]':'')+' line '+(r+1)+' of '+L.length+' --'+Math.floor(100*(r+1)/L.length)+'%--'}
   function fileInfo(f,cut,wrote){ /* ex's iostats: what it read or wrote. cut: a last line with no newline, which it ends with one. vim (Linux) counts bytes */
     var n=L.reduce(function(a,t){return a+t.length+1},0)-(cut?1:0),u=P.profile.bash?' byte':' character';
-    return '"'+f+'"'+(cut?' [Incomplete last line]':'')+' '+L.length+' line'+(L.length===1?'':'s')+', '+n+u+(n===1?'':'s')+(wrote&&P.profile.bash?' written':'');
+    return '"'+f+'"'+(ro&&!wrote?(P.profile.bash?' [readonly]':' [Read only]'):'')+(cut?' [Incomplete last line]':'')+' '+L.length+' line'+(L.length===1?'':'s')+', '+n+u+(n===1?'':'s')+(wrote&&P.profile.bash?' written':'');
   }
   function load(f){
     var n=P.unread(P.named(f));
     if(!n&&P.find(f,true))n={prot:true}; /* behind a locked folder: there, and not to be read */
     if(n&&n.type==='d'){msg='"'+f+'" Is a directory';return}
     if(n&&n.prot){msg='"'+f+'" Permission denied';return}
-    if(!n){L=[''];r=c=top=0;dirty=false;file=f;msg='"'+f+'" [New file]';return}
+    if(!n){L=[''];r=c=top=0;dirty=false;file=f;ro=false;msg='"'+f+'" [New file]';return}
+    ro=!n.dev&&!P.mayWrite(n); /* one who is logged in may not write, its owner too (4.3BSD's ex_io.c, vim's check_readonly) */
     L=P.text(n);var cut=L.open;L=L.length?L.slice():['']; /* the copy has no open end: every line it writes ends with a newline */
     r=c=top=0;dirty=false;file=f;msg=fileInfo(f,cut);
     undo=null;uline=null;marks={};
   }
-  function write(f){
-    var to=f||file;
+  function write(f,bang){
+    var to=f||file,same=to===file;
     if(!to){msg='No current filename';return false}
-    if(!P.writeFile(to,L,false)){msg='"'+to+'" Permission denied';return false}
+    if(same&&ro&&!bang){msg=P.profile.bash?"E45: 'readonly' option is set (add ! to override)":'"'+to+'" File is read only';return false}
+    var n=same&&ro&&P.profile.bash?P.named(to):null,m=n&&n.mode,lift=!!n&&n.owner===P.st.user&&!P.isImmutable(n); /* vim's :w! makes its owner's file writable for the write, then puts its mode back */
+    if(lift)n.mode=P.modeOf(n).slice(0,2)+'w'+P.modeOf(n).slice(3);
+    var ok=P.writeFile(to,L,false);
+    if(lift){if(m)n.mode=m;else delete n.mode}
+    if(!ok){msg='"'+to+'" Permission denied';return false}
+    if(same&&bang&&P.profile.bash)ro=false; /* :w! resets 'readonly' */
     if(!file)file=to;
     if(to===file)dirty=false;
     msg=fileInfo(to,false,true);
@@ -175,7 +182,7 @@ function Vi(name,S){
     }
   }
   function find(re,dir,y,x){
-    var n=L.length,g=new RegExp(re.source,'g'+(re.ignoreCase?'i':'')); /* one, its lastIndex set for each line */
+    var n=L.length,g=P.safeRe(re.source,'g'+(re.ignoreCase?'i':'')); /* one, its lastIndex set for each line */
     for(var k=0;k<=n;k++){
       var at=((y+dir*k)%n+n)%n,t=L[at],hit=-1;
       if(dir>0){
@@ -355,7 +362,7 @@ function Vi(name,S){
       lastSub={src:src,rep:rep};
     }
     var re;
-    try{re=new RegExp(P.bre(src),/g/.test(fl)?'g':'')}catch(e){msg='Bad regular expression';return}
+    try{re=P.safeRe(P.bre(src),/g/.test(fl)?'g':'')}catch(e){msg='Bad regular expression';return}
     var hit=-1;
     snap();
     for(var y=a;y<=b;y++){
@@ -384,11 +391,11 @@ function Vi(name,S){
     switch(cmd){
       case '':return;
       case 'w':case 'wr':case 'write':
-        if(arg.charAt(0)==='q'&&!arg.trim().slice(1)){write();quit();return}
-        write(arg.trim());return;
+        if(arg.charAt(0)==='q'&&!arg.trim().slice(1)){write('',bang);quit();return}
+        write(arg.trim(),bang);return;
       case 'wq':case 'x':case 'xit':
         if(cmd==='x'&&!dirty){quit();return}
-        if(write(arg.trim()))quit();
+        if(write(arg.trim(),bang))quit();
         return;
       case 'q':case 'quit':
         if(dirty&&!bang){msg='No write since last change (:quit! overrides)';return}
@@ -424,7 +431,7 @@ function Vi(name,S){
         return;
       case 'g':case 'v':{
         var dl=arg.charAt(0),q=arg.split(dl),re2;
-        try{re2=new RegExp(P.bre(q[1]||''))}catch(e){msg='Bad regular expression';return}
+        try{re2=P.safeRe(P.bre(q[1]||''))}catch(e){msg='Bad regular expression';return}
         var what=q.slice(2).join(dl).trim()||'p',f=a===null?0:from,e=a===null?L.length-1:to;
         if(what==='d'){
           snap();
@@ -460,7 +467,7 @@ function Vi(name,S){
       if(kind===':'){ex(s);return}
       var dir=kind==='/'?1:-1;
       if(s){
-        try{search={re:new RegExp(P.bre(s)),dir:dir}}catch(e){bell('Bad regular expression');return}
+        try{search={re:P.safeRe(P.bre(s)),dir:dir}}catch(e){bell('Bad regular expression');return}
       }
       else if(search)search.dir=dir;
       var t=again(false);

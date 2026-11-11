@@ -38,8 +38,30 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
         (!typed?'':n.type==='s'?'@':n.type==='d'?'/':n.bin||/^-..x/.test(n.mode||'')?'*':'');
     }
     function shut(n){return n.prot||!P.may(n,'r')} /* a folder it cannot read */
-    function across(names){ /* Berkeley's ls on a terminal: columns, reading down */
-      return !P.profile.perror||P.piped()||!names.length?names:P.inColumns(names);
+    function across(names,raw,tot){ /* on a terminal: Berkeley's ls in columns, reading down; System V's (raw: the names alone, tot: the total line) as below */
+      if(sys5)return sysv(names,raw,tot);
+      names=!P.profile.perror||P.piped()||!names.length?names:P.inColumns(names);
+      return tot?[tot].concat(names):names;
+    }
+    function sysv(names,raw,tot){ /* SVR4's ls.c: -C when isatty(1). colwidth is 2 (3 with -F, +6 with -i, +5 with -s) more than the longest name; the
+                                     columns $COLUMNS or the terminal's width allow (80 if under 20 or over 160); pem() fills them down, the total
+                                     taking the first place; column() pads each to the next multiple of colwidth, or ends the line once two more would not fit */
+      var E=tot?[tot].concat(names):names;
+      if(P.piped()||!E.length)return E;
+      var e=P.env.COLUMNS,nc=e!=null?parseInt(e,10)||0:P.columns();
+      if(nc<20||nc>160)nc=80;
+      var cw=2+(typed?1:0)+(inodes?6:0)+(blocks?5:0)+raw.reduce(function(m,x){return Math.max(m,x.length)},0),ncols=cw>nc?1:Math.floor(nc/cw);
+      if(ncols===1)return E;
+      var nrows=Math.floor((E.length-1)/ncols)+1,R=[],l='';
+      for(var r=0;r<nrows;r++){
+        for(var c=0;c<ncols;c++){
+          var k=nrows*c+r;if(k>=E.length)continue;
+          if(l){if((Math.floor(l.length/cw)+2)*cw>nc){R.push(l);l=''}else do l+=' ';while(l.length%cw)}
+          l+=E[k];
+        }
+        if(l){R.push(l);l=''}
+      }
+      return R;
     }
     function sub(dir,k){ /* the name of a folder inside dir: 4.3BSD's cat() leaves off a dir of ".", System V's makename() keeps it ("./src") */
       return bsd&&(dir==='.'||dir==='')?k:dir+(/\/$/.test(dir)?'':'/')+k;
@@ -60,7 +82,7 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       else if(!f.dir){var abs=P.norm(w),key=abs.split('/').pop(),up=P.find(P.dirOf(abs),true);shown=w.replace(/[^\/]*(\/\.?)*$/,up&&up.kids&&up.kids[key]===n?key:n.name);files.push(long?P.longRow(shown,n):plain(shown,n))}
       else dirs.push([v7?w:w.replace(/^~(?=\/|$)/,P.st.home),n]);
     });
-    L=L.concat(long?files:across(files)); /* 4.3BSD's formatf: in columns on a terminal, as a folder's are */
+    L=L.concat(long?files:across(files,want)); /* 4.3BSD's formatf: in columns on a terminal, as a folder's are; System V's widths are all the names given */
     /* -R: after a folder, the folders in it, each in full before the next (4.3BSD's subdirs list, System V's dfirst chain), never . or ..;
        the folders named are titled only when there are more than one. The shell gave ls ~ as the home folder's name. A folder already
        on the way down (a loop) is not gone into again; a name longer than the system's limit stops it: 4.3BSD's cat() says
@@ -83,11 +105,12 @@ P.command({names:['ls'],core:true,help:'list files',path:'/bin',
       if(all)ents=[['.',n],['..',n.parent]].concat(ents);
       if(bsd&&ents.some(function(e){return name.length+e[0].length+2>1024})){L.push(['ls: filename too long','err']);P.status(1);break}
       if(d.title){gap();L.push(name+':')}
+      var tot=null;
       if(long||blocks){ /* with -s too; in V7's and System V's 512-byte blocks, 4.3BSD's in kilobytes (kbytes(dbtob()) of the blocks all together) */
-        var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/(bsd?1024:512))});L.push('total '+t);
+        var t=0;ents.forEach(function(e){t+=Math.ceil(P.fsize(e[1])/(bsd?1024:512))});tot='total '+t;
       }
-      if(long)ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))});
-      else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])})));
+      if(long){L.push(tot);ents.forEach(function(e){L.push(P.longRow(e[0],e[1]))})}
+      else L=L.concat(across(ents.map(function(e){return plain(e[0],e[1])}),ents.map(function(e){return e[0]}),tot));
       if(!rec)continue;
       for(var i=ents.length-1;i>=0;i--){
         var k=ents[i][0],kid=ents[i][1],up=d,loop=false;
@@ -124,7 +147,10 @@ P.command({names:['cd'],core:true,help:'change directory',
     'a locked folder is a bad directory.']},
   run:function(a){
     var t=a[0]||P.st.home,n=P.find(t);
-    if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){P.oops('',t,n&&!P.may(n,'x')?{prot:true}:n,t+': bad directory');P.failed(null);return} /* sh's failed(baddir) and csh's error(): the rest of the line does not run */
+    if(!n||n.type!=='d'||n.prot||!P.may(n,'x')){
+      if(P.profile.csh&&!P.profile.perror&&!P.bourne.sh())P.typeLine(t+': '+(!n?'No such file or directory':n.type!=='d'?'Not a directory':'Permission denied'),'err'); /* IRIX's csh: 4.3BSD's dfollow(), perror(dir) */
+      else P.oops('',t,n&&!P.may(n,'x')?{prot:true}:n,t+': bad directory');
+      P.failed(null);return} /* sh's failed(baddir) and csh's error(): the rest of the line does not run */
     P.st.cwd=P.pathOf(n);
   }});
 

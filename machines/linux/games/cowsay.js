@@ -21,9 +21,11 @@ function fill(L,w){ /* as Perl's Text::Wrap fill: a paragraph starts at a line t
   });
   return R;
 }
-function cow(name){ /* the picture, from the cowfile, or null */
-  var n=P.unread(P.find(name.indexOf('/')>=0?name:COWS+'/'+name.replace(/\.cow$/,'')+'.cow'));
-  if(!n||n.type==='d'||n.prot)return null;
+function cow(name){ /* the picture, from the cowfile, or null when there is none to find. Perl's do of a file it cannot read (or, named with a /,
+  one that is not there) fails without a word, and the cow is empty: only the balloon */
+  var path=name.indexOf('/')>=0,n=P.find(path?name:COWS+'/'+name.replace(/\.cow$/,'')+'.cow');
+  if(!path&&(!n||n.type==='d'))return null;
+  if(!n||n.type==='d'||n.prot||!P.may(n,'r'))return [];
   var T=P.text(n),a=-1,b=-1;
   T.forEach(function(l,i){if(a<0&&/<<\s*"?EOC"?\s*;/.test(l))a=i;else if(a>=0&&b<0&&/^EOC\s*$/.test(l))b=i});
   return a<0||b<0?null:T.slice(a+1,b);

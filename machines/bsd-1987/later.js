@@ -3,7 +3,8 @@
    from the game's own, under the notice in its file. */
 (function(P){
 'use strict';
-function game(files,name,man,listed){ /* hidden, and no -h, unless it is listed in help */
+function game(files,name,man,listed){ /* hidden, and no -h, unless it is listed in help. Its page is in section 6, as 4.3BSD's /usr/man/man6 */
+  man.sec=man.sec||6;
   P.later(files,Object.assign({names:[name],path:'/usr/games',man:man},listed?{}:{hidden:true,noHelpFlag:true}));
 }
 game('rogue.js','rogue',{what:'Exploring The Dungeons of Doom',syn:'rogue [ -r ] [ save_file ] [ -s ] [ -d ]',desc:[

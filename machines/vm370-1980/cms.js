@@ -34,6 +34,7 @@ V.stopAll=function(){ /* CMS ends (LOGOFF, IPL, a wait state, SHUTDOWN): what it
   (V.execs||[]).forEach(function(S){S.stop=true}); /* an EXEC's CP LOGOFF or IPL CMS is its last line */
   if(side||V.attn||V.held){clearRun();V.busy=false} /* the lines left in V.pend are that EXEC's, not CP's to come */
   V.attn=false;V.owe=false;V.held=false;V.next=null;
+  V.inSubset=false;V.subNext=null;V.edOwe=false; /* and any edit */
 };
 function clearRun(){V.execs=[];V.pend=[];V.level=0} /* no EXEC running, and none of their lines still to type */
 function cost(){var r=Math.random(),v=r<.85?.01:.02,t=v+(r<.7?0:.01);V.vcpu+=v*.4;V.tcpu+=t*.5;return [v,t]} /* most commands take a hundredth of a second, or less */
@@ -53,7 +54,7 @@ V.input=function(raw){
   var ed=V.edRead&&V.state==='cms'&&!V.cpMode; /* the editor still reading, after a ^C stopped its typing */
   V.asking=false;
   if(V.attn&&V.state!=='cms')V.attn=false;
-  if(!(V.edRead&&V.state==='cms')&&!V.attn){clearRun();V.abended=false;V.busy=false;V.owe=false;V.held=false;V.next=null} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
+  if(!(V.edRead&&V.state==='cms')&&!V.attn){clearRun();V.abended=false;V.busy=false;V.owe=false;V.held=false;V.next=null;V.inSubset=false;V.subNext=null;V.edOwe=false} /* a new line from the terminal: whatever an attention cut short is over, but for an edit and the EXECs around it, and EXECs held at an attention */
   if(V.state!=='cms'||V.cpMode){var w0=up(raw.trim().split(/\s+/)[0]||'');if(w0&&V.termWord(w0,raw))return} /* the terminal's words, before CP sees them */
   if(V.state==='online'){V.online(raw);return}
   var t=raw.replace(/^\s+/,'');
@@ -74,12 +75,9 @@ V.input=function(raw){
     if(w==='HX'){V.edRead=null;V.abend();clearRun();P.queue(function(){V.ready(0)});return}
     if(w)return;
     V.stack.push(L.join(LE));var l1=V.pop(); /* after what was stacked already (DMSCIT); its first logical line, the rest stacked in front (DMSCRD) */
+    V.edOwe=false; /* the end of the edit is seen to here */
     P.queue(function(){r(l1)});
-    P.queue(function(){
-      if(V.edRead||V.state!=='cms'||V.cpMode)return;
-      if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
-      P.queue(function(){if(V.state==='cms'&&!V.cpMode)stackNext()});
-    });
+    P.queue(function(){if(!V.edRead)V.edDone()});
     return;
   }
   var L=V.lineEdit(raw);
@@ -113,12 +111,14 @@ P.onInterrupt=function(trap){
   if(V.dsc){V.asking=false;P.queue(V.dark,true);return bang} /* at VM/370 ONLINE: the virtual machine is not this terminal's, and runs on */
   var cms=!trap&&V.state==='cms'&&!V.cpMode&&!V.edRead&&!V.asking; /* CMS itself, not at a read */
   if(cms&&!V.attn)putBack(); /* a stacked line whose command had not started yet: still in the stack */
-  if(cms&&(V.execs.length||V.busy||V.stack.length||V.attn&&V.owe)){
-    if(!V.attn&&(V.execs.length||V.busy))V.owe=true; /* a command cut short owes its ready message; with the attention's read already up, this one only puts the read up again (CP's unit exception, DMSCIT reissuing it), and what runs beside it goes on */
+  var run=V.running().length; /* the EXECs the attention cuts short: in EDIT's CMS subset, not those waiting for the edit */
+  if(cms&&(run||V.busy||V.stack.length||V.attn&&V.owe)){
+    if(!V.attn&&(run||V.busy))V.owe=true; /* a command cut short owes its ready message; with the attention's read already up, this one only puts the read up again (CP's unit exception, DMSCIT reissuing it), and what runs beside it goes on */
     V.attn=true;
     P.queue(V.goOn,true); /* once the read is up */
     return bang;
   }
+  if(cms&&V.subNext)P.queue(function(){if(V.subNext){V.edOwe=true;V.subNext()}},true); /* a command in EDIT's CMS subset with nothing left running: its ready message, and the subset reads again */
   V.asking=false;
   if(!V.attn&&!V.edRead&&V.state!=='cms')V.stack=[]; /* DMSCIT only adds to CMS's console stack: an attention leaves it */
   if(!V.attn)V.pend=[];
@@ -138,9 +138,17 @@ function release(){if(V.attnWait){var r=V.attnWait;V.attnWait=null;r()}} /* what
 function goOn(){V.carryOn();nextCms()}
 function nextCms(){P.queue(function(){if(V.state==='cms'&&!V.cpMode)cmsNext()})} /* the next CMS command, once what is queued is done, unless CP has the terminal */
 function cmsNext(){
+  if(V.owe&&V.subNext){V.owe=false;V.edOwe=true;V.subNext();return} /* a command in EDIT's CMS subset: its short ready message, and the subset's read takes the stack */
   if(V.owe){V.owe=false;V.ready(V.rc||0)}
   stackNext();
 }
+/* an edit that an attention cut off from the command that started it ends: the EXECs that ran it carry on, or CMS gives
+   the ready message; then the console stack */
+V.edDone=function(){
+  if(V.state!=='cms'||V.cpMode)return;
+  if(V.resume())P.queue(function(){if(V.state==='cms'&&!V.cpMode)V.ready(V.rc||0)});else V.ready(0);
+  P.queue(function(){if(V.state==='cms'&&!V.cpMode)stackNext()});
+};
 function stackNext(){if(V.stack.length)cmsLine(V.pop(),true)} /* CMS reads the console stack's next line, if it holds one */
 /* the line CMS has just taken from the console stack, while its command has not started: stopped there (#CP, or an
    attention cutting the ready message short), CMS has not read it yet, so it goes back in front of the stack */
@@ -165,7 +173,7 @@ V.reconnect=function(){ /* LOGON while disconnected: CP mode, the virtual machin
 };
 V.hold=function(k){ /* a read by the EXEC going on beside the attention's read: k when that line is in */
   if(!(V.attn||V.dsc)||!P.asideNow())return false; /* disconnected, the read waits for a reconnection */
-  P.queue(function(){return new Promise(function(r){V.attnWait=r})});
+  P.queue(function(){if(!(V.attn||V.dsc))return;return new Promise(function(r){V.attnWait=r})}); /* the attention's line may be in already, before this step */
   P.queue(k);
   return true;
 };
@@ -443,8 +451,20 @@ C.TYPE=function(a,o){
   if(to&&to!=='*'){if(!/^\d+$/.test(to)){err('DMSTYP049E INVALID LINE NUMBER \''+to+'\'');return 24}n2=Math.min(+to,L.length)}
   if(n1>L.length){err('DMSTYP049E INVALID LINE NUMBER \''+from+'\'');return 24}
   var S=L.slice(n1-1,n2);
+  if(hex){ /* DMSTYP's HEXRTN: ' RECORD nnnnn LENGTH= nnnnn' with the record's length as read (a fixed file's records are LRECL
+    long, blanks and all), then the columns asked for, ten words of four bytes to a line from column 2, a last odd word as
+    two digits a byte; a typed part of a multiple of 40 bytes, or none, leaves its empty buffer to be typed: an empty line */
+    var k=n1,fix=r.f.recfm==='F'&&!r.f.bin;
+    S.forEach(function(l){
+      var t=V.text(l);if(fix)t=t.padEnd(r.f.lrecl).slice(0,r.f.lrecl);
+      var b=col?t.slice(col[0]-1,col[1]):t,h=V.hex(b);
+      out(' RECORD '+String(k++).padStart(5)+' LENGTH= '+String(t.length).padStart(5));
+      for(var i=0;i<h.length;i+=10)out(' '+h.slice(i,i+10).join('  '));
+      if(b.length%40===0)out('');
+    });
+    return 0;
+  }
   if(col)S=S.map(function(l){var x=P.lineOf(l);return [String(x[0]).slice(col[0]-1,col[1]),x[1]||'',x[2]]});
-  if(hex){var k=n1;S.forEach(function(l){var t=V.text(l),h=V.hex(t);out(' RECORD '+String(k++).padStart(5)+' LENGTH='+String(t.length).padStart(6));for(var i=0;i<h.length;i+=10)out(' '+h.slice(i,i+10).join('  '))});return 0}
   if(r.f.ft==='LISTING')S=S.map(function(l){return V.text(l).slice(1)});
   /* no more than 130 characters of a record: so the Release 6 reference says, and so TYPE does under Hercules */
   P.say(S.map(function(l){return Array.isArray(l)?[String(l[0]).slice(0,130),l[1]||'',l[2]]:String(l).slice(0,130)}));

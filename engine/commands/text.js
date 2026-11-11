@@ -14,7 +14,15 @@ function operands(a){return a.filter(function(x){return x.charAt(0)!=='-'})}
 function flags(a){return a.filter(function(x){return x.charAt(0)==='-'}).join('')}
 
 cmd('touch','make a file, or update its time','touch file ...','makes each file that does not exist, and marks the rest as changed now.',function(a){
-  a.forEach(function(x){if(!P.writeFile(x,[],true))P.oopsW('touch',x,'touch: cannot touch '+x)});
+  a.forEach(function(x){
+    var n=P.find(x,true),sysv=P.profile.sysv;
+    if(n&&n.type==='f'&&!n.prot&&!n.dev&&(!P.mayWrite(n)||!sysv&&!P.access(n,'r')&&(P.profile.perror||P.fsize(n)>0))){ /* one there it may not open: 4.3BSD's touch asks
+      access(2) for read and write; V7's opens it to read and write (an empty one it only creats). System V's sets its times with utime(2), which its owner may */
+      if(sysv&&(n.owner===P.st.user||P.st.user===P.profile.rootName)){n.date=P.now();return}
+      P.typeLine(sysv?'touch: cannot change times on '+x:P.profile.perror?'touch: '+x+': cannot touch':'Cannot touch '+x,'err');return;
+    }
+    if(!P.writeFile(x,[],true))P.oopsW('touch',x,'touch: cannot touch '+x);
+  });
 });
 cmd('mkdir','make a folder','mkdir dir ...','makes each folder named.',function(a){
   var F=operands(a);
@@ -47,7 +55,7 @@ function target(to,from){ /* copying or moving into a folder keeps the name */
 }
 /* GNU's cp and mv (coreutils 9.7, as Debian's are): their own words for each way it fails. The name a failure is told by is the one
    given (into a folder: folder/name). Debian's cp and mv in front of these take the options and loop over the sources; a.rec is cp's -r,
-   a.verb its -v for what a folder holds, a.keep its -p */
+   a.verb its -v for what a folder holds, a.keep its -p, a.force its -f */
 function why(p){return P.why(p)}
 function gnuSrc(who,x,nofollow){ /* the file named x, or null after saying why not: a name ending in / must be a folder */
   var n=P.find(x,true,false,nofollow);
@@ -64,7 +72,7 @@ function unseen(to,tn){ /* the target cannot even be looked for: a locked folder
   return w==='Permission denied'||w==='Not a directory'&&!/\/$/.test(tn)?w:null;
 }
 function gnuCp(a){
-  var src=a[0],n=gnuSrc('cp',src),o={verb:!!a.verb,keep:!!a.keep};
+  var src=a[0],n=gnuSrc('cp',src),o={verb:!!a.verb,keep:!!a.keep,force:!!a.force};
   if(!n)return;
   var to=target(a[1],src),tn=named(to,a),there=P.find(to,true);
   if(n.type==='d'&&!a.rec){P.typeLine("cp: -r not specified; omitting directory '"+src+"'",'err');return}
@@ -79,6 +87,8 @@ function gnuCp(a){
 function copyFile(src,n,to,tn,o){ /* o: verb (cp -v) and keep (cp -p) */
   if(n.prot||!P.may(n,'r')){P.typeLine("cp: cannot open '"+src+"' for reading: Permission denied",'err');return false}
   if(P.immutable(to,true)){P.notPermitted('cp',tn);return false} /* Debian's immutable attribute */
+  var ex=P.find(to,true,false,true);
+  if(o.force&&ex&&P.unwritable(ex)&&P.canWrite(to))P.unlink(to); /* cp -f: one it cannot open is removed, and made again */
   if(!P.writeFile(to,P.text(n),false)){
     var up=P.find(P.dirOf(to));
     P.typeLine("cp: cannot create regular file '"+tn+"': "+(/\/$/.test(tn)?'Not a directory':!up?why(P.dirOf(to)):'Permission denied'),'err');return false;
@@ -146,6 +156,15 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   if(P.profile.bash){gnuMv(a);return}
   if(a.length<2){P.typeLine(P.profile.perror?"usage: mv [-if] f1 f2 or mv [-if] f1 ... fn d1 (`fn' is a file or directory)":'usage: mv f1 f2; or mv d1 d2; or mv f1 ... fn d1');return}
   var n=P.find(a[0],true,false,true),from=P.norm(a[0]),to=target(a[1],a[0]),there=P.find(to,true,false,true); /* a symbolic link moves as itself */
+  if(n&&!n.prot&&there&&there!==n&&P.unwritable(there)&&P.stdin()===null){ /* a file there it may not write, and the keyboard
+    to ask: V7's mv: f: 444 mode, 4.3BSD's override protection 444 for f?, System V's (SVR4's mv.c) mv: f: 444 mode? Only a y goes on */
+    var tn=named(to,a),o=P.octMode(there);
+    P.ask(P.profile.perror?'override protection '+o+' for '+tn+'? ':'mv: '+tn+': '+o+' mode'+(P.profile.sysv?'? ':' '),function(l){if(l!==P.INT&&l&&l.charAt(0)==='y')mvOn(a,n,from,to,there)});
+    return;
+  }
+  mvOn(a,n,from,to,there);
+});
+function mvOn(a,n,from,to,there){ /* V7's mv, once any question has been answered */
   if(n&&!n.prot&&(P.immutable(from)||P.immutable(to)&&there!==n)){P.notPermitted('mv',a[0],named(to,a));return}
   if(n&&!n.prot&&there&&there!==n&&there.type!=='d'&&(there.prot||!P.mayAlter(there))&&P.canWrite(from)){P.typeLine('mv: cannot unlink '+a[1],'err');return} /* a locked file, or someone else's, in the way */
   if(!n||n.prot||n===P.root||!P.canWrite(from)||!P.canWrite(to)){P.typeLine(P.profile.perror&&!n?'mv: '+a[0]+': Cannot access: No such file or directory':'mv: cannot access '+a[0],'err');return}
@@ -157,7 +176,7 @@ cmd('mv','move or rename a file','mv file1 file2','renames file1 to file2, or mo
   P.unlink(from); /* by the name given: a link has its own */
   parent.kids[name]=n;
   if(from===was){n.name=name;n.parent=parent;P.moved(was,to)} /* moving a link leaves the file where it is */
-});
+}
 cmd('chmod','change who may do what to a file','chmod mode file ...',['mode is an octal number such as 755, or +x and -x. a file with x set runs as a shell script: ./file.','',
   'a symbolic mode has the form [who] op permission. who is a combination of u (user\'s permissions), g (group), o (others) and a (all, the same as ugo). with no who, it is a, but leaving alone what the umask (022) takes away. op is + to add the permission, - to take it away, or = to set exactly that. permission is any combination of r (read), w (write) and x (execute), X (execute, for a folder or a file someone may already execute), s (set the user or group id) and t (sticky): go-w, u=rwx, a+r. several, separated by commas, are done in turn: u+x,g-w.'],function(a){
   /* V7's, 4.3BSD's and System V's newmode(): an octal mode, or [ugoa][+-=][rwxXst] clauses after commas; 4.3BSD's -R and -f, and GNU's.
@@ -226,8 +245,64 @@ function newMode(spec,m){ /* the mode string m after spec, or null when spec is 
   }).join('');
 }
 
+var POSIXCL={alpha:'A-Za-z',digit:'0-9',alnum:'0-9A-Za-z',upper:'A-Z',lower:'a-z',space:' \\t\\n\\r\\f\\v',blank:' \\t',punct:'!-\\/:-@\\[-`{-~',print:' -~',graph:'!-~',cntrl:'\\x00-\\x1f\\x7f',xdigit:'0-9A-Fa-f'};
+function reShift(src,off){ /* a RegExp source's backreferences moved on by off groups, and how many groups it has */
+  var o='',n=0,cl=false;
+  for(var i=0;i<src.length;i++){
+    var c=src.charAt(i);
+    if(c==='\\'){var m=!cl&&/^[1-9]\d*/.exec(src.slice(i+1));if(m){o+='\\'+(+m[0]+off);i+=m[0].length}else{o+=src.substr(i,2);i++}continue}
+    if(cl){if(c===']')cl=false}else if(c==='[')cl=true;else if(c==='('&&src.charAt(i+1)!=='?')n++;
+    o+=c;
+  }
+  return {s:o,n:n};
+}
+function greSrc(p,gnu,iv){ /* grep's pattern, a basic regular expression, as a RegExp's source; a bad one is thrown. V7's and 4.3BSD's: . * [ ] \( \) \1,
+  ^ only first and $ only last (else themselves), * first is itself, and \c for any other c is c. System V's (iv) adds \{m,n\}; GNU's \| \+ \? \< \>
+  \b \w \s and [:class:] too. + ? | ( ) { } are themselves: M-^? is the four characters cat -v shows */
+  function esc(c){return c.replace(/[\\^$.*+?()[\]{}|\/-]/g,'\\$&')}
+  var o='',depth=0,start=true,ng=0,open=[],done={};
+  for(var i=0;i<p.length;i++){
+    var c=p.charAt(i),was=start,m;start=false;
+    if(c==='^'&&was){o+='^';start=true;continue}
+    if(c==='$'&&(i===p.length-1||gnu&&/^\\[)|]/.test(p.substr(i+1,2)))){o+='$';continue}
+    if(c==='*'){o+=was?'\\*':'*';continue}
+    if(c==='.'){o+='.';continue}
+    if(c==='['){
+      var j=i+1,neg=false,b='',prev=null; /* prev: the item before, for GNU's range check: a character's code, or 'cl' for a [:class:] */
+      if(p.charAt(j)==='^'){neg=true;j++}
+      if(p.charAt(j)===']'){b+='\\]';j++;prev=93}
+      for(;j<p.length&&p.charAt(j)!==']';j++){
+        var ch=p.charAt(j);
+        if(gnu&&ch==='['&&(m=/^\[:(\w+):\]/.exec(p.slice(j)))){if(!P.has(POSIXCL,m[1]))throw 'class';b+=POSIXCL[m[1]];j+=m[0].length-1;prev='cl';continue}
+        if(gnu&&ch==='-'&&prev!==null&&j+1<p.length&&p.charAt(j+1)!==']'){ /* a range: glibc's regcomp says REG_ERANGE for a class at either end, or an end before its start */
+          var nx=p.charAt(j+1);
+          if(prev==='cl'||nx==='['&&/^\[:\w+:\]/.test(p.slice(j+1))||nx.charCodeAt(0)<prev)throw 'Invalid range end';
+          b+='-'+(nx==='\\'||nx==='['||nx==='^'?'\\'+nx:nx);j++;prev=null;continue;
+        }
+        prev=ch.charCodeAt(0);
+        b+=ch==='\\'||ch==='['||ch==='^'?'\\'+ch:ch;
+      }
+      if(j>=p.length)throw 'unmatched [';
+      o+='['+(neg?'^':'')+b+']';i=j;continue;
+    }
+    if(c!=='\\'){o+=esc(c);continue}
+    if(++i>=p.length)throw 'trailing backslash';
+    var n=p.charAt(i);
+    if(n==='('){o+='(';depth++;start=true;open.push(++ng);continue}
+    if(n===')'){if(!depth)throw 'unmatched )';o+=')';depth--;done[open.pop()]=true;continue}
+    if(n==='{'&&iv){if(!(m=/^(\d+)(,?)(\d*)\\\}/.exec(p.slice(i+1))))throw 'unmatched {';o+='{'+m[1]+m[2]+m[3]+'}';i+=m[0].length;continue}
+    if(/[1-9]/.test(n)){if(gnu&&!done[n])throw 'Invalid back reference';o+='(?:\\'+n+')';continue} /* GNU's regcomp: only a group already closed (REG_ESUBREG); (?:) keeps a digit after it its own */
+    if(gnu&&n==='|'){o+='|';start=true;continue}
+    if(gnu&&(n==='+'||n==='?')){o+=n;continue}
+    if(gnu&&(n==='<'||n==='>')){o+=n==='<'?'\\b(?=\\w)':'\\b(?<=\\w)';continue}
+    if(gnu&&/[bBwWsS]/.test(n)){o+='\\'+n;continue}
+    o+=esc(n);
+  }
+  if(depth)throw 'unmatched (';
+  return o;
+}
 cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function(pr){ /* -s on all; -h at Berkeley and GNU; -q -o -F and - for GNU's */
-  var gnu=pr.bash,bsd=pr.perror&&!gnu,sys5=pr.csh&&!pr.perror;
+  var gnu=pr.bash,bsd=pr.perror&&!gnu,sys5=pr.sysv;
   if(gnu)return [null,['prints the lines that match, with the file\'s name before each when there is more than one file. with no file, or when file is -, reads standard input.','',
     '-c   suppress normal output; instead print a count of matching lines for each input file.',
     '-e PATTERNS, --regexp=PATTERNS   use PATTERNS as the patterns. this option can be used multiple times; a line that matches any of them is selected. then every word that is not an option is a file.',
@@ -275,34 +350,39 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function
     if(pats)rest.unshift(null); /* the files are all the words */
   }
   if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
-  var gnu=P.profile.bash,only=gnu&&/o/.test(fl),one=function(p){return gnu&&/F/.test(fl)?p.replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):p}; /* GNU's -F: the pattern as it is; -o: just what matched */
-  var pat=pats?(pats.length?pats.map(function(p){return '(?:'+one(p)+')'}).join('|'):'(?!)'):one(rest[0]); /* several: any of them */
-  try{re=new RegExp(pat,/i/.test(fl)?'i':'')}catch(e){P.typeLine('grep: bad pattern '+(pats?pats.join(' '):rest[0]),'err');return}
+  var gnu=P.profile.bash,only=gnu&&/o/.test(fl),one=function(p){return gnu&&/F/.test(fl)?p.replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):greSrc(p,gnu,gnu||P.profile.sysv)}; /* GNU's -F: the pattern as it is; -o: just what matched */
+  var off=0; /* each -e's groups: \1 in the second pattern is its own first group, after the first pattern's */
+  try{var pat=pats?(pats.length?pats.map(function(p){var r=reShift(one(p),off);off+=r.n;return '(?:'+r.s+')'}).join('|'):'(?!)'):one(rest[0]); /* several: any of them */
+    re=P.safeRe(pat,/i/.test(fl)?'i':'')}catch(e){if(gnu&&(e==='Invalid range end'||e==='Invalid back reference')){P.typeLine('grep: '+e,'err');P.queue(function(){P.status(2)});return} /* GNU's, from regerror */P.typeLine('grep: bad pattern '+(pats?pats.join(' '):rest[0]),'err');return}
   /* the files in turn, each line with its file's name when there are more than one (and no -h). A file it cannot open: V7's grep
      says so and stops there (status 2); 4.3BSD's, System V's (IRIX) and GNU's go on, and end with status 2 all the same. -s: V7's
      and 4.3BSD's print nothing, for the status alone; System V's and GNU's leave out the messages about files. GNU's -q prints
      nothing and stops at the first match, which makes the status 0 whatever went wrong */
-  var v7=!gnu&&!P.profile.csh,sys5=!gnu&&P.profile.csh&&!P.profile.perror,S=/s/.test(fl);
+  var v7=!gnu&&!P.profile.csh,sys5=!gnu&&P.profile.sysv,S=/s/.test(fl);
   var quiet=gnu?/q/.test(fl):S&&!sys5,hush=S&&(gnu||sys5),F=rest.slice(1),many=F.length>1&&!((gnu||P.profile.perror)&&/h/.test(fl)),total=0,bad=false;
-  var all=new RegExp(re.source,re.flags+'g'),v=/v/.test(fl),num=/n/.test(fl),cnt=/c/.test(fl); /* all: each line's exec runs to its null, which leaves lastIndex at 0 for the next */
+  var all=only?P.safeRe(re.source,re.flags+'g'):null,v=/v/.test(fl),num=/n/.test(fl),cnt=/c/.test(fl); /* all: each line's exec runs to its null, which leaves lastIndex at 0 for the next */
   function scan(L,name){
     var hits=[],n=0,pre=name!==undefined&&many?name+':':'';
     for(var i=0;i<L.length;i++){
       var l=L[i];
-      if(re.test(l)===v)continue;
+      var hit=re.test(l);
+      if(re.overflow&&gnu){dead=true;break}
+      if(hit===v)continue;
       n++;
       if(quiet&&gnu)break;
       var at=pre+(num?(i+1)+':':'');
       if(!only){hits.push(at+l);continue}
       if(v)continue; /* -v -o: the lines that do not match have no matching part to print */
       for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
+      if(all.overflow&&gnu){dead=true;break}
     }
     total+=n;
-    if(!quiet){if(cnt)P.typeLine(pre+n);else P.say(hits)}
+    if(!quiet&&!(dead&&cnt)){if(cnt)P.typeLine(pre+n);else P.say(hits)}
+    if(dead){P.typeLine('grep: memory exhausted','err');stop=true} /* the matcher's budget spent (regexec's REG_ESPACE): GNU's xalloc_die, after what it has printed */
     return n;
   }
-  if(!F.length){P.input([],function(L){P.status(scan(L)?0:1)});return}
-  var stop=false;
+  var stop=false,dead=false;
+  if(!F.length){P.input([],function(L){var n=scan(L);if(dead)P.queue(function(){P.status(2)});else P.status(n?0:1)});return}
   F.forEach(function(x){P.queue(function(){ /* in turn: GNU's - may wait for the keyboard */
     if(stop)return;
     if(gnu&&x==='-'){P.input([],function(L){if(scan(L,'(standard input)')&&quiet)stop=true});return}
@@ -310,7 +390,7 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function
     if(!nd||nd.type==='d'||nd.prot){if(!hush)P.input([fx],function(){});bad=true;if(v7)stop=true;return}
     if(scan(P.text(nd),x)&&quiet&&gnu)stop=true;
   })});
-  P.queue(function(){P.status(bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
+  P.queue(function(){P.status(dead||bad&&!(gnu&&quiet&&total)?2:total?0:1)}); /* after its messages, which would make it 1 */
 });
 cmd('wc','count lines, words and characters','wc [ -lwc ] [ name ... ]',function(pr){
   if(pr.bash)return [null,['prints how many lines, words and characters, for each file and, for more than one, in total. with no file, reads standard input.','',
@@ -557,7 +637,11 @@ cmd('tr','change characters','tr [ -cds ] [ string1 [ string2 ] ]',function(pr){
 cmd('tee','copy input to a file as well','tee [ -a ] file ...','prints what it reads and writes it to each file. -a adds to the end.',function(a){
   var app=/a/.test(flags(a)),F=operands(a);
   P.input([],function(L){
-    F.forEach(function(x){if(!P.writeFile(x,L,app)){if(P.immutable(P.norm(x),true))P.notPermitted('tee',x);else P.typeLine('tee: cannot open '+x,'err')}});
+    F.forEach(function(x){ /* GNU's names the error; System V's (SVR4's tee.c) says cannot access for EACCES; V7's and 4.3BSD's cannot open */
+      if(P.writeFile(x,L,app))return;
+      if(P.profile.bash)P.oopsW('tee',x,'tee: cannot open '+x);
+      else P.typeLine((P.profile.sysv&&P.find(P.dirOf(P.norm(x)),true)?'tee: cannot access ':'tee: cannot open ')+x,'err');
+    });
     P.say(L);
   });
 });
@@ -686,20 +770,29 @@ cmd('sh','run a shell script','sh file',function(pr){
     pr.csh&&pr.perror?['with no file, at the terminal, starts a bourne shell, with its $ prompt, until exit or end of file (^D).']:[],[
     '',
     '-c string   runs the commands in string instead.'])];
-},function(a,raw){
+},function(a,raw){var back=P.keep();shRun(a,raw);P.queue(back,true)}); /* a process of its own: what it does to its variables and directory goes with it */
+function shRun(a,raw){
   if(!a.length&&P.stdin()){P.runScript(P.stdin().splice(0));return} /* echo ls | sh: the commands come in on its standard input */
   if(!a.length){P.typeLine('usage: '+P.man.sh.syn);return}
   var c=a[0]==='-c'&&/^\s*\S+\s+(?:-c|'-c')\s+(.*)$/.exec(raw||''); /* sh -c 'a command'; '-c' as env passes it on */
   if(c){P.runScript([P.unquote(c[1])]);return}
   var n=P.unread(P.find(a[0]));
-  if(n&&n.prot&&n.type!=='d'&&P.profile.bash){ /* dash: sh: 0: cannot open f: ..., and exit 2; bash: bash: f: ..., and 126 */
-    if(dash()){P.typeLine('sh: 0: cannot open '+a[0]+': Permission denied','err');P.queue(function(){P.status(2)})}
-    else{P.typeLine('bash: '+a[0]+': Permission denied','err');P.queue(function(){P.status(126)})}
+  function fail(m,st){P.typeLine(m,'err');P.queue(function(){P.status(st)})}
+  if(P.profile.bash&&(!n||n.type==='d')&&!(n&&n.prot)){ /* none: dash's sh: 0: cannot open f: No such file, exit 2; bash's bash: f: No such file or directory, 127.
+                                                     A folder: dash reads nothing from it, and exits 0; bash: f: f: Is a directory, 126 */
+    if(dash()){if(!n)fail('sh: 0: cannot open '+a[0]+': No such file',2);else P.status(0)}
+    else if(!n)fail('bash: '+a[0]+': No such file or directory',127);
+    else fail(a[0]+': '+a[0]+': Is a directory',126);
+    return;
+  }
+  if(n&&n.prot&&P.profile.bash){ /* dash: sh: 0: cannot open f: ..., and exit 2; bash: bash: f: ..., and 126 */
+    if(dash())fail('sh: 0: cannot open '+a[0]+': Permission denied',2);
+    else fail('bash: '+a[0]+': Permission denied',126);
     return;
   }
   if(!n||n.type==='d'||n.prot){P.typeLine(a[0]+': cannot open','err');return}
   P.runScript(P.text(n),a.slice());
-});
+}
 /* the shell's own: read, shift, break, continue and : */
 function builtin(names,run){P.command({names:names,noHelpFlag:true,run:run})}
 builtin([':'],function(){P.status(0)});
@@ -716,6 +809,7 @@ function bashN(name,a,fatal){ /* bash's get_numeric_arg: null after an error (fa
   return parseInt(x,10);
 }
 function loopN(what,a){ /* break [n], continue [n]: bash's, and the Bourne shell's; csh's take no n, and V7's continue ignores one (xec.c) */
+  if(P.profile.bash&&!dash()&&!P.loops()){P.typeLine(P.bashAt()+what+": only meaningful in a `for', `while', or `until' loop",'err');P.queue(function(){P.status(0)});return} /* bash's check_loop_level, before it reads n: no loop here, as at the prompt or in a ( ) (loop_level = 0) */
   if(cshNow()||a[0]===undefined||(what==='continue'&&oldSh())){P.loop(what);return}
   if(!P.profile.bash&&!P.loops())return; /* the Bourne shell reads n only inside a loop (xec.c: execbrk=loopcnt, and stoi only then) */
   var n=P.profile.bash?bashN(what,a,true):stoi(a[0]);
@@ -844,14 +938,14 @@ function testExpr(w,name){ /* name: the command's, for bash's error; a number ba
     var t=w[i];
     if(t==='!'){var r=one(i+1);return {v:!r.v,i:r.i}}
     if(P.profile.bash&&/^-[hL]$/.test(t)&&w[i+1]!==undefined){var l=P.find(w[i+1],true,false,true);return {v:!!l&&l.type==='s',i:i+2}} /* bash: a symbolic link (lstat); V7's and 4.3BSD's test had no -h */
-    if(/^-[frwdszn]$/.test(t)){
+    if(/^-[frwdszn]$/.test(t)||t==='-x'&&(P.profile.bash||P.profile.sysv)){ /* -x: not in V7's test, nor 4.3BSD's */
       var x=w[i+1],n=x===undefined?null:P.named(x);
       if(t==='-z')return {v:!x,i:i+2};
       if(t==='-n')return {v:!!x,i:i+2};
       if(t==='-d')return {v:!!n&&n.type==='d',i:i+2};
       if(t==='-f')return {v:!!n&&n.type!=='d',i:i+2};
       if(t==='-s')return {v:!!n&&P.fsize(n)>0,i:i+2};
-      return {v:!!n&&!n.prot,i:i+2};
+      return {v:P.access(n,t.charAt(1)),i:i+2}; /* -r -w -x: access(2), what its mode lets who is logged in do */
     }
     var op=w[i+1],y=w[i+2];
     if(op==='=='&&P.profile.bash){if(dash())throw {bad:P.bashAt()+name+': '+t+': unexpected operator'};op='='} /* bash's ==; dash's test has none */
@@ -911,7 +1005,7 @@ cmd('set','print the shell variables','set',function(pr){ /* the page of csh's s
     'arg ...   the first word that is not an option, and those after it, become the positional parameters $1, $2 ... ($# and $@).']];
   return [null,['prints the variables the shell knows about.']];
 },function(a){ /* the Bourne shell's: set [ -flags [ arg ... ] ] (V7's xec.c SYSSET and args.c options): the flags are taken and change nothing here; the args become $1 ... */
-  if(!a.length){P.say(['HOME='+P.st.home,'IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> '].concat(P.envRows()));return}
+  if(!a.length){var h=P.homeVar();P.say((h===null||P.has(P.env,'HOME')?[]:['HOME='+h]).concat(['IFS=','LOGNAME='+P.st.user,'PS1=$ ','PS2=> ']).concat(P.envRows()));return} /* HOME: not when it is unset (Debian), nor twice when it is a variable */
   var r=a.slice();
   if(r[0].charAt(0)==='-'){
     var f=r.shift();
@@ -936,6 +1030,7 @@ cmd('ln','make a link','ln target [ newname ]',function(pr){
   }
   if(!a.length){P.say(P.profile.perror?['Usage: ln [ -s ] f1','or: ln [ -s ] f1 f2','ln [ -s ] f1 ... fn d2']:['Usage: ln target [ newname ]']);return}
   var n=P.named(a[0]),to=P.norm(a[1]||a[0].split('/').pop());
+  if(!n&&!v7&&!bsd){P.typeLine('ln: cannot access '+a[0],'err');return} /* System V's cp/mv/ln (SysIII and SVR2 mv.c, and Solaris's): stat() of the source failed */
   if(!n||n.type==='d'||n.prot){P.typeLine('ln: can\'t link '+a[0],'err');return}
   var ex=P.find(to,true);
   if(!ex&&(P.isImmutable(n)||P.immutable(to))){P.notPermitted('ln',a[1]||a[0].split('/').pop(),a[0]);return} /* no hard link to an immutable file, nor in an immutable folder */

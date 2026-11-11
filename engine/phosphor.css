@@ -113,6 +113,7 @@ body{
 .edge.r{right:calc(var(--fs)*.45)}
 .edge[hidden]{display:none}
 .fcur{background:var(--phos);color:#020603;text-shadow:none}
+.cursor.mid{margin-left:0;margin-right:-.62em;position:relative;mix-blend-mode:difference} /* over a character typed after it: the block shows it in reverse and takes no room */
 #term.idle .cursor{animation:blink 1.06s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 
