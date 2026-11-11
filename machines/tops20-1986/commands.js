@@ -399,18 +399,19 @@ cmd('LOGIN','','user',function(a){
   P.ask('Password: ',go,true,true);
 },{login:true,out:true,help:'User name'});
 function jobLine(n){return [' Job '+JOB+' on TTY'+TTY+' '+dt(n)+', Last Login '+dt(S.last)]}
-function run(a,where,missing){ /* R and RUN: the program the first word names, then only a switch or the end of the line
+function run(a,raw,where){ /* R and RUN: the program the first word names, then only a switch or the end of the line
   (the EXEC's GET1S and GSWIS: /USE-SECTION, else CONFIRM), so nothing goes on to the program; typed at the @ prompt by
-  its own name, a program has the rest of the line in the rescan buffer */
-  if(!a[0]){err('?Missing '+missing);return}
+  its own name, a program has the rest of the line in the rescan buffer. No name: GTJFN's GJFX33, which CMERRX gives with
+  the rest of the line as typed, if any (CPFN, CMERR$): R /FOO, RUN SYS: (so TOPS-20 7.1's EXEC under KLH10) */
+  if(!a[0]){err('?Filename was not specified');return}
   var r=program(a[0].replace(/\/.*$/,''),where),sw=(a[0].match(/\/.*$/)||[''])[0]+a.slice(1).join('');
-  if(!r.S.name){err('?Missing '+missing);return} /* a switch or a device alone names no program: R /USE-SECTION:1, RUN SYS: */
+  if(!r.S.name){err('?Filename was not specified - "'+String(raw||a.join(' ')).replace(/\([^)]*\)/g,' ').trim().replace(/^[^\s\/]+\s*/,'')+'"');return}
   if(!r.e){err('?File not found - "'+said(r.S)+'"');return}
   if(sw&&!/^(\/U(S(E(-(S(E(C(T(I(O(N)?)?)?)?)?)?)?)?)?)?:\d+)+$/i.test(sw)){err(sw.charAt(0)==='/'?'?Does not match switch - "'+up(sw.split('/')[1].split(':')[0])+'"':'?Not confirmed');return}
   runFile(r,[]);
 }
-cmd('R','(PROGRAM)','prog',function(a){run(a,'sys','program name')});
-cmd('RUN','(PROGRAM)','file',function(a){run(a,null,'file name')});
+cmd('R','(PROGRAM)','prog',function(a,raw){run(a,raw,'sys')});
+cmd('RUN','(PROGRAM)','file',function(a,raw){run(a,raw,null)});
 cmd('HELP','','text',function(a){helpOn(a[0])},{kw:function(){return helpTopics()},kwHelp:'RETURN for general help',kwHead:['  or one of the following:']});
 
 /* ---------- HELP: the files in HLP:, each a line or two ---------- */

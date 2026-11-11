@@ -1131,6 +1131,7 @@ function open$(p,fl,va){
   if(ap==='/dev/urandom'||ap==='/dev/random')return $newfd({rand:true,pos:0});
   if(ap==='/dev/null')return $newfd({nul:true,pos:0});
   var n=$E.fs.files.get(ap);
+  if(n&&n.deny)return $err(13); /* a file its mode does not let the player open: EACCES */
   if($E.fs.dirs.has(ap)){if((fl&3)!==0)return $err(21);return $newfd({dir:ap,pos:0})}
   if(!n){
     if(!(fl&64))return $err(2);
@@ -6254,6 +6255,7 @@ P.command({names:['nethack'],run:function(a,raw,words){
       var home=st.home||'/',rcp=home.replace(/\/$/,'')+'/.nethackrc',rc=P.unread(P.find(rcp));
       $FS.files.delete(rcp);
       if(rc&&rc.type!=='d'&&!rc.prot){var tx=P.text(rc).join('\n')+'\n',u=new Uint8Array(tx.length);for(var i=0;i<tx.length;i++)u[i]=tx.charCodeAt(i)&255;$FS.dirs.add(home);$FS.files.set(rcp,{data:u,size:u.length,mtime:t0})}
+      else if(rc&&rc.type!=='d'){$FS.dirs.add(home);$FS.files.set(rcp,{data:new Uint8Array(0),size:0,mtime:t0,deny:true})} /* there, and not to be read: files.c says it couldn't open it, and goes on without it */
       var vars={USER:user,LOGNAME:user,HOME:home,TERM:'vt100',SHELL:'/bin/sh'};
       if(P.env&&typeof P.env.NETHACKOPTIONS==='string')vars.NETHACKOPTIONS=P.env.NETHACKOPTIONS;
       sig=$keptSig($FS);

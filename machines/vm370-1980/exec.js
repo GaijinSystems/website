@@ -78,6 +78,7 @@ V.abend=function(msg){
   if(msg)err(msg);
   V.execs.forEach(function(S){S.stop=true});
   V.stack=[];V.abended=true;
+  V.edRead=null;V.inSubset=false;V.subNext=null;V.edOwe=false; /* and an edit, in its CMS subset or not, is over: its read too */
 };
 /* DISCONN from an EXEC in the one queue: CMS goes on in a queue of its own (V.dark, cms.js), from where each EXEC was, so
    the terminal is CP's at once, at VM/370 ONLINE; the steps it had left in the one queue do nothing. Disconnected, a
@@ -100,11 +101,14 @@ V.resume=function(){
   return true;
 };
 /* after an attention to a running command or EXEC, the line typed not HX: what it had still to type is typed, and every
-   EXEC carries on where it was, the innermost first */
+   EXEC carries on where it was, the innermost first. With EDIT in its CMS subset, only the EXECs its command started: the
+   ones below the edit are waiting for the EDIT command, which goes on until FILE or QUIT, and carry on then (V.edDone) */
+V.running=function(){return V.subNext?V.execs.slice(V.subBase||0):V.execs};
 V.carryOn=function(){
-  if(V.execs.length)V.rc=0; /* a command at the terminal keeps its own */
+  var L=V.running();
+  if(L.length)V.rc=0; /* a command at the terminal keeps its own */
   V.flush();
-  V.execs.slice().reverse().forEach(function(S){
+  L.slice().reverse().forEach(function(S){
     P.queue(function(){carry(S)});
     P.queue(function(){done(S)});
   });
@@ -296,6 +300,7 @@ V.execCommand=function(C,S){ /* a command from an EXEC: no implied CP; an unknow
   if(w==='EXEC'||V.find(w,'EXEC','*'))return V.exec(C,{});
   var n=V.cmsName(w);
   if(!n&&!V.find(w,'MODULE','*'))return -3;
+  if(V.inSubset&&V.subsetRefuses(w)){V.negits=true;return -2} /* in EDIT's CMS subset, one for the user area: -2, quietly (edit.js) */
   V.nomsg=!S.msg&&/^(ERASE|LISTFILE|RENAME|STATE)$/.test(n||'');
   var rc=V.command(C.join(' '),{exec:S});
   V.nomsg=false;

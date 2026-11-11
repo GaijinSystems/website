@@ -18,8 +18,8 @@
 
    Differences:
    - getpid() seeds rand(); there are no process ids here, so a random number from 1 to 30000 stands in for one.
-   - The save file is $HOME/Bstar in the C and battlestar/Bstar in this browser's storage. The log, lib/battlestar.log, is
-     battlestar/log, its last 100 lines.
+   - The save file is $HOME/Bstar in the C; here the Bstar file stands for a record in this browser's storage, one for
+     each home (battlestar/home/...). The log, lib/battlestar.log, is battlestar/log, its last 100 lines.
    - At the end of a pipe the C prompts forever. This goes on to the keyboard instead.
    - With output to a pipe or file, the flight has no screen and takes the path the C has for one that cannot be had
      ("Whoops!  No more memory...").
@@ -882,7 +882,19 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
     return 0;
   }
   /* ---------- save.c ---------- */
-  function home(){var h=String(P.st.home||'/');return h+'/Bstar'}
+  function home(){var e=P.env&&P.env.HOME,h=e!=null?String(e):String(P.st.home||'/');return h+'/Bstar'} /* save.c: getenv("HOME") */
+  /* the record a Bstar stands for: each home its own, so one user's save or -r leaves another's alone. A file names its
+     record (store), which goes with it when a login renames the home; a new one is named by the folder it is made in */
+  function recKey(f){
+    if(f&&typeof f.store==='string'&&/^battlestar\/(Bstar|home)/.test(f.store))return f.store;
+    return homeKey();
+  }
+  function homeKey(){
+    var d=P.norm(home()).replace(/\/[^\/]*$/,'').split('/').filter(Boolean).map(function(s){return s.replace(/[^\w-]/g,'_')});
+    return ['battlestar','home'].concat(d).join('/');
+  }
+  var OLD='battlestar/Bstar'; /* the one record every home shared, before the Bstar file stood for it */
+  function unjson(s){if(typeof s==='string'){try{s=JSON.parse(s)}catch(e){s=null}}return s}
   var SAVED=['direction','position','time','fuel','torps','carrying','encumber','rythmn','followfight','ate','snooze','meetgirl','followgod','godready','win','wintime','matchlight','matchcount','loved','pleasure','power','ego'];
   function good(s){
     if(!s||typeof s!=='object')return false;
@@ -899,9 +911,13 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
   }
   /* a file that cannot be read back is as if it were not there */
   function restore(){
-    var s=P.saved('battlestar/Bstar');
-    if(typeof s==='string'){try{s=JSON.parse(s)}catch(e){s=null}}
-    if(s&&s.file&&!P.find(home(),true)){P.save('battlestar/Bstar',null);s=null} /* its file, rm'd */
+    var f=P.find(home(),true),k=recKey(f),s=unjson(P.saved(k));
+    var had=s!=null; /* a save of this home's own, even one whose file is gone */
+    if(s&&s.file&&!f){P.save(k,{gone:1});s=null} /* its file, rm'd: the record says so, so that the next -r does not take over the shared one either */
+    if(!f&&!had){ /* a save from before there was a file for it: this home takes it over, once; not after its own file was rm'd */
+      var o=unjson(P.saved(OLD));
+      if(o&&!o.file&&good(o)&&P.save(k,o)){P.save(OLD,null);s=o}
+    }
     if(!good(s)){
       pr(home()+': No such file or directory\n');
       return; /* location stays unset: news() falls over it */
@@ -920,10 +936,12 @@ P.command({names:['battlestar'],run:function(a,raw,argv){
     var s={WEIGHT:WEIGHT,CUMBER:CUMBER,clock:clock,day:location===dayfile?1:0,rooms:[],inven:inven,wear:wear,injuries:injuries,notes:notes,direction:direction,position:position,time:time,fuel:fuel,torps:torps,carrying:carrying,encumber:encumber,rythmn:rythmn,followfight:followfight,ate:ate,snooze:snooze,meetgirl:meetgirl,followgod:followgod,godready:godready,win:win,wintime:wintime,matchlight:matchlight,matchcount:matchcount,loved:loved,pleasure:pleasure,power:power,ego:ego};
     for(var n=1;n<=NUMOFROOMS;n++)s.rooms.push([location[n].link,location[n].objects]);
     s.file=1;
-    if(!P.save('battlestar/Bstar',s))return;
-    var f=P.find(home(),true),size=JSON.stringify(s).length; /* the file that stands for the record, where save.c's fopen(home, "w") puts it: 0666 less the umask */
-    if(f&&f.type==='f'){f.date=P.now();f.size=size}
-    else if(!f&&P.canWrite(P.norm(home())))P.put(P.norm(home()),'f',{owner:P.st.user,date:P.now(),bin:true,size:size,store:'battlestar/Bstar',mode:'-rw-r--r--'});
+    var f=P.find(home(),true),k=recKey(f);
+    if(k===OLD)k=homeKey(); /* a Bstar from when every home shared the one record: this home's own from now on */
+    if(!P.save(k,s))return;
+    var size=JSON.stringify(s).length; /* the file that stands for the record, where save.c's fopen(home, "w") puts it: 0666 less the umask */
+    if(f&&f.type==='f'){f.date=P.now();f.size=size;f.store=k}
+    else if(!f&&P.canWrite(P.norm(home())))P.put(P.norm(home()),'f',{owner:P.st.user,date:P.now(),bin:true,size:size,store:k,mode:'-rw-r--r--'});
   }
   /* ---------- misc.c ---------- */
   function card(arr,size){var i=0;for(var k=0;k<size;k++)if(arr[k])i++;return i}

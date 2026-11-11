@@ -13,8 +13,8 @@ function Ed(name){
   function snapshot(){return {buf:buf.slice(),texts:buf.map(function(x){return x.t}),dot:dot}}
   function save(){undo=snapshot()}
   function compile(src,flags){
-    if(src===''){if(!lastRe)fail('no previous pattern');return new RegExp(lastRe.source,flags||'')}
-    try{lastRe=new RegExp(P.bre(src),flags||'')}catch(e){fail('bad pattern')}
+    if(src===''){if(!lastRe)fail('no previous pattern');return P.safeRe(lastRe.source,flags||'')}
+    try{lastRe=P.safeRe(P.bre(src),flags||'')}catch(e){fail('bad pattern')}
     return lastRe;
   }
   function delim(s,i,d){ /* the text up to an unescaped d, and where it ended */

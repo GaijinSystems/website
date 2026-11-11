@@ -36,7 +36,7 @@ Phosphor.setup(function(P){
   P.env.PATH='/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games';
   P.env.TERM='vt220';P.env.SHELL='/bin/bash';P.env.LANG='C.UTF-8';P.env.MAIL='/var/mail/'+ST.user;
   P.env.INFOCOM_PATH='/usr/local/share/games/zork';
-  Object.defineProperty(P.env,'PWD',{get:function(){return ST.cwd},set:function(){},enumerable:true,configurable:true});
+  D.pwd(); /* PWD, which follows cd (commands.js) */
   P.profile.loginPrompt=ST.hostname+' login: ';
 
   ['/usr/bin','/usr/sbin','/usr/lib','/usr/lib64','/usr/local/bin','/usr/local/games','/usr/share','/usr/games','/etc','/boot','/dev','/home','/media','/mnt','/opt','/proc','/run','/srv','/sys','/var']

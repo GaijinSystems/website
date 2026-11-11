@@ -44,6 +44,209 @@ function bre(s){
   return o;
 }
 
+/* A pattern that cannot freeze the page. grep's, ed's and vi's patterns become RegExps, whose backtracking takes 2^n steps on
+   \(a*\)*b against a line of n a's; GNU grep's DFA and glibc's regexec take time in proportion to the line. SafeRe is the
+   RegExp with its exec (and so test, replace and match) run by a backtracking matcher that never tries the same instruction at
+   the same place twice (RE2's BitState): the same matches, the same leftmost alternative first and the same groups, in steps
+   bounded by the pattern's size times the line's. A backreference makes the groups it names part of that place, checked first
+   against the pattern with any text in its stead, and then given a budget: past it, exec says no and sets overflow, as
+   regexec's REG_ESPACE does. A pattern with no repetition or alternation, or with what it does not know (a lookaround of more
+   than one character, an octal escape), is the RegExp's own */
+var SAFE_BUDGET=5e5,SAFE_STEPS=1e6,SAFE_BAIL={},SAFE_BIG={}; /* BUDGET: steps with a backreference; STEPS: without, past the table's 4e6 places; BIG: a program too large to build */
+function reCanon(c){var u=String.fromCharCode(c).toUpperCase();if(u.length!==1)return c;var cu=u.charCodeAt(0);return c>=128&&cu<128?c:cu} /* the spec's Canonicalize, without the u flag */
+function reLower(c){var l=String.fromCharCode(c).toLowerCase();return l.length===1?l.charCodeAt(0):c}
+function reWord(c){return c>=48&&c<=57||c>=65&&c<=90||c===95||c>=97&&c<=122}
+function reSpace(c){return c===9||c===10||c===11||c===12||c===13||c===32||c===0xa0||c===0x1680||c>=0x2000&&c<=0x200a||c===0x2028||c===0x2029||c===0x202f||c===0x205f||c===0x3000||c===0xfeff}
+function reParse(src){ /* a RegExp's source (already valid) as a tree, or SAFE_BAIL thrown */
+  var i=0,n=src.length,ng=0,gi=0,hard=false,refs=[];
+  for(var k=0,cl=false;k<n;k++){var ch=src.charAt(k);if(ch==='\\'){k++;continue}if(cl){if(ch===']')cl=false;continue}if(ch==='[')cl=true;else if(ch==='('&&src.charAt(k+1)!=='?')ng++}
+  function bail(){throw SAFE_BAIL}
+  function alt(){var L=[seq()];while(src.charAt(i)==='|'){i++;L.push(seq())}if(L.length>1)hard=true;return L.length>1?{t:'alt',L:L}:L[0]}
+  function seq(){var L=[];while(i<n&&src.charAt(i)!=='|'&&src.charAt(i)!==')')L.push(term());return {t:'seq',L:L}}
+  function term(){
+    var a=atom(),c=src.charAt(i),q=null,m;
+    if(c==='*')q=[0,Infinity];else if(c==='+')q=[1,Infinity];else if(c==='?')q=[0,1];
+    else if(c==='{'&&(m=/^\{(\d+)(,(\d*))?\}/.exec(src.slice(i)))){q=[+m[1],m[2]?(m[3]===''?Infinity:+m[3]):+m[1]];i+=m[0].length-1}
+    if(!q)return a;
+    i++;
+    if(a.t==='look')bail();
+    var greedy=true;if(src.charAt(i)==='?'){greedy=false;i++}
+    hard=true;return {t:'rep',e:a,min:q[0],max:q[1],greedy:greedy};
+  }
+  function atom(){
+    var c=src.charAt(i++);
+    if(c==='^')return {t:'bol'};
+    if(c==='$')return {t:'eol'};
+    if(c==='.')return {t:'any'};
+    if(c==='[')return cls();
+    if(c==='\\')return esc(false);
+    if(c==='('){
+      var e,look=null;
+      if(src.charAt(i)==='?'){
+        if(src.charAt(i+1)===':'){i+=2;e=alt();i++;return {t:'group',n:0,e:e}}
+        look=/^\?(=|!|<=|<!)/.exec(src.slice(i));if(!look)bail();i+=look[0].length;
+        e=alt();i++;
+        var one=e.t==='seq'&&e.L.length===1&&/^(char|set|any)$/.test(e.L[0].t)?e.L[0]:e.t==='seq'&&!e.L.length?null:bail();
+        return {t:'look',ahead:look[1].charAt(0)!=='<',neg:/!/.test(look[1]),m:one};
+      }
+      var g=++gi;e=alt();i++;return {t:'group',n:g,e:e};
+    }
+    return {t:'char',c:c.charCodeAt(0)};
+  }
+  function esc(inCls){
+    var c=src.charAt(i++),m;
+    if(/[dDwWsS]/.test(c)){var f=c.toLowerCase()==='d'?function(x){return x>=48&&x<=57}:c.toLowerCase()==='w'?reWord:reSpace;return {t:'set',f:c===c.toLowerCase()?f:function(x){return !f(x)}}}
+    if(c==='b')return inCls?{t:'char',c:8}:{t:'wb',neg:false};
+    if(c==='B'&&!inCls)return {t:'wb',neg:true};
+    if(c==='0'&&!/\d/.test(src.charAt(i)))return {t:'char',c:0};
+    if(/\d/.test(c)){
+      if(inCls)bail();
+      m=/^\d*/.exec(src.slice(i))[0];var r=+(c+m);if(c==='0'||r>ng)bail();i+=m.length;refs.push(r);hard=true;return {t:'ref',n:r};
+    }
+    var T={t:9,n:10,v:11,f:12,r:13};if(has(T,c))return {t:'char',c:T[c]};
+    if(c==='x'&&(m=/^[0-9a-fA-F]{2}/.exec(src.slice(i)))){i+=2;return {t:'char',c:parseInt(m[0],16)}}
+    if(c==='u'&&(m=/^[0-9a-fA-F]{4}/.exec(src.slice(i)))){i+=4;return {t:'char',c:parseInt(m[0],16)}}
+    if(c==='c'){if(!/[A-Za-z]/.test(src.charAt(i)))bail();return {t:'char',c:src.charCodeAt(i++)%32}}
+    return {t:'char',c:c.charCodeAt(0)};
+  }
+  function cls(){
+    var neg=false,R=[],F=[];
+    if(src.charAt(i)==='^'){neg=true;i++}
+    function one(){var c=src.charAt(i++);if(c==='\\'){var e=esc(true);return e.t==='char'?{c:e.c}:{f:e.f}}return {c:c.charCodeAt(0)}}
+    function add(x){if(x.f)F.push(x.f);else R.push([x.c,x.c])}
+    while(i<n&&src.charAt(i)!==']'){
+      var a=one();
+      if(src.charAt(i)==='-'&&i+1<n&&src.charAt(i+1)!==']'){i++;var b=one();if(a.f||b.f){add(a);add({c:45});add(b)}else R.push([a.c,b.c]);continue}
+      add(a);
+    }
+    i++;
+    return {t:'set',f:function(x){for(var k=0;k<R.length;k++)if(x>=R[k][0]&&x<=R[k][1])return true;for(k=0;k<F.length;k++)if(F[k](x))return true;return false},neg:neg};
+  }
+  var tree=alt();
+  if(i<n)bail();
+  return {tree:tree,ng:ng,hard:hard,refs:refs.filter(function(r,k){return refs.indexOf(r)===k})};
+}
+function reCompile(T,ic,pre){ /* the tree as a program; pre: each backreference as any text at all */
+  var prog=[],act=[],nreg=0;
+  var work=0;
+  function emit(o){if(prog.length>=20000)throw SAFE_BIG;o.act=act.length?act.slice():null;prog.push(o);return prog.length-1} /* stopped as it grows: (a{1000}){1000} is never built */
+  function pred(nd){
+    var f=nd.t==='any'?function(x){return x!==10&&x!==13&&x!==0x2028&&x!==0x2029}:nd.t==='char'?(ic?function(x){return reCanon(x)===cc}:function(x){return x===nd.c}):nd.f,cc=ic?reCanon(nd.c):0;
+    if(nd.t==='set'&&ic){var g=f;f=function(x){var u=reCanon(x);return g(x)||g(u)||g(reLower(x))||g(reLower(u))}}
+    if(nd.neg){var h=f;return function(x){return !h(x)}}
+    return f;
+  }
+  function groups(nd,L){if(nd.t==='group'&&nd.n)L.push(nd.n);if(nd.e)groups(nd.e,L);if(nd.L)nd.L.forEach(function(x){groups(x,L)});return L}
+  function comp(nd){
+    var k,j,J;
+    if(++work>2e5)throw SAFE_BIG; /* (?:){99999999} emits nothing, but would still be gone through that often */
+    switch(nd.t){
+    case 'char':case 'set':case 'any':emit({op:0,f:pred(nd)});return;
+    case 'bol':emit({op:1,f:function(s,p){return p===0}});return;
+    case 'eol':emit({op:1,f:function(s,p){return p===s.length}});return;
+    case 'wb':emit({op:1,f:function(s,p){var a=p>0&&reWord(s.charCodeAt(p-1)),b=p<s.length&&reWord(s.charCodeAt(p));return (a!==b)!==nd.neg}});return;
+    case 'look':
+      var lf=nd.m?pred(nd.m):null;
+      emit({op:1,f:function(s,p){var q=nd.ahead?p:p-1,y=lf?q>=0&&q<s.length&&lf(s.charCodeAt(q)):true;return y!==nd.neg}});return;
+    case 'group':
+      if(!nd.n){comp(nd.e);return}
+      emit({op:4,k:2*nd.n});comp(nd.e);emit({op:4,k:2*nd.n+1});return;
+    case 'seq':nd.L.forEach(comp);return;
+    case 'alt':
+      J=[];
+      for(k=0;k<nd.L.length-1;k++){var s=emit({op:2,x:0,y:0});prog[s].x=s+1;comp(nd.L[k]);J.push(emit({op:3,x:0}));prog[s].y=prog.length}
+      comp(nd.L[k]);J.forEach(function(x){prog[x].x=prog.length});return;
+    case 'ref':
+      if(pre){var l0=emit({op:2,x:0,y:0});emit({op:0,f:function(){return true}});emit({op:3,x:l0});prog[l0].x=l0+1;prog[l0].y=prog.length;return}
+      emit({op:6,n:nd.n});return;
+    case 'rep':
+      var G=groups(nd.e,[]),clr=function(){if(G.length)emit({op:5,g:G})};
+      for(k=0;k<nd.min;k++){clr();comp(nd.e)}
+      var opt=function(){var r=nreg++;emit({op:8,r:r});act.push(r);clr();comp(nd.e);emit({op:9,r:r});act.pop()}; /* past its minimum, an iteration that matched nothing fails (RepeatMatcher) */
+      if(nd.max===Infinity){var L0=emit({op:2,x:0,y:0});opt();emit({op:3,x:L0});prog[L0].x=nd.greedy?L0+1:prog.length;prog[L0].y=nd.greedy?prog.length:L0+1;return}
+      J=[];
+      for(k=nd.min;k<nd.max;k++){J.push(emit({op:2,x:0,y:0}));opt()}
+      J.forEach(function(x){prog[x].x=nd.greedy?x+1:prog.length;prog[x].y=nd.greedy?prog.length:x+1});return;
+    }
+  }
+  comp(T.tree);emit({op:7});
+  prog.nreg=nreg;prog.deep=prog.reduce(function(d,o){return Math.max(d,o.act?o.act.length:0)},0);
+  return prog;
+}
+function reRun(prog,ng,refs,ic,s,from,sticky,budget){ /* the leftmost match from from on: its group bounds, null, or false past the budget */
+  var n=s.length,W=n+1,m=prog.length,D=prog.deep+1,big=m*W*D>4e6,seen=refs.length||big?new Set():new Uint8Array(m*W*D),steps=0;
+  var caps=[],regs=[],stack=[];
+  for(var st=from;st<=n;st++){
+    for(var k=0;k<2*(ng+1);k++)caps[k]=-1;
+    caps[0]=st;stack.length=0;stack.push(0,st,-1);
+    while(stack.length){
+      var z=stack.pop(),pos=stack.pop(),pc=stack.pop();
+      if(z>=0){caps[z]=pos;continue} /* a group's bound put back */
+      if(z<-1){regs[-2-z]=pos;continue} /* where an iteration began, put back */
+      for(;;){
+        var o=prog[pc],e=0; /* e: of the iterations it is inside, how many have matched nothing yet; the loops' starts nest, so that is all they add to the place */
+        if(o.act)for(k=0;k<o.act.length;k++)if(regs[o.act[k]]===pos)e++;
+        if(refs.length){
+          var key=pc+','+pos+','+e;for(k=0;k<refs.length;k++)key+=','+caps[2*refs[k]]+','+caps[2*refs[k]+1];
+          if(seen.has(key))break;seen.add(key);if(++steps>budget)return false;
+        }else{var kk=(pc*W+pos)*D+e;if(big){if(seen.has(kk))break;seen.add(kk)}else{if(seen[kk])break;seen[kk]=1}if(big&&++steps>SAFE_STEPS)return false} /* each place once; past the table, not more than STEPS of them */
+        switch(o.op){
+        case 0:if(pos<n&&o.f(s.charCodeAt(pos))){pc++;pos++;continue}break;
+        case 1:if(o.f(s,pos)){pc++;continue}break;
+        case 2:stack.push(o.y,pos,-1);pc=o.x;continue;
+        case 3:pc=o.x;continue;
+        case 4:stack.push(0,caps[o.k],o.k);caps[o.k]=pos;pc++;continue;
+        case 5:for(k=0;k<o.g.length;k++){var g=o.g[k];stack.push(0,caps[2*g],2*g,0,caps[2*g+1],2*g+1);caps[2*g]=caps[2*g+1]=-1}pc++;continue;
+        case 6:
+          var a=caps[2*o.n],b=caps[2*o.n+1];
+          if(a<0||b<0){pc++;continue} /* a group that took part in nothing matches the empty string */
+          var len=b-a;if(pos+len>n)break;
+          for(k=0;k<len;k++){var x=s.charCodeAt(a+k),y=s.charCodeAt(pos+k);if(x!==y&&!(ic&&reCanon(x)===reCanon(y)))break}
+          if(k<len)break;
+          pos+=len;pc++;continue;
+        case 7:caps[1]=pos;return caps.slice();
+        case 8:stack.push(0,regs[o.r],-2-o.r);regs[o.r]=pos;pc++;continue;
+        case 9:if(pos===regs[o.r])break;pc++;continue;
+        }
+        break;
+      }
+    }
+    if(sticky)break;
+  }
+  return null;
+}
+class SafeRe extends RegExp{
+  constructor(src,flags){
+    super(src,flags);
+    var T=null;
+    try{if(!/[msuv]/.test(this.flags)){T=reParse(this.source);if(!T.hard)T=null;else{T.prog=reCompile(T,this.ignoreCase,false);if(T.refs.length)T.pre=reCompile(T,this.ignoreCase,true)}}}catch(e){if(e===SAFE_BIG)T=reFlat(T)?null:{big:true};else if(e!==SAFE_BAIL)throw e;else T=null} /* too big to run safely: it matches nothing, as overflow (regcomp's REG_ESPACE); one fixed repeat of plain characters (a{30000}) is the RegExp's own, which runs it straight through */
+    this.safe=T;this.overflow=false;
+  }
+  exec(s){
+    var T=this.safe;
+    if(!T)return super.exec(s);
+    if(T.big||this.overflow){this.overflow=true;if(this.global||this.sticky)this.lastIndex=0;return null}
+    s=String(s);
+    var g=this.global||this.sticky,from=g?Math.max(+this.lastIndex||0,0):0;
+    if(from>s.length){if(g)this.lastIndex=0;return null}
+    var pre=T.pre&&reRun(T.pre,T.ng,[],this.ignoreCase,s,from,this.sticky,0),c=pre===false?false:T.pre&&!pre?null:reRun(T.prog,T.ng,T.refs,this.ignoreCase,s,from,this.sticky,SAFE_BUDGET);
+    if(c===false){this.overflow=true;c=null}
+    if(!c){if(g)this.lastIndex=0;return null}
+    if(g)this.lastIndex=c[1];
+    var r=[];for(var k=0;k<=T.ng;k++)r.push(c[2*k]>=0&&c[2*k+1]>=0?s.slice(c[2*k],c[2*k+1]):undefined);
+    r.index=c[0];r.input=s;r.groups=undefined;
+    return r;
+  }
+}
+function reFlat(T){ /* the parsed pattern has one repeat at most, of a fixed count (a{30000}) and of plain characters, and no alternation or backreference: nothing to go back over */
+  var reps=0;
+  function one(nd){return /^(char|set|any)$/.test(nd.t)}
+  function body(e){return one(e)||e.t==='group'&&e.e.t==='seq'&&e.e.L.length>0&&e.e.L.every(one)}
+  function ok(nd){if(nd.t==='ref'||nd.t==='alt')return false;if(nd.t==='rep')return ++reps===1&&nd.min===nd.max&&body(nd.e);return (!nd.e||ok(nd.e))&&(nd.L||[]).every(ok)}
+  return !!(T&&T.tree&&!T.refs.length&&ok(T.tree));
+}
+function safeRe(src,flags){return new SafeRe(src,flags)}
+
 function list(v){return v.split(',').map(function(x){return x.trim().toLowerCase()}).filter(Boolean)} /* a, B ,c -> [a,b,c] */
 function paths(v){return v.split(',').map(function(x){return x.trim()}).filter(Boolean)} /* the same, keeping case: file names */
 function unquote(s){return s.replace(/^(['"])((?:(?!\1).)*)\1$/,'$2')} /* one quoted string only: "a" ; "b" keeps its quotes */
@@ -196,6 +399,7 @@ var PROFILE=(function(){
     else if(k==='perror')P.perror=yes(v);                 /* name: reason, the way Berkeley's programs complain */
     else if(k==='csh')P.csh=yes(v);                       /* !! and history, finger, w */
     else if(k==='signals')P.signals=v.toLowerCase();       /* irix: IRIX's signal numbers, not 4.3BSD's */
+    else if(k==='sysv')P.sysv=yes(v);                     /* System V's userland: its sh, and its tools' ways and words */
     else if(k==='login')P.noLogin=!yes(v);                /* no login: it just boots */
     else if(k==='case')P.caseless=/^(ignore|insensitive|no)$/i.test(v); /* case: ignore = FILE and file are the same */
     else if(k==='year'){var y=parseInt(v,10);if(y>0)P.year=y}
@@ -344,7 +548,7 @@ function announce(s){
   trim(log,50);
 }
 var coarse=matchMedia('(pointer:coarse)').matches;
-var chain=Promise.resolve(),buf='',bufNode=null,hist=[],hi=0,HMAX=50; /* what was typed, for !n and the arrows: the last HMAX lines */
+var chain=Promise.resolve(),buf='',bufNode=null,bufTail=null,hist=[],hi=0,HMAX=50; /* what was typed, for !n and the arrows: the last HMAX lines */
 if(PROFILE.title)document.title=PROFILE.title;
 var badge=$('.badge');if(badge)badge.textContent=PROFILE.badge;
 
@@ -375,7 +579,7 @@ function queue(fn,always){
       inner=sc;ASIDE=sd;
       if(job){fg=procGet();procPut(job.ctx)}
       try{ret=fn()}
-      catch(e){if(e!==TTY||!job)throw e;ret=Promise.reject(e)}
+      catch(e){if(tooDeep(e)){deepSay();return}if(e!==TTY||!job)throw e;ret=Promise.reject(e)}
       finally{inner=saved;ASIDE=was;if(fg){job.ctx=procGet();procPut(fg)}}
       return job?Promise.resolve(ret).catch(function(e){if(e!==TTY)throw e;return ttyStop(job).then(function(go){if(go)return once()})}):ret;
     }
@@ -399,6 +603,10 @@ function aside(fn,job){ /* job: a background job's own queue (see startJob) */
   return h;
 }
 function pause(ms){return queue(function(){return sleep(ms)})}
+/* a line nested too deep for the browser's stack (thousands of ${ or ( deep): bash itself crashes on one deep enough; here the
+   command ends with an error, and the shell goes on */
+function tooDeep(e){return e instanceof RangeError&&/call stack/i.test(e.message)}
+function deepSay(){typeLine((PROFILE.bash?DASH?'sh: ':'bash: ':'')+'line too deeply nested','err');STATUS=2}
 
 /* ---------- sound (keyclicks; WebAudio only, no files) ---------- */
 var SND={ctx:null,noise:null,clicks:PROFILE.sound};
@@ -705,9 +913,10 @@ function showPrompt(p,mode){
   if(p)announce(UP(p)); /* login: and Password: ask for something; the shell prompt is just noise */
   var d=JOIN&&JOIN===out.lastElementChild?JOIN:document.createElement('div');d.className='line';d.cut=d===JOIN&&!!d.attnCut;JOIN=null; /* after the text cut short, when nothing came between; cut: by an attention (ATTN OFF), not an echo -n */
   if(MODE!=='read')HIDE=false;
-  bufNode=document.createTextNode(shownBuf());
-  d.appendChild(document.createTextNode(UP(p==null?(DASH&&BSH.length?(ST.user==='root'?'# ':'$ '):RP?PROFILE.rootPrompt:BSH.length?'$ ':promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);
+  bufNode=document.createTextNode(shownBuf());bufTail=document.createTextNode(''); /* bufTail: what is typed after the caret, beyond the cursor */
+  d.appendChild(document.createTextNode(UP(p==null?(DASH&&BSH.length?(ST.user==='root'?'# ':'$ '):RP?PROFILE.rootPrompt:shTop()?'$ ':promptFn?promptFn():PROFILE.prompt):p)));d.appendChild(bufNode);d.appendChild(cursor);d.appendChild(bufTail);
   if(TELE.on){ttStrikes(bufNode.previousSibling.data);bufNode.data=shownBuf()} /* typeahead, echoed from where the prompt leaves the carriage */
+  else renderBuf(); /* typeahead with the caret moved back: the cursor where it is */
   out.appendChild(d);trim(out,240);term.classList.add('idle');scrollBottom();
 }
 var promptFn=null; /* a machine whose prompt changes as you go */
@@ -720,11 +929,11 @@ function ttFree(fn){ /* fn once the teletype's carriage is back from a RETURN */
 function oops(who,x,n,old){ /* a file that would not open: the old wording, or Berkeley's where the machine asks for it */
   typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(!n?'No such file or directory':n.prot?'Permission denied':n.type==='d'?'Is a directory':'Not a directory'),'err');
 }
-function oopsW(who,x,old){ /* the same for a file that could not be made: no such folder, or not allowed there */
+function oopsW(who,x,old){ /* the same for a file that could not be made: no such folder, or not allowed there. old: the V7 wording, which 4.3BSD's sh keeps for a redirection */
   var up=String(x).replace(/\/+[^\/]*$/,'')||'/';
   if(immutable(norm(x),who!=='mkdir')){notPermitted(who,x);return}
   if(PROFILE.dos&&!PROFILE.dcl&&!who){typeLine('File creation error','err');return} /* COMMAND.COM's redirection: no room, or a read-only file there */
-  typeLine(!PROFILE.perror?old:(who?who+': ':'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
+  typeLine(!PROFILE.perror||!who&&old&&!CSH&&!PROFILE.bash?old:(who?who+': ':PROFILE.bash?bashAt():'')+x+': '+(x.indexOf('/')<0||find(up)?'Permission denied':'No such file or directory'),'err');
 }
 function tryHelp(me,msg,st,now){ /* a GNU program's usage error: what is wrong, where to look, and the status (queued, unless now; none if st is undefined) */
   typeLine(me+': '+msg,'err');typeLine("Try '"+me+" --help' for more information.",'err');
@@ -783,8 +992,8 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
   /* content wider than the glass: a sideways drag pans the view, and the next key or a resize goes back to following the cursor */
   var U=-1,cw=8,view={at:0,max:0},next=null,drag=null,glide=0;
   var mine=function(k){if(U>=0){follow();again()}keys(k)},h=hold(),shut=false;KEYS=mine;
-  h.hide=function(){h.off=true;if(KEYS===mine)KEYS=null;el.remove();edge.forEach(function(d){d.hidden=true});out.style.display='';term.scrollTop=term.scrollHeight}; /* off the glass, kept as it is */
-  h.show=function(){h.off=false;term.appendChild(el);out.style.display='none';term.classList.remove('idle');KEYS=mine;size();again()};
+  h.hide=function(){h.off=true;if(KEYS===mine)KEYS=null;el.remove();edge.forEach(function(d){d.hidden=true});out.style.display='';term.scrollTop=term.scrollHeight;T.forEach(halt)}; /* off the glass, kept as it is: a stopped process, whose timers wait */
+  h.show=function(){if(shut)return;h.off=false;T.forEach(arm);term.appendChild(el);out.style.display='none';term.classList.remove('idle');KEYS=mine;size();again()};
   h.kill=function(){S.close()};h.out=true;
   redraw=redraw||onResize;
   var said='',T=[],S={
@@ -831,13 +1040,13 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
       var b=parseFloat(getComputedStyle(el).fontSize),f=Math.min(b*S.cols/cols,b*S.rows/rows)*.995;
       if(f<b&&(o.clamp||f>=min)){el.style.fontSize=Math.max(f,min)+'px';measure()}
     },
-    after:function(ms,fn){ /* a program's own timers: a throw in one ends the program as any throw does, and close stops them all */
-      var t={};t.id=setTimeout(function(){T.splice(T.indexOf(t),1);guard(fn)},ms);T.push(t);return t;
+    after:function(ms,fn){ /* a program's own timers: a throw in one ends the program as any throw does, and close stops them all. ^Z holds them */
+      var t={ms:ms,fn:function(){T.splice(T.indexOf(t),1);guard(fn)}};T.push(t);if(!h.off)arm(t);else t.left=ms;return t;
     },
-    every:function(ms,fn){var t={every:1};t.id=setInterval(function(){guard(fn)},ms);T.push(t);return t},
+    every:function(ms,fn){var t={every:1,ms:ms,fn:function(){guard(fn)}};T.push(t);if(!h.off)arm(t);return t},
     cancel:function(t){
       var i=T.indexOf(t);if(i<0)return;
-      T.splice(i,1);if(t.every)clearInterval(t.id);else clearTimeout(t.id);
+      T.splice(i,1);halt(t);
     },
     onThrow:null,
     close:function(){
@@ -850,6 +1059,8 @@ function fullscreen(keys,onResize,redraw){ /* redraw: draws it again as it is (t
     }
   };
   function guard(fn){try{fn()}catch(e){if(S.onThrow)S.onThrow(e);else throw e}}
+  function arm(t){if(t.id!=null)return;if(t.every)t.id=setInterval(t.fn,t.ms);else{var ms=t.left!=null?t.left:t.ms;t.due=performance.now()+ms;t.id=setTimeout(t.fn,ms)}}
+  function halt(t){if(t.id==null)return;if(t.every)clearInterval(t.id);else{clearTimeout(t.id);t.left=Math.max(0,t.due-performance.now())}t.id=null}
   function sameRow(d,t){ /* against the row itself: a program may have marked it up since */
     var k=d.firstChild;
     return k?d.childNodes.length===1&&k.nodeType===3&&k.data===t:!t;
@@ -1028,10 +1239,12 @@ function find(p,exact,locks,nofollow,hops){ /* node or null; nobody gets through
   }
   return n;
 }
-function may(n,bit){ /* does the mode let who is logged in r, w or x it (Unix): the owner's bits for the owner, everyone else's for the rest; root may */
-  if(!OWNED||!n.mode||isRoot())return true;
-  var c=n.mode.charAt((n.owner===ST.user?1:7)+'rwx'.indexOf(bit));
+function modeLets(m,n,bit){ /* does mode m give who is logged in r, w or x: the owner's bits for the owner, everyone else's for the rest (an S or T is no x) */
+  var c=m.charAt((n.owner===ST.user?1:7)+'rwx'.indexOf(bit));
   return c!=='-'&&c!=='S'&&c!=='T';
+}
+function may(n,bit){ /* does the mode let who is logged in r, w or x it (Unix); root may */
+  return !OWNED||!n.mode||isRoot()||modeLets(n.mode,n,bit);
 }
 function shut(p){ /* is the way to p barred, as namei finds it before it looks for the name: a locked folder, or one who is logged in may not search */
   var s=parts(norm(p)),n=ROOT;
@@ -1090,7 +1303,7 @@ function brk(p,i,bs){ /* the [...] at p[i] as a RegExp: {src, end: where its ] i
   csh (gmatch, Gmatch): no negation, and a ] first ends it. A range that ends before it starts, as z-a, holds nothing */
   var bash=!!PROFILE.bash,j=i+1,neg=false,o='',m;
   function esc(x){return x.replace(/[\\\]\[^-]/g,'\\$&')}
-  if(p.charAt(j)==='!'&&(bash||!CSH&&PROFILE.signals==='irix')||bash&&p.charAt(j)==='^'){neg=true;j++}
+  if(p.charAt(j)==='!'&&(bash||!CSH&&PROFILE.sysv)||bash&&p.charAt(j)==='^'){neg=true;j++}
   for(var first=true;j<p.length;j++,first=false){
     var c=p.charAt(j);
     if(c===']'&&!(first&&bash))return {src:neg?'[^'+o+']':o?'['+o+']':'(?!)',end:j};
@@ -1117,6 +1330,20 @@ function mayAlter(n){ /* may who is logged in change, replace or remove this fil
   if(isRoot())return true;
   if(ATTRS)return !n.ro;
   return n.owner===ST.user||modeOf(n).charAt(8)==='w';
+}
+function mayWrite(n){ /* may who is logged in open this file to write to it? On Unix, the w bit its mode has for them (the owner's for the owner,
+  everyone else's for the rest): an owner's mode 444 stops them too, until they chmod it. Root may, but not an immutable one. Elsewhere, mayAlter */
+  if(!OWNED||!n||n.dev)return mayAlter(n);
+  if(IMM&&n.ro)return false;
+  return isRoot()||modeLets(modeOf(n),n,'w');
+}
+function unwritable(n){return n.type==='f'&&!n.prot&&!n.dev&&!mayWrite(n)} /* a plain file there that who is logged in may not open to write */
+function access(n,bit){ /* access(2), as test -r, -w and -x ask it: what the readers (may), the writers (mayWrite) and exec allow who is logged in.
+  Root reads and writes anything but an immutable file, and may run a file with an x bit anywhere in its mode, and search any folder */
+  if(!n||n.prot)return false;
+  if(bit==='w')return mayWrite(n);
+  if(isRoot()||!OWNED)return bit==='r'||n.type==='d'||/x/.test(modeOf(n));
+  return modeLets(modeOf(n),n,bit);
 }
 function isImmutable(n){return IMM&&!!n.ro} /* does this file carry Linux's immutable attribute */
 function immutable(abs,write){ /* is it Linux's immutable attribute that stops a change to abs: on the file, or on the folder it is in.
@@ -1150,7 +1377,7 @@ function writeFile(p,lines,append,hop){ /* false if it cannot be written */
   var abs=norm(p),ex=find(abs,true),l=!ex&&find(abs,true,false,true);
   if(l&&l.type==='s')return (hop||0)<8&&writeFile(l.sym.charAt(0)==='/'?l.sym:dirOf(abs)+'/'+l.sym,lines,append,(hop||0)+1); /* a link to nothing: open(2) makes what it names */
   if(ex&&ex.dev)return !ex.prot; /* /dev/null and friends swallow it */
-  if(ex&&(ex.type==='d'||ex.prot||ex.parent.prot||!mayAlter(ex))||(ex&&OWNED?named(abs)!==ex:!mayPut(dirOf(abs),find(dirOf(abs)))))return false; /* on Unix a file that is there (and reached through no locked folder) takes what the file allows; its folder counts only for making one */
+  if(ex&&(ex.type==='d'||ex.prot||ex.parent.prot||!mayWrite(ex))||(ex&&OWNED?named(abs)!==ex:!mayPut(dirOf(abs),find(dirOf(abs)))))return false; /* on Unix a file that is there (and reached through no locked folder) takes what the file allows; its folder counts only for making one */
   var old=ex&&append?textOf(ex):[],L=old.open&&lines.length?old.slice(0,-1).concat([old[old.length-1]+plain(lineOf(lines[0])[0])],lines.slice(1)):old.concat(lines); /* after a last line with no newline, what comes goes on in it */
   L.open=lines.length?!!lines.open:old.open;
   if(bsize(L)>DISK){ /* what fits goes in, and the rest is lost, the way a full disk did it */
@@ -1180,6 +1407,12 @@ function modeOf(n){
   if(n.mode)return n.mode;
   if(n.type==='d')return n.prot?'drwx------':'drwxr-xr-x';
   return n.prot?'-rw-------':n.bin?'-rwxr-xr-x':'-rw-r--r--';
+}
+function octMode(n){ /* a file's mode as an octal number, as %o prints st_mode's permission bits: 444, 4755 */
+  var m=modeOf(n),v=0;
+  for(var i=1;i<10;i++)if(!/[-ST]/.test(m.charAt(i)))v|=1<<(9-i);
+  if(/[sS]/.test(m.charAt(3)))v|=2048;if(/[sS]/.test(m.charAt(6)))v|=1024;if(/[tT]/.test(m.charAt(9)))v|=512;
+  return v.toString(8);
 }
 function links(n){return n.type!=='d'?1:2+Object.keys(n.kids).filter(function(k){return n.kids[k].type==='d'}).length}
 function longRow(name,n){
@@ -1269,12 +1502,12 @@ var LOGOUT=false;
 var RP=null,PENDROOT=null;
 function setRoot(viaSu){
   if(RP)return;
-  RP={user:ST.user,home:ST.home,cwd:ST.cwd,su:viaSu,bsh:BSH.length,prot:[],al:viaSu?PH.aliases:null,args:ARGS,line:SHLINE}; /* bsh: the Bourne shells already running, which an su's exit leaves; al: the aliases of the shell su was typed in (the new one's go with it) */
+  RP={user:ST.user,home:ST.home,cwd:ST.cwd,HOME:has(ENV,'HOME')?ENV.HOME:null,gone:ENV[GONE],su:viaSu,bsh:BSH.length,prot:[],al:viaSu?PH.aliases:null,args:ARGS,line:SHLINE}; /* bsh: the Bourne shells already running, which an su's exit leaves; al: the aliases of the shell su was typed in (the new one's go with it) */
   (function walk(n){
     if(n.prot){RP.prot.push(n);n.prot=false}
     if(n.type==='d')Object.keys(n.kids).forEach(function(k){if(n.kids[k]!==n)walk(n.kids[k])});
   })(ROOT);
-  ST.user=PROFILE.rootName;ST.home='/';
+  ST.user=PROFILE.rootName;ST.home='/';delete ENV.HOME;ENV[GONE]=false; /* su sets HOME to the new user's */
   if(!viaSu)ST.cwd='/';
 }
 function moved(was,to){ /* a folder moved: anyone standing in it goes with it, including who su left behind */
@@ -1285,7 +1518,7 @@ function moved(was,to){ /* a folder moved: anyone standing in it goes with it, i
 }
 function dropRoot(){
   if(!RP)return;
-  ST.user=RP.user;ST.home=RP.home;ST.cwd=RP.cwd;if(RP.al)PH.aliases=RP.al;
+  ST.user=RP.user;ST.home=RP.home;ST.cwd=RP.cwd;ENV[GONE]=RP.gone;if(RP.HOME!==null)ENV.HOME=RP.HOME;else delete ENV.HOME;if(RP.al)PH.aliases=RP.al;
   if(RP.su){ARGS=RP.args;DLN0+=SHLINE-RP.line} /* su's shell was another process: its $0, and the lines it read are not the shell's below it */
   RP.prot.forEach(function(n){n.prot=true});
   RP=null;
@@ -1341,7 +1574,7 @@ PH.runLater=function(files,def,a,raw,w){
     try{f(a,raw,w)}catch(e){console.error(e);typeLine(name+': core dumped','err')}
   });
 };
-var ENV={PATH:':/bin:/usr/bin',TERM:'p9'},CSHV=Object.create(null),CSHW=Object.create(null); /* CSHV: csh's own variables, from set */
+var GONE=Symbol('HOME unset'),ENV={PATH:':/bin:/usr/bin',TERM:'p9',[GONE]:false},CSHV=Object.create(null),CSHW=Object.create(null); /* CSHV: csh's own variables, from set */
 Object.assign(PH,{ /* what commands and machine hooks may use */
   profile:PROFILE,st:ST,cmds:CMDS,man:MAN,paths:PATHS,help:function(){return HELP.slice()},own:function(n){return has(OWN,n)},
   hist:function(){return hist.slice()},setHist:function(L){hist=L.slice(-HMAX);hi=hist.length}, /* a shell's history -c, -d or -s */
@@ -1382,11 +1615,12 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
     window.dispatchEvent(new Event('resize')); /* the glass changed size: everything re-fits */
     return on;
   },
-  columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,dirOf:dirOf,nameOf:nameOf,unlink:unlink,symlink:symlink,
+  columns:function(){return cols()},inColumns:inColumns,fullscreen:fullscreen,program:program,ask:ask,sys:sys,hash:hash,ino:function(nm){return hash(nm,9973)+2},programs:programs,chunk:chunk,joinLast:function(){queue(function(){var l=out.lastElementChild;if(l)OPEN=l})}, /* in turn: what is typed next goes on in the glass's last line (after a prompt that ^D, which the tty does not echo, answered) */
+  dirOf:dirOf,nameOf:nameOf,unlink:unlink,symlink:symlink,
   ownEnv:function(on){var was=OWNENV;OWNENV=on;return was},envRows:function(){return Object.keys(PH.env).sort().map(function(k){return k+'='+PH.env[k]})},
-  piped:function(){return !!SINK},bre:bre,INT:INT,
+  piped:function(){return !!SINK},bre:bre,safeRe:safeRe,INT:INT,
   fold:PROFILE.fold,stdin:function(){return STDIN},input:input,readLine:readLine,text:textOf,canWrite:canWrite,mayAlter:mayAlter,mayChmod:mayChmod,mayPut:function(dir){return mayPut(pathOf(dir),dir)},isImmutable:isImmutable,immutable:immutable,notPermitted:notPermitted,writeFile:writeFile,
-  status:function(n){STATUS=n},bashAt:function(){return bashAt()},lastStatus:function(){return PREV},globRe:globRe,glob:glob,tilde:tilde,colonRows:colonRows,passwd:passwd,loop:function(what,n){if(/^(break|continue)$/.test(what)?LOOPSUB[LOOPSUB.length-1]!==SUB:SUB)return;LOOP=what;var own=0;for(var i=LOOPSUB.length-1;i>=0&&LOOPSUB[i]===SUB;i--)own++;LOOPN=n>1?Math.min(n,own)-1:0}, /* n: break n and continue n leave n loops (the innermost n-1 are ended), of those in its own process: echo | while ...; do break 2 leaves only that while */inScript:function(){return SCRIPTS>0},loops:function(){return LOOPD}, /* how many loops deep the command is */
+  status:function(n){STATUS=n},bashAt:function(){return bashAt()},lastStatus:function(){return PREV},globRe:globRe,glob:glob,tilde:tilde,homeVar:homeVar,colonRows:colonRows,passwd:passwd,loop:function(what,n){var own=0;for(var i=LOOPSUB.length-1;i>=0&&LOOPSUB[i]===SUB;i--)own++;var brk=/^(break|continue)$/.test(what);if(brk&&LOOPUP&&SUB===SUBSH&&Math.max(n||1,1)>own){STATUS=0;LOOP='exit';return} /* a ( ) or $( ) in a loop: a break past its own loops ends it, status 0 (dash's loopnest, V7's loopcnt, bash's loop_level in a $( ), which the fork keeps) */if(brk?!own:SUB)return;LOOP=what;LOOPN=n>1?Math.min(n,own)-1:0}, /* n: break n and continue n leave n loops (the innermost n-1 are ended), of those in its own process: echo | while ...; do break 2 leaves only that while */inScript:function(){return SCRIPTS>0},loops:function(){return LOOPD+LOOPUP}, /* how many loops deep the command is, with those of the shell its ( ) or $( ) was forked from */
   args:function(a){if(a)ARGS=a;return ARGS},baud:function(b){if(b!==undefined)BAUD=b;return BAUD},teletype:function(){return TELE.on?TELE:null}, /* the Teletype Model 33's line: lcase, speed */
   teletypeMode:function(on){ /* the teletype command: null where it is not offered; on or off, remembered in this browser */
     if(!TELE.ok)return null;
@@ -1395,21 +1629,23 @@ Object.assign(PH,{ /* what commands and machine hooks may use */
   },
   env:ENV,runScript:runScript,child:child,keep:keep,exec:execLine,
   bourne:{on:false, /* 4.3BSD's sh (on: the machine has it): run(fn) with its grammar; start() one at the terminal; leave(status): exit or ^D in that one, true if it was */
-    run:function(fn){runAs('sh',fn)},bash:function(fn){runAs('bash',fn)},start:function(){bourne(true,true)},sh:function(){return !CSH}, /* sh: is it sh's grammar now; bash(fn): fn with bash's (Debian) */
+    run:function(fn){runAs('sh',fn)},bash:function(fn){runAs('bash',fn)},start:function(bash){bourne(true,true,bash)},top:function(){var t=BSH[BSH.length-1];return t&&t.tty?(t.bash?'bash':'sh'):null}, /* top(): the shell at the terminal started last, 'sh', 'bash' (Debian) or null */sh:function(){return !CSH}, /* sh: is it sh's grammar now; bash(fn): fn with bash's (Debian) */
     dash:function(){return DASH},
+    shells:function(){return BSH.filter(function(t){return t.tty}).map(function(t){return {bash:t.bash,pid:t.pid,start:t.start}})}, /* the shells started at the terminal, oldest first, for ps: {bash, pid, start} */
     depth:function(){return BSH.length}, /* later(d, env, fn): if a program started since depth d is a shell at the terminal, what its parent goes back to when */
-    later:function(d,env,fn){var t=BSH[BSH.length-1];if(BSH.length<=d||!t.tty)return false;t.was.env=Object.assign({},env);t.after=fn;return true}, /* it ends: env, then fn() */
+    later:function(d,env,fn){var t=BSH[BSH.length-1];if(BSH.length<=d||!t.tty)return false;if(env)t.was.env=Object.assign({},env);var f0=t.after;t.after=f0?function(){f0();fn()}:fn;return true}, /* it ends: env (if given), then fn() */
     wrapSh:function(){ /* the machine has it, as /bin/sh: sh at the terminal starts one, which exit or ^D ends; sh file and sh -c run theirs with it. The sh it wraps */
       PH.bourne.on=true;var sh=PH.cmds.sh;
       if(sh)PH.cmds.sh=function(a,raw,w){if(!a.length&&!PH.stdin()&&!PH.subshell()&&!PH.inScript()){PH.bourne.start();return}PH.bourne.run(function(){sh(a,raw,w)})};
       return sh;
     },
-    leave:function(st){if(!BSH.length||!BSH[BSH.length-1].tty||SUB||SCRIPTS||RP&&RP.su&&RP.bsh>=BSH.length)return false;bourne(false);STATUS=st;return true}}, /* an su newer than this sh is left first */
+    leave:function(st){if(!PH.bourne.canLeave())return false;bourne(false);STATUS=st;return true}, /* an su newer than this sh is left first */
+    canLeave:function(){return !!(BSH.length&&BSH[BSH.length-1].tty&&!SUB&&!SCRIPTS&&!(RP&&RP.su&&RP.bsh>=BSH.length))}}, /* would leave() end a shell started at the terminal */
   subshell:function(){return SUB>0},subExit:function(a){if(!SUBSH||SUB!==SUBSH)return false;STATUS=a[0]===undefined?PREV:parseInt(a[0],10)||0;LOOP='exit';return true}, /* exit in ( ): that process ends */forked:forked,pidNow:function(){var p=PIDNOW;PIDNOW=null;return p},source:function(){return SOURCE},vars:function(t){return unguard(varsIn(t))},unguard:unguard,moved:moved,
   aliases:PROFILE.aliases.slice(),setAlias:setAlias,jobCmd:jobCmd,jobs:psJobs,stoppedWarn:stoppedWarn,unquote:unquote,has:has,lineOf:lineOf,
   say:say,typeLine:typeLine,pause:pause,queue:queue,aside:aside,asideNow:function(){return !!ASIDE},typed:function(){return kb?kb.value:''},sleep:sleep,click:click,load:load,
   sound:function(on){if(on===undefined)return SND.clicks;if(on&&!actx())return false;SND.clicks=!!on;return true},
-  find:find,named:named,may:may,unread:unread,shut:shut,why:whyNot,modeOf:modeOf,norm:norm,put:put,home:home,pathOf:pathOf,body:body,fsize:fsize,longRow:longRow,
+  find:find,named:named,may:may,mayWrite:mayWrite,unwritable:unwritable,access:access,octMode:octMode,unread:unread,shut:shut,why:whyNot,modeOf:modeOf,norm:norm,put:put,home:home,pathOf:pathOf,body:body,fsize:fsize,longRow:longRow,
   root:ROOT,fileDate:FD,systemDate:SD,
   ctime:ctime,short:short,now:now,p2:p2,tz:tz,row:row,manPage:manPage,fill:PROFILE.fill,
   clear:function(){queue(function(){afterglow(term.scrollTop,.55,900,true);out.textContent='';log.textContent=''})},
@@ -1709,35 +1945,209 @@ var SHSET; /* sh's set (commands/text.js), found once */
 var DASH_OFF=['let','declare','typeset','history','logout','shopt'],DHID=null; /* bash's builtins that dash does not have */
 function hide(L){var H={};L.forEach(function(k){if(has(CMDS,k)){H[k]=CMDS[k];delete CMDS[k]}});return H} /* the builtins in L that the shell now running does not have: off, kept */
 function unhide(H){Object.keys(H).forEach(function(k){CMDS[k]=H[k]})}
-function grammar(sh){ /* the shell's grammar and builtins: sh's (true) or the machine's csh; on Debian, dash's (true) or bash's */
-  if(!PH.bourne.on)return;
-  if(PROFILE.bash){
-    if(DASH===!!sh)return;
-    DASH=!!sh;
-    if(DASH)DHID=hide(DASH_OFF);
-    else{unhide(DHID||{});DHID=null}
-    return;
+function grammar(sh){ /* the shell's grammar and builtins: sh's (true) or the machine's csh; on Debian, dash's (true) or bash's. SV: a System V sh is reading */
+  if(!PH.bourne.on){} /* no sh on this machine */
+  else if(PROFILE.bash){
+    if(DASH!==!!sh){
+      DASH=!!sh;
+      if(DASH)DHID=hide(DASH_OFF);
+      else{unhide(DHID||{});DHID=null}
+    }
   }
-  if(sh===!CSH)return;
-  if(sh){
-    BHID=hide(BOURNE_OFF);
-    if(!SHSET)SHSET=PH.defs.filter(function(x){return /commands\/text\.js$/.test(x.from||'')&&(x.names||[]).indexOf('set')>=0})[0];
-    if(SHSET)CMDS.set=SHSET.run; /* sh's set: the variables */
+  else if(sh!==!CSH){
+    if(sh){
+      BHID=hide(BOURNE_OFF);
+      if(!SHSET)SHSET=PH.defs.filter(function(x){return /commands\/text\.js$/.test(x.from||'')&&(x.names||[]).indexOf('set')>=0})[0];
+      if(SHSET)CMDS.set=SHSET.run; /* sh's set: the variables */
+      svOn(true); /* IRIX: System V's builtins too */
+    }
+    else{svOn(false);delete CMDS.set;unhide(BHID);BHID=null}
+    CSH=!sh&&!!PROFILE.csh;varRe();
   }
-  else{delete CMDS.set;unhide(BHID);BHID=null}
-  CSH=!sh&&!!PROFILE.csh;varRe();
+  SV=!!PROFILE.sysv&&!CSH&&!PROFILE.bash&&BSH.length>0;
 }
 function shTop(){ /* is the shell reading now a Bourne shell: one started since an su that started the user's own, else that one's, else any */
   if(RP&&RP.su&&RP.sh&&BSH.length<=RP.bsh)return RP.sh==='sh';
-  return BSH.length>0;
+  return BSH.length>0&&!BSH[BSH.length-1].bash;
 }
-function bourne(on,tty){ /* a Bourne shell starts (tty: at the terminal) or ends */
-  if(on){BSH.push({tty:!!tty,was:tty?{cwd:ST.cwd,env:Object.assign({},ENV),args:ARGS,ln:[DLN0,DSKIP]}:null});if(tty){DLN0=SHLINE;DSKIP=0;ARGS=['sh']}grammar(true);return} /* was: one at the terminal is a child process: what it changes goes with it */
+function bourne(on,tty,bash){ /* a Bourne shell starts (tty: at the terminal) or ends. bash: on Debian, a bash at the terminal instead, which ends the same way */
+  if(on){BSH.push({tty:!!tty,bash:!!bash,pid:tty&&PH.newPid?PH.newPid():0,start:now(),was:tty?{cwd:ST.cwd,env:Object.assign({},ENV),args:ARGS,ln:[DLN0,DSKIP],al:PH.aliases,back:bash?keep(true):null,jobs:parkJobs()}:null});if(tty){DLN0=SHLINE;DSKIP=0;ARGS=[bash?'bash':'sh']}if(PROFILE.sysv){if(!tty)BSH[BSH.length-1].opt=has(ENV,'OPTIND')?[ENV.OPTIND]:[];ENV.OPTIND='1'}grammar(shTop());return} /* System V's main.c: OPTIND=1 for getopts */ /* was: one at the terminal is a child process: what it changes goes with it */
   if(!BSH.length)return;
   var b=BSH.pop(),w=b.was;
-  if(w){refill(ENV,w.env);if(find(w.cwd,true))ST.cwd=w.cwd;ARGS=w.args;DLN0=w.ln[0];DSKIP=w.ln[1]}
+  if(w){if(w.back)w.back();refill(ENV,w.env);if(find(w.cwd,true))ST.cwd=w.cwd;ARGS=w.args;DLN0=w.ln[0];DSKIP=w.ln[1];PH.aliases=w.al}
+  else if(b.opt){if(b.opt.length)ENV.OPTIND=b.opt[0];else delete ENV.OPTIND} /* sh -c or sh file from csh: OPTIND was that sh's own */
   grammar(shTop());
+  if(w&&w.jobs)unparkJobs(w.jobs); /* with the parent's grammar: whether it has job control */
   if(b.after)b.after();
+}
+/* IRIX's /bin/sh is System V's Bourne shell (SVR3): V7's grammar, plus functions, unset, type, hash, return, getopts and readonly
+   (the SVR4 sources as OpenSolaris and illumos keep them: cmd.c item(), xec.c TFND and FUNCTION, bltin.c, hashserv.c, hash.c, func.c prf()).
+   What one shell defines (its functions, readonly names, hash table, getopt's place) is that shell's: on its BSH entry */
+var FNDEF=/^\s*([A-Za-z_]\w*)\s*\(\s*\)\s*([\s\S]*)$/,FNDEPTH=0;
+var SVBUILTIN=new Set(['.',':','[','break','cd','continue','echo','eval','exec','exit','export','getopts','hash','newgrp','pwd','read','readonly','return','set','shift','test','times','trap','type','ulimit','umask','unset','wait']);
+var SV=false; /* a System V sh is reading: grammar() keeps it, after each change of shell */
+function svState(){var t=BSH[BSH.length-1];return t.sv||(t.sv={fn:Object.create(null),ro:Object.create(null),hash:new Map(),seq:0,sp:1})}
+function svCopy(S){ /* a copy of a shell's own: what one shell changes there leaves the other's alone */
+  var c=Object.assign({},S);
+  c.fn=Object.assign(Object.create(null),S.fn);c.ro=Object.assign(Object.create(null),S.ro);
+  c.hash=new Map();S.hash.forEach(function(v,k){c.hash.set(k,v&&typeof v==='object'?Object.assign({},v):v)});
+  return c;
+}
+function svRO(n){if(!SV||!svState().ro[n])return false;failed(n+': is read only');return true} /* name.c assign(): failed(namid, wtfailed) */
+function fnDefine(m){ /* name() command: xec.c TFND. A { list } is read now; any other command is kept as it is */
+  var name=m[1],body=m[2].trim(),S=svState(),F={body:body};
+  if(svRO(name))return;
+  if(body.charAt(0)==='{'){var e=groupEnd(body,0);if(e<0){failed(syntaxError('end'));return}F.inner=body.slice(1,e);F.tree=treeOf(F.inner.split('\n'));if(!F.tree)return}
+  S.fn[name]=F;delete ENV[name];
+  S.hash.delete(name); /* hash_func: no longer a command */
+  STATUS=0;
+}
+function fnCall(name,words){ /* xec.c FUNCTION: its words are $1 ... ($0 stays), its return ends it, and the old ones come back */
+  var F=svState().fn[name],was=ARGS;
+  if(FNDEPTH>=100){failed('no stack space');return}
+  FNDEPTH++;ARGS=[was[0]].concat(words.slice(1));
+  if(F.tree)runBlock(F.tree);else execLine(F.body);
+  queue(function(){FNDEPTH--;ARGS=was;if(LOOP==='return')LOOP=null},2);
+}
+function fnShown(name,F){ /* type: func.c prf() with newlines (nonl 0): words as read, one space apart, the redirections after them */
+  function cmd(t){
+    var W=rawWords(t),o=[],io='';
+    for(var i=0;i<W.length;i++){
+      var r=/^(\d?)(>>|>&|<&|<<|>|<)([\s\S]*)$/.exec(W[i]);
+      if(!r){o.push(W[i]);continue}
+      var to=r[3]||W[++i]||'';io+=' '+(r[1]||(/>/.test(r[2])?'1':'0'))+r[2]+to;
+    }
+    return o.join(' ')+io;
+  }
+  function list(B){return [].concat.apply([],B.map(node))}
+  function node(n){
+    if(n.k==='cmd')return [cmd(n.t)];
+    if(n.k==='for')return ['for '+n.v+(n.all?'':' in '+rawWords(n.words).join(' ')),'do'].concat(list(n.body),['done']);
+    if(n.k==='while'||n.k==='until'){var c=list(n.cond);c[0]=n.k+' '+c[0];return c.concat(['do'],list(n.body),['done'])}
+    if(n.k==='if'){var d=list(n.cond);d[0]='if '+d[0];return d.concat(['then'],list(n.then),n.els?['else'].concat(list(n.els)):[],['fi'])}
+    if(n.k==='case')return ['case '+n.word+n.arms.map(function(a){return a.pats.join(' | ')+')'+list(a.body).join('\n')+';;'}).join('')]; /* prf's TSW: no in, no esac */
+    return [n.t||''];
+  }
+  return [name+' is a function',name+'(){'].concat(F.tree?list(F.tree).join('\n').split('\n'):[F.body],['}']);
+}
+function svBucket(k){for(var s=0,i=0;i<k.length;i++)s+=k.charCodeAt(i);return (Math.imul(s+k.length,0xEFC5589B|0)>>>0)>>>26} /* hash.c: crunch() times 035761254233, the top 6 bits */
+function svPath(name){ /* hashserv.c findpath(): the place in PATH it is found at (count), the directories tried (cost), and whether it is a relative one */
+  var P=(has(ENV,'PATH')?ENV.PATH:'/bin:/usr/bin').split(':'),dot=Infinity;
+  for(var i=0;i<P.length;i++){
+    var d=P[i]||'.',rel=d.charAt(0)!=='/';
+    if(rel&&dot===Infinity)dot=i+1;
+    var n=find((d==='.'?'':d+'/')+name);
+    if(n&&n.type==='f'&&may(n,'x'))return {count:i+1,cost:i+1,rel:i+1>=dot,path:(d==='.'?'.':d.replace(/\/$/,''))+'/'+name};
+  }
+  return null;
+}
+function svHash(name,flg){ /* pathlook(): a command found in PATH goes in the table; hits counts its runs from there (flg) */
+  var S=svState(),h=S.hash.get(name);
+  if(name.indexOf('/')>=0||has(S.fn,name)||SVBUILTIN.has(name))return null;
+  if(h&&h.path){if(flg)h.hits++;return h}
+  var p=svPath(name);
+  if(!p)return null;
+  if(!h){h={key:name,b:svBucket(name),seq:S.seq++,cost:0};S.hash.set(name,h)}
+  h.path=p.path;h.rel=p.rel;h.hits=flg?1:0;h.cost+=p.cost;
+  return h;
+}
+var SVCMDS={
+  unset:function(a,raw,w){ /* SYSUNS, name.c unset_name() */
+    var S=svState();STATUS=0;
+    for(var i=1;i<w.length;i++){
+      var n=w[i];
+      if(S.ro[n]){failed(n+': is read only');return}
+      if(/^(PATH|IFS|PS1|PS2|MAILCHECK)$/.test(n)){failed(n+': cannot unset');return}
+      if(has(S.fn,n))delete S.fn[n];else delete ENV[n];
+    }
+  },
+  readonly:function(a,raw,w){ /* SYSRDONLY: each name marked; none: readonly name for each, as namscan() walks them (in order) */
+    var S=svState();STATUS=0;
+    if(w.length<2){Object.keys(S.ro).sort().forEach(function(n){typeLine('readonly '+n)});return}
+    for(var i=1;i<w.length;i++){if(!/^[A-Za-z_]\w*$/.test(w[i])){failed(w[i]+': is not an identifier');return}S.ro[w[i]]=true}
+  },
+  return:function(a,raw,w){ /* SYSRETURN: badreturn outside a function; its status, or the last command's */
+    if(!FNDEPTH){failed('cannot return when not in function');return}
+    var x=w[1];
+    if(x!==undefined&&!/^\d+$/.test(x)){failed(x+': bad number');return}
+    STATUS=x!==undefined?parseInt(x,10):PREV;LOOP='return';
+  },
+  type:function(a,raw,w){ /* SYSTYPE, hashserv.c what_is_path() */
+    var S=svState(),st=0;
+    w.slice(1).forEach(function(n){
+      if(has(S.fn,n)){fnShown(n,S.fn[n]).forEach(function(l){typeLine(l)});return}
+      var h=S.hash.get(n);
+      if(h&&h.path){typeLine(n+' is hashed ('+h.path+')');return}
+      if(SVBUILTIN.has(n)){typeLine(n+' is a shell builtin');return}
+      var p=svPath(n);
+      if(p){typeLine(n+' is '+p.path);return}
+      typeLine(n+' not found');st=1;
+    });
+    STATUS=st;
+  },
+  hash:function(a,raw,w){ /* SYSHASH: -r empties the table; names are looked up (not found: failed); none: hashpr() */
+    var S=svState();STATUS=0;
+    if(w.length<2){
+      typeLine('hits\tcost\tcommand');
+      Array.from(S.hash.values()).filter(function(h){return h.path}).sort(function(x,y){return x.b-y.b||x.seq-y.seq}).forEach(function(h){typeLine(h.hits+(h.rel?'*':'')+'\t'+h.cost+'\t'+h.path)});
+      return;
+    }
+    if(w[1].charAt(0)==='-'){if(w[1].charAt(1)==='r'){S.hash.forEach(function(h){h.path=null;h.cost=0})}else failed('bad option(s)');return}
+    for(var i=1;i<w.length;i++)if(!svHash(w[i],0)&&!has(S.fn,w[i])&&!SVBUILTIN.has(w[i])){failed(w[i]+': not found');return}
+  },
+  getopts:function(a,raw,w){ /* SYSGETOPT and libc's getopt(3): OPTIND from the variable, its place in a word of options its own (sp) */
+    var S=svState();
+    if(w.length<3){typeLine(w[0]+': missing arguments','err');STATUS=1;return}
+    var opts=w[1],v=w[2],av=[ARGS[0]||'sh'].concat(w.length>3?w.slice(3):ARGS.slice(1)),oi=parseInt(ENV.OPTIND,10)||0,c,sp=S.sp;
+    function done(r){ENV.OPTIND=String(oi);S.sp=sp;return r}
+    if(sp===1&&(oi>=av.length||av[oi].charAt(0)!=='-'||av[oi].length===1||av[oi]==='--')){
+      if(oi<av.length&&av[oi]==='--')oi++;
+      done();ENV[v]='';STATUS=1;return;
+    }
+    c=av[oi].charAt(sp);
+    var k=c===':'?-1:opts.indexOf(c);
+    if(k<0){
+      typeLine(av[0]+': illegal option -- '+c,'err');
+      if(++sp>=av[oi].length){oi++;sp=1}
+      done();ENV[v]='?';queue(function(){STATUS=0});return; /* after the error line, which set it to 1 */
+    }
+    if(opts.charAt(k+1)===':'){
+      if(sp+1<av[oi].length)ENV.OPTARG=av[oi++].slice(sp+1);
+      else if(++oi>=av.length){typeLine(av[0]+': option requires an argument -- '+c,'err');sp=1;done();ENV[v]='?';queue(function(){STATUS=0});return}
+      else ENV.OPTARG=av[oi++];
+      sp=1;
+    }
+    else{if(++sp>=av[oi].length){sp=1;oi++}delete ENV.OPTARG}
+    done();ENV[v]=c;STATUS=0;
+  }
+};
+var SVHID=null; /* the commands SVCMDS took the place of while a System V sh runs */
+function svOn(on){
+  if(!PROFILE.sysv||!!SVHID===on)return;
+  if(on){SVHID=hide(Object.keys(SVCMDS));Object.keys(SVCMDS).forEach(function(k){CMDS[k]=SVCMDS[k]})}
+  else{Object.keys(SVCMDS).forEach(function(k){delete CMDS[k]});unhide(SVHID);SVHID=null}
+}
+function fnJoin(L){ /* a script's name() { ... } that goes on for lines: one line for statements(), the lines it took left empty so the numbers stay */
+  L=L.slice();
+  function open(l){ /* where in l a definition starts whose { list } is not closed (or not begun), or -1 */
+    for(var segs=splitCmds(l),k=0,off=0;k<segs.length;k++){
+      off=l.indexOf(segs[k],off);
+      var m=FNDEF.exec(l.slice(off)),b=m&&m[2].trim();
+      if(m&&(!b||b.charAt(0)==='{'&&groupEnd(b,0)===-2))return off;
+      off+=segs[k].length;
+    }
+    return -1;
+  }
+  for(var i=0;i<L.length;i++){
+    var from=open(L[i]);
+    if(from<0)continue;
+    for(var j=i;j+1<L.length;){
+      var b=FNDEF.exec(L[i].slice(from))[2].trim();
+      if(b&&groupEnd(b,0)!==-2)break;
+      L[i]+='\n'+L[++j];L[j]='';
+    }
+  }
+  return L;
 }
 function scriptSh(L){ /* the shell a script's #! line names: 'sh', 'csh', or null (none: the one running it) */
   var m=/^#!\s*(\S+)/.exec(L&&L[0]||'');
@@ -1756,7 +2166,7 @@ function runAs(sh,fn){ /* fn() with the grammar of sh ('sh' or 'csh'; on Debian 
     if(sh==='bash'&&DASH){grammar(false);fn();queue(function(){grammar(shTop())},true);return} /* a #!/bin/bash script run from dash */
     fn();return;
   }
-  if(!PH.bourne.on||!sh||sh==='bash'||(sh==='sh')===!CSH){fn();return}
+  if(!PH.bourne.on||!sh||sh==='bash'||(sh==='sh')===!CSH&&!SV){fn();return} /* System V sh from System V sh is a new process, without the functions, readonly names and hash table of the one that started it */
   if(sh==='sh'){bourne(true);fn();queue(function(){bourne(false)},true);return}
   grammar(false);fn();queue(function(){grammar(true)},true); /* a #!/bin/csh script run from sh */
 }
@@ -1777,12 +2187,14 @@ function runOne(s,words,src){
   var parts=words.map(PROFILE.fold),c=parts[0],args=parts.slice(1),word=words[0];
   if(CSH&&/:$/.test(word)&&args.length){typeLine(word+': Too many arguments.','err');return}
   if(control()&&/^%/.test(word)){jobCmd('%',args,s,words);return} /* %1: fg */
+  if(SV&&c.indexOf('/')<0&&has(svState().fn,c)){fnCall(c,words);return} /* System V: a function is found before a builtin or a program */
   var f=has(CMDS,c)?CMDS[c]:null,name=c;
+  if(f&&SV&&c.indexOf('/')<0)svHash(c,1); /* pathlook(): a program found in PATH goes in the hash table */
   if(!f&&c.indexOf('/')>=0){ /* /bin/ls runs ls; any other path is not a program */
     var n=find(c);
     if(n&&n.bin&&has(CMDS,n.name)){f=CMDS[n.name];name=n.name}
     else if(n&&isScript(n)&&!may(n,'r')){noRead(word,textOf(n));return} /* x but not r: the kernel runs it, and the shell that is to read it cannot */
-    else if(n&&isScript(n)){var T=textOf(n);runAs(scriptSh(T),function(){runScript(T,words.slice())});return} /* 4.3BSD: #!/bin/sh runs the Bourne shell */
+    else if(n&&isScript(n)){var T=textOf(n),back=keep();if(PH.bashLevel&&(scriptSh(T)||(DASH?'sh':'bash'))==='bash')PH.bashLevel();runAs(scriptSh(T),function(){runScript(T,words.slice())});queue(back,true);return} /* 4.3BSD: #!/bin/sh runs the Bourne shell. A process of its own: its variables and directory go with it */
     else if(n){typeLine(word+': cannot execute','err');return}
   }
   if(f&&!NOH[name]&&args.indexOf(PROFILE.bash?'--help':'-h')>=0&&has(MAN,name)){typeLine((PROFILE.bash?'Usage: ':'usage: ')+MAN[name].syn);return} /* GNU's tools take -h for other things */
@@ -1790,17 +2202,25 @@ function runOne(s,words,src){
     CURRENT=name;
     try{f(args,s,words,typed)}catch(e){console.error(e);typeLine(name+': core dumped','err')} /* typed: as for the fallback, for a machine that takes the terminal's own commands as its lines (CMS) */
   }
-  else if(!(PH.fallback&&PH.fallback(word,s,args,typed))){typeLine(DASH?bashAt()+word+': not found':(BSH.length?'%s: not found':PROFILE.notFound).replace('%s',word),'err');if(PROFILE.bash)queue(function(){STATUS=127})} /* bash: 127; V7 sh's failed() and csh's bferr() leave 1 */
+  else if(!(PH.fallback&&PH.fallback(word,s,args,typed))){typeLine(DASH?bashAt()+word+': not found':PROFILE.bash&&SCRLN&&SCRIPTS?bashAt()+word+': command not found':(shTop()?'%s: not found':PROFILE.notFound).replace('%s',word),'err');if(PROFILE.bash)queue(function(){STATUS=127})} /* bash: 127; V7 sh's failed() and csh's bferr() leave 1 */
 }
 /* ---------- the shell: words, quotes, $variables, wildcards, pipes, redirection, && and || ---------- */
-var ARGS=[]; /* $0 $1 ... of the script that is running */
-var VAR_AT,VAR_ALL,VARRES={};varRe(); /* csh also has $?name: is it set. VARRES: csh's and sh's pair, made once each */
+var ARGS=PROFILE.bash?['-bash']:[]; /* $0 $1 ... of the script that is running. Debian's login starts bash as -bash */
+var VAR_AT,VAR_ALL,VARRES={};varRe(); /* csh also has $?name: is it set. VAR_AT: sticky, for varAt; VARRES: csh's and sh's pair, made once each */
 function varRe(){
   var r=VARRES[CSH];
-  if(!r){var v=CSH?'\\$(\\?\\w+|#\\w+|\\w+\\[[^\\]\\s]*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}'+(PROFILE.bash?'|\\{[#!]?\\w+\\[[^\\]}]*\\]\\}|\\{#\\w+\\}|\\{(?:\\w+|[@*]):(?![-=?+])[^}]*\\}':'')+'|@|\\?|\\$|#|\\*|!)';r=VARRES[CSH]=[new RegExp('^'+v),new RegExp(v,'g')]}
+  if(!r){var v=CSH?'\\$(\\?\\w+|#\\w+|\\w+\\[[^\\]\\s]*\\]|\\w+|\\{\\w+\\}|\\?|\\$|#|\\*)':'\\$(\\w+|\\{\\w+\\}'+(PROFILE.bash?'|\\{[#!]?\\w+\\[[^\\]}]*\\]\\}|\\{#\\w+\\}|\\{(?:\\w+|[@*]):(?![-=?+])[^}]*\\}':'')+'|@|\\?|\\$|#|\\*|!)';r=VARRES[CSH]=[new RegExp(v,'y'),new RegExp(v,'g')]}
   VAR_AT=r[0];VAR_ALL=r[1];
 }
-function varsIn(t,dq){var was=DQ;DQ=!!dq;try{return t.replace(VAR_ALL,function(m,k){return envOf(k)})}finally{DQ=was}} /* dq: inside " ", where "${x[@]}" is a word for each element */
+function varsIn(t,dq){ /* dq: inside " ", where "${x[@]}" is a word for each element. Without a ${ (or in csh and V7's sh) VAR_ALL finds each */
+  var was=DQ;DQ=!!dq;
+  try{
+    if(!PROFILE.bash||CSH||t.indexOf('${')<0)return t.replace(VAR_ALL,function(m,k){return envOf(k)});
+    var o='',m,i=0,j;
+    while((j=t.indexOf('$',i))>=0){if((m=varAt(t,j))){o+=t.slice(i,j)+envOf(m[1]);i=j+m[0].length}else{o+=t.slice(i,j+1);i=j+1}}
+    return o+t.slice(i);
+  }finally{DQ=was}
+}
 var PIPEST=[0]; /* bash's PIPESTATUS: the status of each command of the last pipeline */
 /* bash's arrays. ARR[name]: {A: associative, v: its elements but [0], which is ENV[name] (so $x is ${x[0]} and x=1 sets it), s: when each
    key was made}. An indexed array's elements come in the order of their numbers, an associative one's in the order of bash's hash
@@ -1876,7 +2296,7 @@ var BASHVARS={ /* for bash's declare, export, readonly and unset */
     var v=has(ENV,n)?ENV[n]:undefined;newArr(n,A);if(v!==undefined)arrPut(n,'0',v);else ARR[n].z=true;return true;
   },
   value:function(n){ /* what declare shows after name=, or null for one with no value */
-    if(!isArr(n))return has(ENV,n)||/^(HOME|USER|LOGNAME)$/.test(n)?dquote(envOf(n)):null;
+    if(!isArr(n))return has(ENV,n)||/^(USER|LOGNAME)$/.test(n)||n==='HOME'&&homeVar()!==null?dquote(envOf(n)):null;
     if(ARR[n].z)return null;
     var L=arrKeys(n).map(function(k){return '['+(ARR[n].A&&/[^\w]/.test(k)?dquote(k):k)+']='+dquote(arrGet(n,k))});
     return '('+L.join(' ')+(ARR[n].A&&L.length?' ':'')+')';
@@ -1885,7 +2305,7 @@ var BASHVARS={ /* for bash's declare, export, readonly and unset */
   unset:function(x){ /* unset name, or unset 'name[i]': false when i is no subscript */
     var m=/^([A-Za-z_]\w*)(?:\[([^\]]*)\])?$/.exec(x);
     if(!m)return false;
-    if(m[2]===undefined){delete ENV[m[1]];delete ARR[m[1]];delete INTV[m[1]];return true}
+    if(m[2]===undefined){if(m[1]==='HOME'&&!OWNENV)ENV[GONE]=true;delete ENV[m[1]];delete ARR[m[1]];delete INTV[m[1]];return true}
     try{var k=arrKey(m[1],m[2])}catch(e){if(!e||e.arith===undefined)throw e;arithBad(e);return true}
     if(k===null)return false;
     if(isArr(m[1])||k==='0')arrDel(m[1],k);
@@ -1898,7 +2318,7 @@ function asgOf(x){return (bashy()?/^([A-Za-z_]\w*)(?:\[([^\]]*)\])?(\+?)=([\s\S]
 function setAsg(m,decl){ /* do the assignment asgOf found: name=v, and bash's name[i]=v, name+=v, name=( ... ) and name+=( ... ). decl: declare's a or A
                             for a new array. false once it has said why it can't */
   var n=m[1],i=m[2],v=m[4],app=m[3]==='+',k;
-  if(!bashy()){ENV[n]=v;return true}
+  if(!bashy()){if(svRO(n))return false;ENV[n]=v;return true}
   function no(t){typeLine('bash: '+t+': bad array subscript','err');return false}
   if(v.charAt(0)===AMARK){
     if(i!==undefined&&i!==''){typeLine('bash: '+n+'['+i+']: cannot assign list to array member','err');return false}
@@ -1945,11 +2365,17 @@ function rawWords(t){ /* t split at blanks outside quotes, as typed */
   if(w!==null)L.push(w);
   return L;
 }
+function homeVar(){ /* $HOME, or null when it is unset */
+  if(!PROFILE.bash)return ST.home;
+  if(has(ENV,'HOME'))return ENV.HOME;
+  return OWNENV?(DASH?null:ST.home):ENV[GONE]?null:ST.home; /* ENV[GONE]: the session's shell unset it, and has not set it again (until then it is the home folder). A symbol, so the copies of ENV a ( ) or a shell keeps carry it, and nothing that lists ENV sees it */
+}
 var OWNENV=false; /* a program env started: HOME, USER and LOGNAME are what its environment has, if anything (bash sets a missing HOME from the
                      password file, variables.c's set_home_var; dash sets none) */
 function envOf(k){
+  if(PROFILE.bash&&!CSH&&k.charAt(0)==='{'){var px=pexp(k);if(px!==null)return px} /* ${name op word} */
   var el=PROFILE.bash&&/^\{([#!]?)(\w+)\[([^\]]*)\]\}$/.exec(k); /* bash: ${name[i]}, ${name[@]}, ${#name[@]}, ${!name[@]}; PIPESTATUS is one too */
-  if(el&&DASH)throw {arith:'Bad substitution'}; /* dash has no arrays */
+  if(el&&DASH)badSub(k); /* dash has no arrays */
   if(el){
     var n=el[2],x=varsIn(el[3]),all=x.trim()==='@'||x.trim()==='*',ps=n==='PIPESTATUS';
     if(!all&&!(isArr(n)&&ARR[n].A))x=x.trim();
@@ -1964,7 +2390,7 @@ function envOf(k){
   }
   if(PROFILE.bash&&/^\{#\w+\}$/.test(k))return String(envOf(k.slice(2,-1)).length); /* ${#name}: how long its value is */
   var sl=PROFILE.bash&&/^\{(\w+|[@*]):([^:}]*)(?::([^}]*))?\}$/.exec(k);
-  if(sl){if(DASH)throw {arith:'Bad substitution'};return substr(sl[1],sl[2],sl[3],k)}
+  if(sl){if(DASH)badSub(k);return substr(sl[1],sl[2],sl[3],k)}
   if(bashy()&&k==='PIPESTATUS')return String(PIPEST[0]);
   if(k.charAt(0)==='{')return envOf(k.slice(1,-1)); /* ${name} is $name */
   if(k==='?')return String(STATUS);
@@ -1981,7 +2407,8 @@ function envOf(k){
   if(sub)return range(wordsOf(sub[1]),varsIn(sub[2]),k).join(' ');
   if(/^\d+$/.test(k))return ARGS[+k]||'';
   if(k==='$')return String(shellPid());
-  if((k==='HOME'||k==='USER'||k==='LOGNAME')&&!(OWNENV&&(has(ENV,k)||k!=='HOME'||DASH)))return k==='HOME'?ST.home:ST.user;
+  if(k==='HOME'){var h=homeVar();return h===null?'':h}
+  if((k==='USER'||k==='LOGNAME')&&!OWNENV)return ST.user;
   if(has(ENV,k))return ENV[k];
   if(CSH){
     if(k in CSHV)return CSHV[k];
@@ -1991,11 +2418,179 @@ function envOf(k){
   }
   return '';
 }
+function braceEnd(s,i,dq){return nestEnd(s,i,'b',dq)} /* bash and dash: the } that closes the ${ at i (one inside it, a $( ), quotes and \ skipped), or -1. dq: inside " ", where a ' is itself */
+/* braceEnd, closeDq and parenEnd, read without recursion, so a line nested thousands deep is read to its end as bash reads it:
+   k 'b' a ${ }, 'd' a " ", 'p' a ( ). Each frame goes on where it was once the one inside it ends; one that is not closed
+   ends a ${ } round it too (-1), and in a " " or ( ) the character it started at is an ordinary one */
+function nestEnd(s,i,k,dq){
+  var st=[],f={k:k,at:i,dq:dq,j:k==='b'?i+2:k==='d'?i+1:i,d:0},r,c,n,bash=PROFILE.bash&&!CSH;
+  function open(k,at,dq){st.push(f);f={k:k,at:at,dq:dq,j:k==='b'?at+2:k==='d'?at+1:at,d:0}}
+  for(;;){
+    r=null;
+    if(f.j>=s.length)r=-1;
+    else{
+      c=s.charAt(f.j);
+      if(c==='\\'){f.j+=2;continue}
+      if(f.k==='b'){
+        if(c==='}')r=f.j;
+        else if(c==='$'&&s.charAt(f.j+1)==='{'){open('b',f.j,f.dq);continue}
+        else if(c==='$'&&s.charAt(f.j+1)==='('){open('p',f.j+1);continue}
+        else if(c==='"'){open('d',f.j);continue}
+        else if(c==='`'||c==="'"&&!f.dq){if((n=c==='`'?tickEnd(s,f.j):s.indexOf(c,f.j+1))<0)r=-1;else{f.j=n+1;continue}}
+        else{f.j++;continue}
+      }
+      else if(f.k==='d'){
+        if(c==='"')r=f.j;
+        else if(c==='`'&&(n=tickEnd(s,f.j))>=0){f.j=n+1;continue}
+        else if(c==='$'&&s.charAt(f.j+1)==='{'&&bash){open('b',f.j,true);continue}
+        else{f.j++;continue}
+      }
+      else{
+        if(c==='"'){open('d',f.j);continue}
+        if(c==='$'&&s.charAt(f.j+1)==='{'&&bash){open('b',f.j,false);continue}
+        if((c==="'"||c==='`')&&(n=c==='`'?tickEnd(s,f.j):s.indexOf(c,f.j+1))>=0){f.j=n+1;continue}
+        if(c==='(')f.d++;else if(c===')'&&!--f.d)r=f.j;
+        if(r===null){f.j++;continue}
+      }
+    }
+    /* this frame has ended at r */
+    if(!st.length)return r;
+    var was=f;f=st.pop();
+    if(r>=0)f.j=r+1;
+    else if(f.k==='b')f.j=s.length+1; /* not closed inside a ${ }: nor is the ${ } */
+    else f.j=was.at+1; /* in a " " or ( ): the $ or " it started at is an ordinary character */
+  }
+}
+function varAt(t,i){ /* the $name, ${...} or $special at t[i] (the $), as VAR_AT has it: [all of it, what follows the $], or null */
+  i=i||0;
+  if(PROFILE.bash&&!CSH&&t.charAt(i+1)==='{'){var e=braceEnd(t,i,DQ);if(e>0)return [t.slice(i,e+1),t.slice(i+1,e+1)]}
+  VAR_AT.lastIndex=i;return VAR_AT.exec(t);
+}
+function badSub(k){throw DASH?{arith:'Bad substitution',st:2,quit:true}:{arith:'${'+k.slice(1,-1)+'}: bad substitution'}}
+function pexp(k){ /* bash 5.2's and dash 0.5.12's ${...} with an operator (subst.c's parameter_brace_expand; dash's expand.c, POSIX's subset):
+                     - = ? + with or without :, # ## % %%, bash's / // /# /% ^ ^^ , ,, ~ ~~, @U @u @L @Q, ${!name}, ${!prefix*},
+                     and ${@...} ${*...} ${name[@]...} on each element. null: a form envOf has already (${name}, ${#name}, ${name[i]}, ${name:o:l}) */
+  var t=k.slice(1,-1),m;
+  if(!t)badSub(k);
+  if(/^#([A-Za-z_]\w*|\d+|[#?$!@*-])?$/.test(t)||/^[#!]?\w+\[[^\]]*\]$/.test(t)&&!DASH)return t==='#@'||t==='#*'?String(Math.max(0,ARGS.length-1)):null;
+  if(/^![\w#?@*]/.test(t)&&!DASH){ /* ${!name}: the variable that name's value names; ${!prefix*} and ${!prefix@}: the names that start so. ${!} and ${!:-word} are $! (subst.c: a name, a digit, # ? @ or * after the !) */
+    if((m=/^!([A-Za-z_]\w*)([*@])$/.exec(t))){var N=Object.keys(ENV).concat(Object.keys(ARR)).filter(function(n,i,a){return n.indexOf(m[1])===0&&a.indexOf(n)===i}).sort();return DQ&&m[2]==='@'?(N.length?N.join(QSEP):QNONE):N.join(' ')}
+    if((m=/^!([A-Za-z_]\w*|\d+)$/.exec(t))){var to=envOf('{'+m[1]+'}');if(to==='')return '';if(!/^([A-Za-z_]\w*(\[[^\]]*\])?|\d+|[#?$!@*-])$/.test(to))throw {arith:to+': invalid variable name'};return envOf('{'+to+'}')}
+    badSub(k);
+  }
+  m=/^([A-Za-z_]\w*|\d+|[#?$!@*-])(\[[^\]]*\])?/.exec(t);
+  if(!m||m[2]&&(DASH||!/^[A-Za-z_]/.test(m[1])))badSub(k);
+  var n=m[1],sub=m[2]?m[2].slice(1,-1):null,rest=t.slice(m[0].length);
+  if(!rest)return null;
+  var op=/^(:[-=?+]?|##|#|%%|%|\/[\/#%]?|\^\^|\^|,,|,|~~|~|[-=?+]|@)/.exec(rest);
+  if(!op)badSub(k);
+  op=op[1];var w=rest.slice(op.length);
+  if(DASH&&!/^(:?[-=?+]|##?|%%?)$/.test(op))badSub(k);
+  if(op===':'){ /* bash's ${name:offset:length}; ${name[@]:offset:length}, from the element numbered offset */
+    if(DASH)badSub(k);
+    var cut=-1;for(var q=0,dd=0;q<w.length;q++){var ch=w.charAt(q);if(ch==='$'&&w.charAt(q+1)==='{'&&(cut=braceEnd(w,q,DQ))>0){q=cut;cut=-1;continue}if(ch==='(')dd++;else if(ch===')')dd--;else if(ch===':'&&!dd){cut=q;break}}
+    var o1=varsIn(cut<0?w:w.slice(0,cut)),l1=cut<0?undefined:varsIn(w.slice(cut+1));
+    if(sub===null)return substr(n,o1,l1,k);
+    var sv=varsIn(sub).trim();
+    if(sv!=='@'&&sv!=='*')return substr({v:envOf('{'+n+'['+sub+']}')},o1,l1,k);
+    if(!o1.trim()&&l1===undefined)badSub(k);
+    var K=arrKeys(n),a1=Number(o1.trim()?arith(unguard(o1)):BigInt(0)),last=arrLast(n);
+    if(a1<0)a1+=last===null?0:+last+1;
+    var sel=a1<0?[]:K.filter(function(x){return +x>=a1});
+    if(l1!==undefined){var b1=Number(l1.trim()?arith(unguard(l1)):BigInt(0));if(b1<0)throw {arith:l1.trim()+': substring expression < 0'};sel=sel.slice(0,b1)}
+    sel=sel.map(function(x){return arrGet(n,x)});
+    return DQ&&sv==='@'?(sel.length?sel.join(QSEP):QNONE):sel.join(' ');
+  }
+  var at=n==='@'||n==='*'||sub!==null&&/^\s*[@*]\s*$/.test(varsIn(sub)),star=n==='*'||sub!==null&&varsIn(sub).trim()==='*';
+  var L=at?(sub!==null?(n==='PIPESTATUS'?PIPEST.map(String):arrVals(n)):ARGS.slice(1)):null;
+  var val=at?L.join(' '):envOf(sub!==null?'{'+n+'['+sub+']}':/^\d+$/.test(n)?n:'{'+n+'}');
+  var set=at?L.length>0:/^\d+$/.test(n)?n==='0'||+n<ARGS.length:/^[#?$-]$/.test(n)?true:n==='!'?LASTBG!=='':sub!==null?(function(){var x=arrKey(n,varsIn(sub));return x!==null&&arrGet(n,x)!==undefined})():
+    has(ENV,n)||n==='HOME'&&homeVar()!==null||(n==='USER'||n==='LOGNAME')&&!OWNENV;
+  var colon=op.charAt(0)===':',o=colon?op.slice(1):op;
+  if(/^[-=?+]$/.test(o)){
+    var empty=!set||colon&&val==='';
+    if(o==='+')return empty?'':pword(w);
+    if(!empty)return at?(DQ&&!star?(L.length?L.join(QSEP):QNONE):val):val;
+    if(o==='-')return pword(w);
+    if(o==='?'){
+      var said=w===''?(DASH?(colon?'parameter not set or null':'parameter not set'):(colon?'parameter null or not set':'parameter not set')):unguard(pword(w,'msg'));
+      throw {arith:n+(sub!==null?'['+sub+']':'')+': '+said,st:DASH?2:1,quit:true};
+    }
+    var v=unguard(pword(w,'asg')); /* = */
+    if(!/^[A-Za-z_]/.test(n)||at)throw DASH?{arith:n+': bad variable name',st:2,quit:true}:{arith:'$'+n+': cannot assign in this way'};
+    if(sub!==null){var key=arrKey(n,varsIn(sub));if(key!==null)arrPut(n,key,v)}else ENV[n]=v;
+    return v;
+  }
+  var f;
+  if(o==='#'||o==='##'||o==='%'||o==='%%'){
+    var re=patRe(pword(w,'pat')),long=o.length===2,front=o.charAt(0)==='#';
+    f=function(v){
+      var i,len=v.length;
+      if(!re.free.test(v))return v; /* nothing in it matches */
+      if(front){for(i=long?len:0;long?i>=0:i<=len;i+=long?-1:1)if(re.test(v.slice(0,i)))return v.slice(i)}
+      else for(i=long?0:len;long?i<=len:i>=0;i+=long?1:-1)if(re.test(v.slice(i)))return v.slice(0,i);
+      return v;
+    };
+  }
+  else if(o.charAt(0)==='/'){
+    var sl=-1,d=0;for(var j=0;j<w.length;j++){var c=w.charAt(j),e;if(c==='\\'){j++;continue}if(c==='$'&&w.charAt(j+1)==='{'&&(e=braceEnd(w,j,DQ))>0){j=e;continue}if((c==='"'||c==="'"&&!DQ)&&(e=quoteEnd(w,j))>0){j=e;continue}if(c==='/'){sl=j;break}}
+    var pw=sl<0?w:w.slice(0,sl),rw=sl<0?'':w.slice(sl+1),pat=pword(pw,'pat'),rp=pword(rw,'rep'),rx=patRe(pat),all=o==='//';
+    f=function(v){
+      if(pat===''&&(o==='/'||all)||!rx.free.test(v))return v;
+      var out='',i=0,len=v.length,j,hit;
+      function rep(x){return unguard(rp).replace(/\uE015/g,x)} /* bash 5.2's patsub_replacement: & is what matched */
+      if(o==='/#'){for(j=len;j>=0;j--)if(rx.test(v.slice(0,j)))return rep(v.slice(0,j))+v.slice(j);return v}
+      if(o==='/%'){for(j=0;j<=len;j++)if(rx.test(v.slice(j)))return v.slice(0,j)+rep(v.slice(j));return v}
+      while(i<=len){
+        hit=-1;rx.at.lastIndex=i;var mt=rx.at.exec(v); /* the longest match from i: the one match's own length when the pattern has no * */
+        if(mt){if(rx.fixed){if(mt[0].length)hit=i+mt[0].length}else for(j=len;j>i;j--)if(rx.test(v.slice(i,j))){hit=j;break}}
+        if(hit<0){if(i<len)out+=v.charAt(i);i++;continue}
+        out+=rep(v.slice(i,hit));i=hit;
+        if(!all){out+=v.slice(i);break}
+      }
+      return out;
+    };
+  }
+  else if(o==='@'){
+    if(!/^[UuLQ]$/.test(w))badSub(k);
+    f=w==='U'?function(v){return v.toUpperCase()}:w==='L'?function(v){return v.toLowerCase()}:w==='u'?function(v){return v.charAt(0).toUpperCase()+v.slice(1)}:function(v){return "'"+v.replace(/'/g,"'\\''")+"'"};
+  }
+  else{ /* ^ ^^ , ,, ~ ~~: the letters that match the pattern (any, if none), the first only or each */
+    var cr=w===''?null:patRe(pword(w,'pat')),one=o.length===1,how=o.charAt(0);
+    f=function(v){
+      return v.replace(/[\s\S]/g,function(ch,i){
+        if(one&&i||cr&&!cr.test(ch))return ch;
+        var up=ch.toUpperCase(),lo=ch.toLowerCase();
+        return how==='^'?up:how===','?lo:ch===up?lo:up;
+      });
+    };
+  }
+  if(!at)return f(val);
+  var R=L.map(f);
+  return DQ&&!star?(R.length?R.join(QSEP):QNONE):R.join(' ');
+}
+function pword(w,how){ /* the word after a ${name op}: $names and quotes worked out. how: undefined, a value (what was quoted stays one word);
+                          'pat', a pattern, with what was quoted escaped; 'rep', a / replacement, with an unquoted & for what matched;
+                          'asg' and 'msg', plain text. Inside " ", a ' is itself but in a pattern */
+  var o='',dq=DQ,pat=how==='pat';
+  function lit(x){return pat?x.replace(/[*?[\]\\]/g,'\\$&'):how===undefined?guard(x,true):x}
+  for(var i=0;i<w.length;i++){
+    var c=w.charAt(i),j,m;
+    if(c==='\\'&&i+1<w.length){var x=w.charAt(++i);o+=dq&&!/[$`"\\}]/.test(x)?lit('\\'+x):lit(x);continue}
+    if(c==="'"&&(!dq||pat)&&(j=w.indexOf("'",i+1))>=0){o+=lit(w.slice(i+1,j));i=j;continue}
+    if(c==='"'&&(j=closeDq(w,i))>=0){var keep=DQ;DQ=true;try{o+=lit(unguard(pword(w.slice(i+1,j),'asg')))}finally{DQ=keep}i=j;continue}
+    if(c==='$'&&(m=varAt(w,i))){var v=envOf(m[1]);o+=pat?unguard(v):dq?lit(unguard(v)):v;i+=m[0].length-1;continue}
+    if(c==='~'&&!i&&!dq&&!pat&&(m=/^~([\w.-]*)(?=\/|$)/.exec(w))){var hd=tilde(m[1]);if(hd!==null){o+=lit(hd);i+=m[0].length-1;continue}}
+    if(c==='&'&&how==='rep'){o+='\uE015';continue}
+    o+=dq&&!pat?lit(c):c;
+  }
+  return o;
+}
 function substr(n,o,l,k){ /* bash's ${name:offset} and ${name:offset:length}, each an arithmetic expression: a negative offset counts from the end,
                              a negative length is where to stop, counted from the end. ${@:offset:length}: the positional parameters, $0 first */
   if(!o.trim()&&l===undefined)throw {arith:'${'+k.slice(1,-1)+'}: bad substitution'};
   o=unguard(o);if(l!==undefined)l=unguard(l); /* what $( ) and ` ` gave them, as plain text */
-  var pos=n==='@'||n==='*',L=pos?[ARGS[0]||''].concat(ARGS.slice(1)):envOf(n),len=L.length;
+  var pos=n==='@'||n==='*',L=pos?[ARGS[0]||''].concat(ARGS.slice(1)):typeof n==='object'?n.v:envOf(n),len=L.length; /* n: a name, or {v: a value} */
   var a=Number(o.trim()?arith(o):BigInt(0)),z=len;
   if(a<0)a+=len;
   if(l!==undefined){var b=Number(l.trim()?arith(l):BigInt(0));if(b<0){if(pos||len+b<a&&a<=len)throw {arith:l.trim()+': substring expression < 0'};z=len+b}else z=a+b}
@@ -2054,7 +2649,7 @@ var NOMATCH={};
 function colonRows(p){var f=find(p,true);return f&&f.type==='f'?textOf(f).map(function(l){return l.split(':')}):[]} /* a file of colon-separated fields, /etc/passwd or /etc/group, line by line */
 function passwd(u,n){return colonRows('/etc/passwd').filter(function(x){return x[0]===u&&x.length>(n||5)})[0]||null} /* u's /etc/passwd entry, the first with more than n (5) fields */
 function tilde(u){ /* what ~ or ~user stands for: bash's $HOME (~+ and ~- its PWD and OLDPWD), csh's home, a user's from /etc/passwd. null: bash leaves it as typed; csh says Unknown user */
-  if(!u)return OWNENV&&(has(ENV,'HOME')||DASH)?(ENV.HOME||null):ST.home; /* dash leaves ~ as typed when HOME is unset or empty */
+  if(!u){var h=homeVar();return h!==null?h:DASH?null:ST.home} /* HOME unset: bash takes the password file's, dash leaves ~ as typed */
   if(bashy()&&(u==='+'||u==='-'))return u==='+'?ST.cwd:typeof ENV.OLDPWD==='string'?ENV.OLDPWD:null;
   var r=passwd(u);
   if(r)return r[5];
@@ -2189,14 +2784,15 @@ function parseList(s,o){ /* a line with no top-level ; into [{op,stages:[{words,
       if(!redir)add(inside+ch,given+ch);
       i=close+1;continue;
     }
-    var asg=ch==='~'&&w!==null&&PROFILE.bash&&(/^[A-Za-z_]\w*=$/.test(w)&&!quoted&&!fromVar||/^[A-Za-z_]\w*=/.test(w)&&s.charAt(i-1)===':'&&s.charAt(i-2)!=='\\'); /* in an assignment: after its = or an unquoted : */
+    var asg=ch==='~'&&w!==null&&PROFILE.bash&&(/^[A-Za-z_]\w*=$/.test(w)&&!quoted&&!fromVar||/^[A-Za-z_]\w*=/.test(w)&&s.charAt(i-1)===':'&&s.charAt(i-2)!=='\\')&&
+      (!DASH||/^(export|readonly|local)$/.test(st.words[0])||st.words.every(function(y){return asgOf(y)})); /* in an assignment: after its = or an unquoted :. bash: in any word that looks like one; dash: only one before the command's name, or export's, readonly's or local's */
     if(ch==='~'&&!check&&(PROFILE.bash||CSH)&&(w===null||asg)&&(m=(asg?/^~(\+|-|[\w.][\w.-]*|)(?=$|[\/\s;&|<>():])/:/^~(\+|-|[\w.][\w.-]*|)(?=$|[\/\s;&|<>()])/).exec(s.slice(i)))){ /* ~ and ~user at a word's start (bash and dash: after an assignment's = or : too, where a : also ends the user's name); V7's sh had none */
       var hd=tilde(m[1]);
       if(hd!==null){w=(w||'')+hd;if(!redir){st.raw=st.raw.slice(0,-1)+hd;st.src+=m[0].slice(1)}i+=m[0].length;continue}
     }
-    if(ch==='$'&&check&&PROFILE.bash&&s.charAt(i+1)==='{'&&(e=s.indexOf('}',i))>0){add(s.slice(i,e+1));w=(w||'')+s.slice(i,e+1);i=e+1;continue} /* ${x: -2}, ${x:(-3)}: one word */
+    if(ch==='$'&&check&&PROFILE.bash&&s.charAt(i+1)==='{'&&(e=braceEnd(s,i))>0){add(s.slice(i,e+1));w=(w||'')+s.slice(i,e+1);i=e+1;continue} /* ${x: -2}, ${x:(-3)}: one word */
     if(ch==='$'&&!check){
-      var m=s.slice(i).match(VAR_AT);
+      var m=varAt(s,i);
       if(m){
         var val=envOf(m[1]);
         w=(w||'')+val;fromVar=true;
@@ -2212,15 +2808,7 @@ function parseList(s,o){ /* a line with no top-level ; into [{op,stages:[{words,
   endList(null);
   return list;
 }
-function parenEnd(s,i){ /* the ) that closes the ( at i, outside quotes */
-  for(var d=0,j=i,k;j<s.length;j++){
-    var c=s.charAt(j);
-    if(c==='\\'){j++;continue}
-    if((k=quoteEnd(s,j))>=0){j=k;continue}
-    if(c==='(')d++;else if(c===')'&&!--d)return j;
-  }
-  return -1;
-}
+function parenEnd(s,i){return nestEnd(s,i,'p')} /* the ) that closes the ( at i, outside quotes */
 function groups(){return !CSH&&!PROFILE.dos&&!PROFILE.noUnix} /* sh and bash have { list; } */
 function atCmd(s,i){ /* where a command starts: a { or } there is a reserved word. Read back from i: past blanks, then a word of at most 5 */
   var k=i;
@@ -2273,7 +2861,7 @@ function dqWord(t,pat){ /* a word of [[ ]] or (( )): $names worked out, quotes t
     if(c==='\\'&&i+1<t.length){o+=esc(t.charAt(++i));continue}
     if(c==="'"&&(j=t.indexOf("'",i+1))>=0){o+=esc(t.slice(i+1,j));i=j;continue}
     if(c==='"'&&(j=closeDq(t,i))>=0){o+=esc(unguard(varsIn(t.slice(i+1,j).replace(/\\([$`"\\])/g,function(x,y){return guard(y)}))));i=j;continue}
-    if(c==='$'&&(m=VAR_AT.exec(t.slice(i)))){o+=unguard(envOf(m[1]));i+=m[0].length-1;continue}
+    if(c==='$'&&(m=varAt(t,i))){o+=unguard(envOf(m[1]));i+=m[0].length-1;continue}
     o+=/[\uE000-\uE014]/.test(c)?esc(unguard(c)):c;
   }
   return o;
@@ -2292,7 +2880,8 @@ function patRe(p){ /* a glob pattern from dqWord(t,true) as a RegExp: * ? [...] 
     if(c==='['&&(j=brk(p,i,true))){o+=j.src;i=j.end;continue}
     o+=c.replace(/[.+^${}()|[\]\\\/]/g,'\\$&'); /* a [ with no ] is itself */
   }
-  try{r=new RegExp('^'+o+'$')}catch(e){r=/(?!)/} /* anything else a RegExp cannot take matches nothing */
+  try{r=new RegExp('^'+o+'$');r.free=new RegExp(o);r.at=new RegExp(o,'y');r.fixed=o.indexOf('[\\s\\S]*')<0}catch(e){r=/(?!)/;r.free=r.at=r;r.fixed=true} /* anything else a RegExp cannot take matches nothing.
+    free: a match anywhere; at: one from lastIndex; fixed: no *, so every match is as long */
   PATRES.set(p,r);return r;
 }
 var CONDBIN=/^(==|=|!=|<|>|=~|-eq|-ne|-lt|-le|-gt|-ge|-nt|-ot|-ef)$/,CONDUN=/^-[abcdefghknoprstuvwxzGLNORS]$/;
@@ -2359,9 +2948,7 @@ function condEval(e){ /* true or false; an arithmetic error is thrown on */
     if(u==='f')return n.type!=='d'&&!n.dev;
     if(u==='c')return !!n.dev;
     if(u==='s')return n.type==='d'||fsize(n)>0;
-    if(u==='r'||u==='R')return !n.prot||isRoot();
-    if(u==='w')return mayAlter(n);
-    if(u==='x')return /x/.test(modeOf(n).slice(1));
+    if(u==='r'||u==='w'||u==='x')return access(n,u);
     if(u==='O'||u==='G')return n.owner===undefined||n.owner===ST.user;
     return u==='a'||u==='e';
   }
@@ -2461,10 +3048,11 @@ function runSub(text,lines){ /* in a step: ( list ), with its own directory, var
                                 lines: a { list; } in a pipe, which is its own process too, read as the lines it was typed on */
   if(SUB>=32){noFork();return}
   var tree=treeOf(lines||[text]);if(!tree)return;
-  var back=keep(),was=SUBSH,loop=LOOP,shell=SHID,ld=LOOPD,g=GEN,job=ASIDE&&ASIDE.job;
-  SUB++;SUBSH=SUB;SHID=++SHIDS;LOOPD=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs. Its $? is the shell's, as a fork's is */
+  var back=keep(),was=SUBSH,loop=LOOP,shell=SHID,see=JOBSEE,ld=LOOPD,lu=LOOPUP,g=GEN,job=ASIDE&&ASIDE.job;
+  LOOPUP=CSH||PROFILE.bash&&!DASH?0:LOOPUP+LOOPD; /* bash's ( ) is no longer in a loop (execute_in_subshell: loop_level = 0); csh's break there moves only its own input */
+  SUB++;SUBSH=SUB;SHID=++SHIDS;JOBSEE=null;LOOPD=0;LOOP=null; /* its own process: what it starts with & are not this shell's jobs. Its $? is the shell's, as a fork's is */
   runBlock(tree);
-  queue(function(){var st=STATUS;SUB--;SUBSH=was;SHID=shell;if(LOOP==='break'||LOOP==='continue')LOOPN=0;LOOP=loop;LOOPD=ld;back();if(job||g===GEN)STATUS=st},true);
+  queue(function(){var st=STATUS;SUB--;SUBSH=was;SHID=shell;JOBSEE=see;if(LOOP==='break'||LOOP==='continue')LOOPN=0;LOOP=loop;LOOPD=ld;LOOPUP=lu;back();if(job||g===GEN)STATUS=st},true);
 }
 var GROUPD=0; /* how many { list; } deep */
 function runGroup(text){ /* in a step: { list; } on its own, run by this shell: what it does to the directory and variables stays */
@@ -2530,13 +3118,14 @@ function runPipeline(stages){
       }
       if(!k||CSH||PROFILE.dos){runOne(st.raw,st.words,st.src);return}
       var cut=function(t,j){return t.slice(st.ends[k-1][j]).replace(/^\s+/,'')};
-      prefix={}; /* X=2 cmd: X is 2 for cmd only, and its $X was worked out before that */
+      prefix={};var ro=false; /* X=2 cmd: X is 2 for cmd only, and its $X was worked out before that */
       st.words.slice(0,k).forEach(function(x){
         var m=asgOf(x);
+        if(ro||(ro=svRO(m[1])))return; /* System V: a readonly X: failed(), and cmd does not run */
         if(bashy()&&(m[2]!==undefined||m[3]||m[4].charAt(0)===AMARK)){try{setAsg(m)}catch(e){if(!e||e.arith===undefined)throw e;arithBad(e)}return} /* x[1]=v cmd, x+=v cmd: kept, as they are not plain */
         if(!has(prefix,m[1]))prefix[m[1]]=has(ENV,m[1])?ENV[m[1]]:undefined;ENV[m[1]]=m[4];
       });
-      runOne(unguard(cut(st.raw0,0)),st.words.slice(k),cut(st.src,1));
+      if(!ro)runOne(unguard(cut(st.raw0,0)),st.words.slice(k),cut(st.src,1));
     });
     queue(function(){
       if(own){SUB--;if(back)back();if(LOOP==='abort')LOOP=loop;else if((LOOP==='break'||LOOP==='continue')&&LOOP!==loop){LOOP=loop;LOOPN=0}} /* a $(( )) gone wrong in a pipeline's command, or a break or continue left over: its process only */
@@ -2584,7 +3173,7 @@ function varsNow(t,dq){ /* t with its $names' values in place (guarded), outside
     if(c==='\\'){o+=t.substr(i,2);i++;continue}
     if(c==="'"&&!dq&&(j=t.indexOf("'",i+1))>=0){o+=t.slice(i,j+1);i=j;continue}
     if(c==='"')dq=!dq;
-    else if(c==='$'&&(m=VAR_AT.exec(t.slice(i)))&&!/^(\*|\{.*\[[@*]\]\})$/.test(m[1])){o+=guard(envOf(m[1]));i+=m[0].length-1;continue}
+    else if(c==='$'&&(m=varAt(t,i))&&!/^(\*|\{.*\[[@*]\]\})$/.test(m[1])){o+=guard(envOf(m[1]));i+=m[0].length-1;continue}
     o+=c;
   }
   return o;
@@ -2611,7 +3200,7 @@ function tell(n){ /* the job's notice, once, when it starts: bash [1] and its la
   if(!j||j.told||SUB!==j.level)return; /* not for a `command` inside it */
   j.told=true;
   var ids=newPids(n||1);
-  j.pids=n?ids:null;LASTBG=String(ids[ids.length-1]);
+  j.pids=n?ids:null;LASTBG=j.last=String(ids[ids.length-1]); /* last: its own pid, the $! of the shell that started it once it is through */
   if(!CSH&&(SCRIPTS||j.sub))return;
   typeLine(notice(control()?++JOBS:0,ids));
 }
@@ -2623,14 +3212,14 @@ function notice(num,ids){return CSH?'['+num+'] '+ids.join(' '):(PROFILE.bash?'['
    prompt, V7 sh says nothing (only, as its wait does, which ones a signal ended). A job that wants the terminal stops there, as
    SIGTTIN and SIGTTOU stop one, where there is job control (bash and csh at the prompt); where there is none (V7 sh, or a job
    started in a script) it reads /dev/null, and one that wants the screen just ends. */
-var TABLE=[],JOBMAX=16,SHIDS=0,SHID=0,FGJOB=null,CUR={c:null,p:null},V7NOTE=[],WARNED=-9,RUNS=0; /* SHID: the shell a command runs in (0: the login shell) */
+var TABLE=[],JOBMAX=16,SHIDS=0,SHID=0,JOBSEE=null,FGJOB=null,CUR={c:null,p:null},V7NOTE=[],WARNED=-9,RUNS=0,DMRU=0; /* DMRU: dash's order of its jobs (jobs.c's curjob list), newest first */ /* SHID: the shell a command runs in (0: the login shell) */
 function procGet(){
   return {SINK:SINK,STDIN:STDIN,ERRSINK:ERRSINK,STATUS:STATUS,PREV:PREV,SUB:SUB,SCRIPTS:SCRIPTS,LOOP:LOOP,JOB:JOB,JOBS:JOBS,PIDNOW:PIDNOW,ARGS:ARGS,
-    CURRENT:CURRENT,SOURCE:SOURCE,KEPT:KEPT,SHID:SHID,SUBSH:SUBSH,LOOPD:LOOPD,LOOPSUB:LOOPSUB.slice(),env:Object.assign({},ENV),vars:Object.assign(Object.create(null),CSHV),wds:Object.assign(Object.create(null),CSHW),arr:arrClone(),cwd:ST.cwd,al:PH.aliases,bsh:BSH.slice()};
+    CURRENT:CURRENT,SOURCE:SOURCE,KEPT:KEPT,SHID:SHID,JOBSEE:JOBSEE,SUBSH:SUBSH,LOOPD:LOOPD,LOOPUP:LOOPUP,LOOPSUB:LOOPSUB.slice(),env:Object.assign({},ENV),vars:Object.assign(Object.create(null),CSHV),wds:Object.assign(Object.create(null),CSHW),arr:arrClone(),ints:Object.assign(Object.create(null),INTV),cwd:ST.cwd,al:PH.aliases,bsh:BSH.slice()};
 }
 function procPut(c){
   SINK=c.SINK;STDIN=c.STDIN;ERRSINK=c.ERRSINK;STATUS=c.STATUS;PREV=c.PREV;SUB=c.SUB;SCRIPTS=c.SCRIPTS;LOOP=c.LOOP;JOB=c.JOB;JOBS=c.JOBS;PIDNOW=c.PIDNOW;ARGS=c.ARGS;
-  CURRENT=c.CURRENT;SOURCE=c.SOURCE;KEPT=c.KEPT;SHID=c.SHID;SUBSH=c.SUBSH;LOOPD=c.LOOPD;LOOPSUB=c.LOOPSUB.slice();refill(ENV,c.env);refill(CSHV,c.vars);refill(CSHW,c.wds);arrRefill(c.arr);ST.cwd=c.cwd;PH.aliases=c.al;BSH=c.bsh.slice();grammar(shTop()); /* 4.3BSD: sh & runs Bourne's grammar in its own process only */
+  CURRENT=c.CURRENT;SOURCE=c.SOURCE;KEPT=c.KEPT;SHID=c.SHID;JOBSEE=c.JOBSEE;SUBSH=c.SUBSH;LOOPD=c.LOOPD;LOOPUP=c.LOOPUP;LOOPSUB=c.LOOPSUB.slice();refill(ENV,c.env);refill(CSHV,c.vars);refill(CSHW,c.wds);arrRefill(c.arr);refill(INTV,c.ints);ST.cwd=c.cwd;PH.aliases=c.al;BSH=c.bsh.slice();grammar(shTop()); /* 4.3BSD: sh & runs Bourne's grammar in its own process only */
 }
 function refill(o,from){for(var k in o)if(!Object.prototype.hasOwnProperty.call(from,k))delete o[k];Object.assign(o,from)}
 function oneLine(t){return t.trim().replace(/\s+/g,' ').replace(HDRE,function(m,n){var h=HD[n];return '<<'+h.word+'\n'+h.body.concat(h.word,'').join('\n')})} /* bash's jobs shows a here-document's body too */ /* a command as the job table and the loops' printer show it */
@@ -2650,7 +3239,7 @@ function pipeRaw(t,keep){ /* the same, as typed; keep: each with the | after it 
   return L;
 }
 function liveJobs(){return TABLE.filter(function(j){return !j.over})}
-function mine(){return TABLE.filter(function(j){return j.owner===SHID}).sort(function(a,b){return a.num-b.num})} /* this shell's jobs */
+function mine(){return TABLE.filter(function(j){return j.owner===SHID||j.owner===JOBSEE}).sort(function(a,b){return a.num-b.num})} /* this shell's jobs, and in bash's $( ) the shell's it was forked from */
 function control(){return PROFILE.bash||CSH} /* job control: jobs, fg, bg, %n, and a job that wants the terminal stops */
 function newJob(cmds,ids,o){ /* a job's entry in the table */
   var job={num:TABLE.reduce(function(m,j){return j.owner===SHID&&!j.kept?Math.max(m,j.num):m},0)+1,owner:SHID,
@@ -2688,9 +3277,10 @@ function startJob(text,o){ /* in a step of the shell: text &. o.run: what it run
   var cmds=o.shown?[o.shown]:pipeText(text).map(jobWords),one=!!o.shown||andOr(text).length<2,ids=newPids(one?cmds.length:1);
   var job=newJob(one?cmds:[oneLine(text)],ids,o.shown?{ps:[shellName()]}:null);
   LASTBG=String(ids[ids.length-1]);
-  if(CSH||!SCRIPTS&&!(PROFILE.bash&&SUBSH))typeLine(notice(job.num,ids)); /* bash and sh say it only to someone typing; csh in a script too */
+  if(CSH||!SCRIPTS&&!(PROFILE.bash&&SUBSH)&&!DASH)typeLine(notice(job.num,ids)); /* dash says nothing */ /* bash and sh say it only to someone typing; csh in a script too */
   var c=procGet();
-  c.SUB=1;c.JOB={sub:false,level:1,told:true,pids:one?ids.slice():null};c.KEPT=[];c.LOOP=null;c.PIDNOW=null;c.SHID=++SHIDS;
+  c.SUB=1;c.JOB={sub:false,level:1,told:true,pids:one?ids.slice():null};c.KEPT=[];c.LOOP=null;c.PIDNOW=null;c.SHID=++SHIDS;c.JOBSEE=null;
+  var top=c.bsh[c.bsh.length-1];if(top&&top.sv)c.bsh[c.bsh.length-1]=Object.assign({},top,{sv:svCopy(top.sv)}); /* System V sh: a process of its own, its functions, readonly names and hash table too */
   if(!job.control&&!c.STDIN)c.STDIN=[]; /* no job control: it reads /dev/null */
   job.ctx=c;
   TABLE.push(job);
@@ -2711,8 +3301,10 @@ function fgProc(item,run){ /* in a step: item {stages} or {text}, run() runs it 
     inner.race=new Promise(function(r){pr.detach=r});
     run();
   });
-  queue(function(){if(FGP===pr)FGP=null;pr.over=true;if(pr.job)suspended(pr.job)},true);
+  queue(function(){if(FGP===pr)FGP=null;pr.over=true;if(pr.job)suspended(pr.job);else if(PROFILE.bash&&!DASH&&forks(pr))jobNotes(function(j){return j.owner===0&&!j.noted&&j.over})},true); /* bash: a process it waited for in the
+    foreground has ended, and its waitchld has found the jobs that ended meanwhile too: they are said now (a builtin forks nothing, and waits for nothing) */
 }
+function forks(pr){var w=procOf(pr).word;return w===''||/^\(/.test(w)||!!PH.builtin&&!PH.builtin(w)&&!/^\w+=/.test(w)} /* a pipeline, a ( ), or a program: not the shell's own command, nor x=1 */
 var NOSTOP=/^(read|wait|fg|bg|%.*|source|\.|exit|logout)$/; /* the shell's own commands: the shell sets ^Z aside */
 function procOf(pr){ /* at a ^Z: the foreground pipeline's commands as the job table shows them, and the command NOSTOP looks at */
   var it=pr.item,word;
@@ -2723,7 +3315,7 @@ function procOf(pr){ /* at a ^Z: the foreground pipeline's commands as the job t
 }
 function procJob(pr){ /* the foreground pipeline pr as a job, now */
   var cmds=procOf(pr).cmds;
-  var c=procGet();c.KEPT=KEPT.slice();c.SUB++;c.SHID=++SHIDS;c.JOB=null;
+  var c=procGet();c.KEPT=KEPT.slice();c.SUB++;c.SHID=++SHIDS;c.JOBSEE=null;c.JOB=null;
   KEPT.length=pr.kept;procPut(pr.snap); /* the shell as it was */
   var job=newJob(cmds,newPids(cmds.length));
   job.control=true;job.wakers=pr.wakers;job.side={job:job,p:Promise.resolve(),stopped:false};
@@ -2823,6 +3415,11 @@ function current(job,what){ /* the + and - jobs: bash's set_current_job and rese
     else if(job===CUR.p)CUR.p=get();
     return;
   }
+  if(DASH){ /* dash's set_curjob: a job started, stopped, or put in the foreground or background goes to the front of its list (one
+               running, after those stopped); + and - are the first two */
+    if(/^(new|fg|stop|bg)$/.test(what))job.dmru=++DMRU;
+    var D=dashJobs();CUR.c=D[0]||null;CUR.p=D[1]||null;return;
+  }
   function last(state,below){var x=null;T.forEach(function(j){if(j.state===state&&(!below||j.num<below.num))x=j});return x}
   function set(j){ /* set_current_job */
     if(CUR.c!==j){CUR.p=CUR.c;CUR.c=j}
@@ -2877,8 +3474,10 @@ function polite(d){var h=ST.home;return d===h?'~':d.indexOf(h+'/')===0?'~'+d.sli
 function why(job){ /* what the job's status says: bash's printable_job_status, csh's pprint reasons. null: csh says nothing for INT */
   var s=job.state;
   if(CSH)return s==='Running'?'Running ':s==='Stopped'?SIG[job.sig].says:s==='Done'?(job.code?'Exit '+String(job.code).padEnd(16):'Done'):job.sig===2?null:SIG[job.sig].says;
+  if(DASH)return s==='Running'?s:s==='Done'?(job.code?'Done('+job.code+')':'Done'):SIG[job.sig].says; /* dash's sprint_status: strsignal's words, Done(n) */
   return s==='Running'||s==='Stopped'?s:s==='Done'?(job.code?'Exit '+job.code:'Done'):SIG[job.sig].says;
 }
+function dashJobs(){return TABLE.filter(function(j){return j.owner===0}).sort(function(a,b){return (b.state==='Stopped')-(a.state==='Stopped')||(b.dmru||0)-(a.dmru||0)})} /* dash's jobs, in its order */
 function markOf(job){return job===CUR.c?'+':job===CUR.p?'-':' '}
 function cshPre(job){return '['+job.num+']'+(job.num<10?' ':'')+' '+markOf(job)+' '} /* csh's [n] and its mark */
 function wdNote(job,sep){return job.wd!==ST.cwd?sep+'(wd: '+polite(job.wd)+')':''} /* where it was started, when that is not here */
@@ -2892,6 +3491,12 @@ function rowsOf(job,how){ /* how: '' as jobs and the notices print it, 'l' with 
     job.cmds.forEach(function(c,i){var end=i===job.cmds.length-1;R.push((i?'       ':pre)+String(job.pids[i]||job.pids[0]).padStart(5)+' '+(w===null?'':(i?'':w).padEnd(21))+c+(end?core+dir:' |'))});
     return R;
   }
+  if(DASH){ /* dash's showjob: [n] and its mark, with -l each process's id, then the command from column 33 */
+    var hd='['+job.num+'] '+mark+' ',pad=function(t){return t+' '.repeat(Math.max(1,33-t.length))};
+    if(how!=='l')return [pad(hd+w)+job.text];
+    job.cmds.forEach(function(c,i){var end=i===job.cmds.length-1?'':' |';R.push(i?pad(' '.repeat(hd.length)+(job.pids[i]||job.pids[0]))+c+end:pad(hd+job.pids[0]+' '+w)+c+end)});
+    return R;
+  }
   var tail=(job.state==='Running'?' &':'')+wdNote(job,'  ');
   if(how!=='l')return ['['+job.num+']'+mark+'  '+w.padEnd(24)+job.text+tail];
   job.cmds.forEach(function(c,i){R.push(i?'     '+String(job.pids[i]).padStart(5)+' '+''.padEnd(22)+'| '+c+(i===job.cmds.length-1?tail:''):'['+job.num+']'+mark+' '+String(job.pids[0]).padStart(5)+' '+w.padEnd(24)+c+(job.cmds.length===1?tail:''))});
@@ -2899,13 +3504,14 @@ function rowsOf(job,how){ /* how: '' as jobs and the notices print it, 'l' with 
 }
 function due(j){return j.owner===0&&!j.noted&&j.born!==RUNS} /* the shell finds out at the prompt after the one its line was typed at, as the child's exit comes after the prompt is out */
 function notesDue(){return control()&&TABLE.some(due)}
-function jobNotes(){ /* before a prompt: what has become of the jobs since the last one. bash in job order, csh newest first */
-  var L=TABLE.filter(due),dir=ST.cwd,moved=false,gone=[];
+function jobNotes(which){ /* before a prompt: what has become of the jobs since the last one. bash in job order, csh newest first. which: those (due) */
+  var L=TABLE.filter(which||due),dir=ST.cwd,moved=false,gone=[];
   if(CSH)L.reverse();
   L.forEach(function(j){
+    if(j.restop&&DASH)j.restop=false; /* dash just says how it ended */
     if(j.restop){var s=j.state;j.restop=false;j.state='Stopped';typeLine('');jobRows(j,'').forEach(function(r){typeLine(r)});j.state=s;return} /* killed while stopped: still Stopped, as far as bash has heard */
     j.noted=true;
-    if(PROFILE.bash&&j.state==='Stopped')typeLine(''); /* notify_of_job_status: a newline first */
+    if(PROFILE.bash&&!DASH&&j.state==='Stopped')typeLine(''); /* notify_of_job_status: a newline first */
     jobRows(j,'').forEach(function(r){typeLine(r)});
     if(PROFILE.bash&&j.state!=='Stopped'&&j.wd!==dir)moved=true;
     if(j.state!=='Stopped'){if(CSH)drop(j);else gone.push(j)} /* csh's pnote flushes each as it goes; bash's cleanup_dead_jobs comes after them all, so the marks it prints are the ones from before */
@@ -2918,7 +3524,7 @@ function v7Notes(){ /* V7 sh's await: each child a signal ended, as it is reaped
 }
 function findJob(w,who){ /* a job spec: %n %+ %% %- %name %?text (bash's fg, bg and jobs take n without the %). {job} or {err} */
   var T=mine(),bare=/^\d+$/.test(w||'');
-  function no(m){return {err:CSH?who+': '+m+'.':'bash: '+who+': '+m}}
+  function no(m){return {err:CSH?who+': '+m+'.':DASH?bashAt()+who+': '+(/^No current/.test(m)||/current: no such/.test(m)?'No current job':'No such job: '+w):'bash: '+who+': '+m}} /* dash: No such job: %n, No current job */
   if(w===undefined||w==='%'||w==='%%'||w==='%+'){var c=T.indexOf(CUR.c)>=0?CUR.c:null;return c?{job:c}:CSH?no('No current job'):no((w||'current')+': no such job')}
   if(w==='%-'||CSH&&w==='%#'){var p=T.indexOf(CUR.p)>=0?CUR.p:null;return p?{job:p}:CSH?no('No previous job'):no(w+': no such job')}
   var x=w.replace(/^%/,'');
@@ -2948,8 +3554,9 @@ function fgJob(job){ /* in a step: the job has the terminal until it ends or ^Z 
   },true);
 }
 function bgJob(job){ /* bg: a stopped job goes on in the background (and stops again if it still wants the terminal) */
-  if(PROFILE.bash&&job.state==='Running'){typeLine('bash: bg: job '+job.num+' already in background','err');queue(function(){STATUS=0});return}
+  if(PROFILE.bash&&!DASH&&job.state==='Running'){typeLine('bash: bg: job '+job.num+' already in background','err');queue(function(){STATUS=0});return}
   if(CSH)current(job,'end');
+  if(DASH){typeLines('['+job.num+'] '+job.text);resumeJob(job,true);current(job,'bg');return} /* dash: [n] command */
   var mark=markOf(job);
   typeLines((CSH?cshPre(job):'['+job.num+']'+(mark===' '?' ':mark+' '))+job.text+' &');
   resumeJob(job,true);
@@ -3008,7 +3615,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     if(WARNED===RUNS-1)WARNED=RUNS; /* a jobs between: exit goes */
     var L=[];
     if(W.length)W.forEach(function(w){var r=findJob(w,'jobs');if(r.err)err(r.err);else L.push(r.job)});
-    else L=mine().filter(function(j){return only==='r'?j.state==='Running':only==='s'?j.state==='Stopped':only==='n'?!j.noted:true});
+    else L=(DASH?dashJobs().filter(function(j){return j.owner===SHID}):mine()).filter(function(j){return only==='r'?j.state==='Running':only==='s'?j.state==='Stopped':only==='n'?!j.noted:true});
     L.forEach(function(j){jobRows(j,how).forEach(function(r){typeLine(r)});j.noted=true;if(j.over)drop(j)});
     return;
   }
@@ -3071,7 +3678,7 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     queue(function(){ran=true;return waitJobs(J)});
     queue(function(){
       if(!ran)return; /* ^C before it began */
-      if(!J.every(function(j){return j.over})){if(v7w&&g!==GEN)STATUS=0;else STATUS=130;return} /* ^C. V7's await: wait(2) fails with EINTR and returns -1, the entry its post(-1) added, so rc stays 0 and exitval is 0 */
+      if(!J.every(function(j){return j.over})){if(v7w&&g!==GEN)STATUS=0;else STATUS=130;return} /* ^C. V7's await: wait(2) fails with EINTR and returns -1, the entry its post(-1) added, so rc stays 0 and exitval is 0 (a job started with & is never posted: xec.c), and the wait ends */
       if(!control())v7Notes();
       J.forEach(function(j){j.noted=true;drop(j)});
       if(bash&&all)mine().forEach(function(j){if(j.over){j.noted=true;drop(j)}}); /* mark_dead_jobs_as_notified */
@@ -3086,6 +3693,15 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
   if(!W.length){err(bash?'kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]':csh?'kill: Too few arguments.':'usage: kill [ -signo ] pid ...');if(!csh)queue(function(){STATUS=2});return}
   var o1=W[0];
   if(bash&&o1==='-L')o1='-l'; /* bash: -L is -l */
+  if(o1==='-l'&&DASH){ /* dash's: one name to a line, a number where it has none; kill -l n: the first one's name */
+    function nm(q){return q===16||q===32||q===33?String(q):SIG[q].name} /* 16, 32 and 33 have none */
+    if(W[1]===undefined){for(var q0=1;q0<=64;q0++)typeLine(nm(q0));return}
+    var x0=W[1];
+    if(!/^\d+$/.test(x0)){err(bashAt()+'kill: Illegal number: '+x0);queue(function(){STATUS=2});return}
+    var n0=+x0>128?+x0-128:+x0;
+    if(n0<1||n0>64){err(bashAt()+'kill: invalid signal number or exit status: '+x0);queue(function(){STATUS=2});return}
+    typeLine(nm(n0));return;
+  }
   if(o1==='-l'&&!v7){ /* the signals: bash's display_signal_list (and its real-time ones), csh's names, sixteen to a line */
     if(csh){var N=[];for(var q=1;q<=31;q++)N.push(SIG[q].name==='-'?'':SIG[q].name+' ');typeLine(N.slice(0,16).join(''));typeLine(N.slice(16).join(''));return}
     if(W[1]!==undefined){W.slice(1).forEach(function(x){var v=/^\d+$/.test(x)?SIG[+x>128?+x-128:+x]:SIG[x.toUpperCase().replace(/^SIG/,'')];if(v===undefined)err('bash: kill: '+x+': invalid signal specification');else typeLine(typeof v==='number'?String(v):v.name)});return}
@@ -3122,14 +3738,14 @@ function jobCmd(name,a,raw,words){ /* jobs, fg, bg, kill, wait and %n */
     if(v7&&(n>15||n<0)){err(w+': Invalid argument');bad=true;continue}
     if(!hit){
       var pid=+w,p=pid===0?{pid:0,mine:true,cmd:''}:procTable().filter(function(x){return x.pid===pid})[0];
-      if(!p){err(bash?'bash: kill: ('+w+') - No such process':w+': No such process');bad=true;continue}
+      if(!p){err(bash?'bash: kill: ('+w+') - No such process':v7&&PROFILE.sysv?'kill: '+w+': no such process':w+': No such process');bad=true;continue} /* IRIX's System V /bin/kill (SysIII and SVR2 kill.c): kill: pid: no such process, and its status is 2; V7's and csh's pid: sys_errlist[] */
       if(!p.mine&&ST.user!==PROFILE.rootName){err(bash?'bash: kill: ('+w+') - Operation not permitted':w+': Not owner');bad=true;continue} /* EPERM: someone else's; root may */
       if(n&&(!pid||pid===shellPid()))shellSignal(n,!pid);
       any=true;continue;
     }
     if(n)signal(hit,n);any=true;
   }
-  if(!csh&&!v7&&!any||bad)queue(function(){STATUS=1});
+  if(!csh&&!v7&&!any||bad)queue(function(){STATUS=bad&&v7&&PROFILE.sysv?2:1});
 }
 function procTable(){ /* the processes ps lists besides the jobs: {pid,mine,cmd}; a machine with a ps of its own gives its (PH.procs) */
   if(PH.procs)return PH.procs();
@@ -3149,7 +3765,7 @@ function shellSignal(n,group){ /* kill $$, or kill 0 (its process group: with no
 function stoppedWarn(){ /* exit and logout with stopped jobs: once, unless the line before said it (or was jobs) */
   if(!control()||SUB||SCRIPTS||SHID)return false;
   if(!TABLE.some(function(j){return j.owner===0&&j.state==='Stopped'})||WARNED===RUNS-1)return false;
-  WARNED=RUNS;typeLine('There are stopped jobs.','err');
+  WARNED=RUNS;typeLine(DASH?'You have stopped jobs.':'There are stopped jobs.','err');
   return true;
 }
 function psJobs(){ /* each process of each job still going: for ps */
@@ -3157,8 +3773,33 @@ function psJobs(){ /* each process of each job still going: for ps */
   liveJobs().forEach(function(j){j.pids.forEach(function(p,i){R.push({pid:p,cmd:j.ps&&j.ps[i]||j.cmds[i]||j.text,stopped:j.state==='Stopped',start:j.start})})});
   return R;
 }
+/* a shell started at the terminal is a child of the one it was typed in: the jobs it starts are its own, and its parent's are
+   not its. As it ends, its stopped jobs are killed (the kernel's SIGHUP to a process group orphaned with a stopped member;
+   bash's exit says "There are stopped jobs." first) and the running ones go on with no shell to report them */
+var PARKS=0;
+function parkJobs(){
+  var p={id:-(++PARKS),cur:CUR,warned:WARNED,v7:V7NOTE,bg:LASTBG};
+  TABLE.forEach(function(j){if(j.owner===0)j.owner=p.id});
+  CUR={c:null,p:null};V7NOTE=[];LASTBG=''; /* a new shell has no $! yet */
+  return p;
+}
+function unparkJobs(p){
+  var gone=-(++PARKS);
+  TABLE.slice().forEach(function(j){
+    if(j.owner!==0)return;
+    j.owner=gone;
+    if(j.state==='Stopped'&&!j.over){killJob(j,1);drop(j)}
+  });
+  TABLE.slice().forEach(function(j){
+    if(j.owner!==p.id)return;
+    j.owner=0;
+    if(j.over&&j.kept){j.kept=false;if(control())j.noted=false;else{if(j.sig)V7NOTE.push(j);drop(j)}} /* one that ended meanwhile: the parent hears of it now, as ended() has it */
+  });
+  CUR=p.cur;WARNED=p.warned;V7NOTE=p.v7;LASTBG=p.bg;
+}
 function endJobs(){TABLE.slice().forEach(function(j){j.dead=true;j.state='Killed';j.sig=1;ended(j)});TABLE=[];CUR={c:null,p:null};V7NOTE=[];FGJOB=null} /* logout: the session's jobs go with it */
 function execSeg(seg){
+  var fm;if(SV&&(fm=FNDEF.exec(seg))&&fm[2].trim()){queue(function(){fnDefine(fm)});return} /* System V's name() command */
   if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)&&isBack(seg)){ /* echo a &: its own process, which nobody waits for. exit, break or cd in it end or change only that process */
     var back=null,was,text=seg.replace(/&\s*$/,'');
     queue(function(){
@@ -3166,13 +3807,13 @@ function execSeg(seg){
       if(!SUB&&!SINK&&(!ERRSINK||ERRSINK===GLASS)){if(!misread(text))startJob(text);return} /* at the shell's own level: a job of its own, in the background */
       back=keep();was=JOB;JOB={sub:SUB>0,level:SUB+1};SUB++;execSeg(text); /* inside a `command`, a pipe or a file: it is run through, as the one reading it waits for its end */
     });
-    queue(function(){if(!back)return;JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
+    queue(function(){if(back)bgEnd(back,was)},true); /* the shell that started it has its pid as $!, not one of the jobs it started in turn */
     return;
   }
   if((seg=bracesOr(seg))===null){queue(function(){STATUS=1});return} /* csh: error() */
   var parts=PROFILE.dos||CSH&&/^\s*if\s*\(/.test(seg)?null:andOr(seg),dead=false;
   if(parts&&parts.length>1)queue(function(){tell()}); /* a && b &: one process for the lot */
-  if(!parts||parts.length<2){queue(function(){if(LOOP!=='abort'){subPipe(seg,function(text){execText(text)})}});return}
+  if(!parts||parts.length<2){queue(function(){if(LOOP!=='abort'&&LOOP!=='exit'){subPipe(seg,function(text){execText(text)})}});return} /* exit: a shell at the terminal has ended, and the rest of its line with it */
   parts.forEach(function(p){ /* cd /tmp && echo `pwd`: the pwd runs in /tmp */
     queue(function(){
       if(dead||LOGOUT||LOOP||skipped(p.op))return;
@@ -3247,7 +3888,7 @@ function synCheck(lines,last){ /* the first syntax error in lines, read as the s
         else if((km=t.match(/^(if|elif|while|until|!)(?=[\s(]|$)/)))t=t.slice(km[1].length); /* if(1): the keyword, then a ( ) */
         if(bashy())t=t.replace(/(\|&?\s*)for\s*\(\([\s\S]*$/,'$1x'); /* ... | for (( )): read as the loop it is */
       }
-      if(!t.trim())return false;
+      if(!t.trim()||SV&&FNDEF.test(t))return false; /* System V's name() { list }: read when it runs */
       try{parseList(t,{check:true})}catch(x){if(x&&x.syntax)bad=synMsgs(x)}
       return bad;
     });
@@ -3364,7 +4005,7 @@ function execText(seg,failed){ /* failed: told when the line could not be read, 
 }
 /* for, while, until, if, case (and csh's foreach): read into a tree, then run with the queue */
 var SCRLN=null; /* the script that is running, {name, ln: the line of the command it is on}, for bash's errors: name: line N: */
-var WANT='',DWANT='',MORE={},LOOP=null,LOOPN=0,SCRIPTS=0,SUB=0,SUBSH=0,LOOPD=0,LOOPSUB=[]; /* SUB: inside a pipeline stage or `command`, each its own process; SUBSH: the SUB of the ( ) it is in; LOOPD: how many loops deep;
+var WANT='',DWANT='',MORE={},LOOP=null,LOOPN=0,SCRIPTS=0,SUB=0,SUBSH=0,LOOPD=0,LOOPUP=0,LOOPSUB=[]; /* SUB: inside a pipeline stage or `command`, each its own process; SUBSH: the SUB of the ( ) it is in; LOOPD: how many loops deep;
                                                                                          LOOPSUB: the SUB of each loop running: break and continue are for a loop of their own process (echo | while ...) */
 function statements(lines){ /* S.ln: the line each starts on */
   var S=[],ln=S.ln=[];
@@ -3476,8 +4117,8 @@ function parseTree(lines){
 function runBlock(B){
   B.forEach(function(st){queue(function(){if(!LOOP&&!LOGOUT)runStmt(st)})});
 }
-function afterLoop(){var was=LOOP;if((was==='break'||was==='continue')&&LOOPN>0){LOOPN--;return 'break'}if(was!=='exit'&&was!=='stop'&&was!=='abort')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at; abort: a $(( )) that went wrong ends the whole line */
-function over(was){return was==='break'||was==='exit'||was==='stop'||was==='abort'}
+function afterLoop(){var was=LOOP;if((was==='break'||was==='continue')&&LOOPN>0){LOOPN--;return 'break'}if(was!=='exit'&&was!=='stop'&&was!=='abort'&&was!=='return')LOOP=null;return was} /* stop: ^Z, which bash's loops all end at; abort: a $(( )) that went wrong ends the whole line */
+function over(was){return was==='break'||was==='exit'||was==='stop'||was==='abort'||was==='return'}
 var PIPEMAX=65536,PIPEBUF=4096; /* PIPEMAX: the writes a pipe takes from a loop before the loop's process is ended (memory stays bounded).
    PIPEBUF: the bytes a pipe holds before the writer has to wait for its reader (V7's and 4.3BSD's pipe size), so a reader
    is taken to read once that much waits for it: a short loop is done before head has even started, as it usually is on the real systems */
@@ -3499,7 +4140,7 @@ function pipeReader(stages,i){ /* what the command at stages[i] does with the pi
   var ops=w.slice(1).filter(function(x){return x.charAt(0)!=='-'||x==='-'}),pass,fl,re;
   if(w[0]==='cat'||w[0]==='tee'||w[0]==='tr')pass=function(){return true};
   else if(w[0]==='grep'&&ops.length&&!/[co]/.test(fl=w.slice(1).filter(function(x){return /^-./.test(x)}).join(''))){ /* the lines it prints */
-    try{re=new RegExp(PROFILE.bash&&/F/.test(fl)?ops[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):ops[0],/i/.test(fl)?'i':'')}catch(e){return gone}
+    try{re=safeRe(PROFILE.bash&&/F/.test(fl)?ops[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):ops[0],/i/.test(fl)?'i':'')}catch(e){return gone}
     pass=function(l){return re.test(l)!==/v/.test(fl)};ops=ops.slice(1);
   }
   else return null;
@@ -3571,8 +4212,9 @@ function bgStmt(st){ /* while ...; done &: the shell forks, and the copy runs it
   var it=Object.assign({},st,{bg:false});
   if(!SUB&&!SINK&&(!ERRSINK||ERRSINK===GLASS)){startJob('',{run:function(){runStmt(it)},shown:compText(it,'').join('\n')});return}
   var back=keep(),was=JOB;JOB={sub:SUB>0,level:SUB+1};SUB++;tell();runStmt(it);
-  queue(function(){JOB=was;SUB--;PIDNOW=null;back();STATUS=0},true);
+  queue(function(){bgEnd(back,was)},true);
 }
+function bgEnd(back,was){var j=JOB;JOB=was;SUB--;PIDNOW=null;var bg=j&&j.last||LASTBG;back();LASTBG=bg;STATUS=0} /* the end of a & run through: its shell's pid stays $!, not one of the jobs it started in turn */
 function compText(n,ind){ /* bash's make_command_string for a loop, an if or a case: the lines jobs shows, and a pipe or redirection after it */
   var L=compLines(n,ind);
   if(n.tail)L[L.length-1]+=' '+n.tail.replace(/\s+/g,' ');
@@ -3661,12 +4303,13 @@ function loopStmt(st){
   }
 }
 function runScript(lines,args,dot){ /* a script: a tree of statements, inside the current step. dot: the . command's file, {name}: args are $1 ... (none: they stay) */
-  var keep=ARGS,keepSub=SUB,keepShell=SHID,keepAt=SCRLN,keepLS=null,keepLD=0,tree,ran=false,shown=lines,name=dot?dot.name:(args&&args[0])||(CSH?'csh':bashy()?'bash':'sh'),warns=[];
+  var keep=ARGS,keepSub=SUB,keepShell=SHID,keepAt=SCRLN,keepLS=null,keepLD=0,keepLU=0,keepSee=null,tree,ran=false,shown=lines,name=dot?dot.name:(args&&args[0])||(CSH?'csh':bashy()?'bash':'sh'),warns=[];
   if(!PROFILE.dos&&!PROFILE.noUnix)lines=hereJoin(lines,{ph:true,eof:function(op,n){ /* a here-document the script ends in: bash warns once, as it reads it (before that command runs); csh's heredoc gives up each time it runs */
     if(bashy())warns.push({ln:op.ln,msg:name+': line '+n+': warning: here-document at line '+(op.line+1)+" delimited by end-of-file (wanted `"+op.word+"')"});
     else if(CSH)op.err=op.word+': << terminator not found';
   }}).lines;
   if(bashy())lines=arrJoin(lines); /* x=( on one line, its ) on a later one: one command */
+  if(SV)lines=fnJoin(lines); /* System V: name() { on one line, its } on a later one */
   var bad=synCheck(lines);
   if(bad){ /* the lines before it run, up to the last whole command before it; then the script ends there (bash and V7: status 2; csh's error() seeks to the end, status 1) */
     var cut=lastGood(lines,bad.from);
@@ -3700,7 +4343,7 @@ function runScript(lines,args,dot){ /* a script: a tree of statements, inside th
   queue(function(){return sleep(0)}); /* so that ^C can reach a script that keeps running itself */
   queue(function(){
     if(SCRIPTS>=32){typeLine(PROFILE.dcl?'%SYSTEM-F-EXQUOTA, process quota exceeded':PROFILE.dos?'Insufficient memory':CSH?'No more processes.':'sh: no more processes','err');return}
-    ran=true;SCRIPTS++;keepSub=SUB;SUB=0;keepShell=SHID;SHID=++SHIDS;if(!dot){keepLS=LOOPSUB;LOOPSUB=[];keepLD=LOOPD;LOOPD=0} /* a script's exit ends the script, wherever its output is going; its jobs and loops are its own: a break in it does not reach the caller's */
+    ran=true;SCRIPTS++;keepSub=SUB;SUB=0;keepShell=SHID;SHID=++SHIDS;keepSee=JOBSEE;JOBSEE=null;if(!dot){keepLS=LOOPSUB;LOOPSUB=[];keepLD=LOOPD;LOOPD=0;keepLU=LOOPUP;LOOPUP=0} /* a script's exit ends the script, wherever its output is going; its jobs and loops are its own: a break in it does not reach the caller's */
     if(PROFILE.dos){lines.forEach(function(l){queue(function(){if(LOOP)return;var s=dosLine(l);if(s.trim())execSeg(s)})});return} /* DCL's EXIT ends the procedure */
     ARGS=dot?(args?[ARGS[0]||''].concat(args):ARGS):args||['sh'];SCRLN={name:name,ln:1};
     var ln=null;
@@ -3714,17 +4357,24 @@ function runScript(lines,args,dot){ /* a script: a tree of statements, inside th
   });
   queue(function(){
     if(!ran)return; /* ^C got in first, or there were too many */
-    SCRIPTS--;SUB=keepSub;SHID=keepShell;SCRLN=keepAt;LOOP=null;if(!dot){LOOPSUB=keepLS;LOOPD=keepLD;LOOPN=0}
+    var out=dot&&LOOP==='exit'&&!PROFILE.dos; /* an exit in a . file is the shell's own: it ends the script that ran the . too, or at the terminal the shell */
+    SCRIPTS--;SUB=keepSub;SHID=keepShell;JOBSEE=keepSee;SCRLN=keepAt;LOOP=out?'exit':dot&&(LOOP==='break'||LOOP==='continue')?LOOP:null; /* a break or continue in a . file goes on to the caller's loop */if(!dot){LOOPSUB=keepLS;LOOPD=keepLD;LOOPUP=keepLU;LOOPN=0}
     if(!PROFILE.dos&&!(dot&&!args))ARGS=keep;
+    if(out&&!SCRIPTS&&!SUB&&!(ASIDE&&ASIDE.job)&&has(CMDS,'exit'))queue(function(){var st=String(STATUS);LOOP=null;CMDS.exit([st],'exit '+st,['exit',st]);if(!LOOP)LOOP='exit'}); /* the rest of the line does not run */
   },true);
 }
 var KEPT=[]; /* child shells not yet undone: a ^C can end their program before it calls back() */
-function keep(){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes */
+function keep(lasting){ /* a program's child shell starts here: what the shell does to the directory and variables, back() undoes. lasting: a shell at
+                           the terminal, which the next prompt does not end */
   var cwd=ST.cwd,args=ARGS.slice(),env=Object.assign({},ENV),vars=Object.assign({},CSHV),wds=Object.assign(Object.create(null),CSHW),arr=arrClone(),al=PH.aliases;
-  KEPT.push(back);
+  var ints=Object.assign(Object.create(null),INTV); /* bash's declare -i names */
+  var bg=LASTBG; /* $!: the child starts with its parent's, and what it starts with & is its own */
+  var top=BSH[BSH.length-1],sv=top&&top.sv?svCopy(top.sv):null; /* System V sh: the shell's functions, readonly names and hash table, which the child's own do not change */
+  var done=false;
+  if(!lasting)KEPT.push(back);
   return back;
   function back(){
-    var i=KEPT.indexOf(back);if(i<0)return;KEPT.splice(i,1);
+    var i=KEPT.indexOf(back);if(done||i<0&&!lasting)return;done=true;if(i>=0)KEPT.splice(i,1);
     if(find(cwd,true))ST.cwd=cwd;
     ARGS=args; /* bash's set -- and shift in it change only its own */
     Object.keys(ENV).forEach(function(k){if(!has(env,k))delete ENV[k]});Object.assign(ENV,env);
@@ -3732,6 +4382,9 @@ function keep(){ /* a program's child shell starts here: what the shell does to 
     Object.keys(CSHW).forEach(function(k){if(!(k in wds))delete CSHW[k]});Object.assign(CSHW,wds);
     arrRefill(arr);
     PH.aliases=al;
+    refill(INTV,ints);
+    LASTBG=bg;
+    if(top){if(sv)top.sv=svCopy(sv);else delete top.sv}
   }
 }
 function noFork(){typeLine(CSH?'No more processes.':PROFILE.bash?'bash: fork: Resource temporarily unavailable':'fork failed - too many processes','err')} /* past 32 processes deep: a command that calls itself */
@@ -3835,15 +4488,22 @@ function hereJoin(lines,o){ /* lines with each here-document's body taken out: {
   });
   return {lines:out,open:null,n:done.length};
 }
-function capture(cmd,then){ /* in a step: run cmd as a `command` does, then(the lines it printed) */
-  var sink=[],keepSink,keepIn,own=false,loop,sum=cmd.charAt(0)===SUM;
+function capture(cmd,then){ /* in a step: run cmd as a `command` does, then(the lines it printed). A `command` (and $( )) is a child process, as a ( ) is:
+                               its directory, variables, aliases, functions and exit are its own. A $(( )) (SUM) is worked out in the shell itself */
+  var sink=[],keepSink,keepIn,own=false,loop,sum=cmd.charAt(0)===SUM,back=null,was,shell,see,ld,lu;
   queue(function(){
     if(SUB>=32){noFork();return}
     var t=PROFILE.bash?dollarParen(cmd):cmd,bad=PROFILE.bash&&!sum&&subBad(t); /* bash: a $( ) inside a $(( )) */
     if(bad){bad.forEach(function(m){typeLine(m,'err')});queue(function(){STATUS=2});return} /* `echo a\`b`: it prints nothing, and its status is 2 */
-    keepSink=SINK;keepIn=STDIN;loop=LOOP;SINK=sink;STDIN=null;SUB++;own=true;execLine(t);
+    keepSink=SINK;keepIn=STDIN;loop=LOOP;SINK=sink;STDIN=null;
+    SUB++;own=true;
+    if(!sum){back=keep();was=SUBSH;shell=SHID;see=JOBSEE;ld=LOOPD;lu=LOOPUP;JOBSEE=PROFILE.bash&&!DASH?(JOBSEE!==null?JOBSEE:SHID):null;SUBSH=SUB;SHID=++SHIDS;LOOPUP=CSH?0:LOOPUP+LOOPD;LOOPD=0;LOOP=null} /* exit in it ends only it; a break or continue there leaves the loops it is in, and so ends it (loop()) */
+    execLine(t);
   });
-  queue(function(){if(!own)return;SINK=keepSink;STDIN=keepIn;SUB--;if(LOOP==='abort'&&!sum)LOOP=loop},true); /* a $(( )) that went wrong ends the line it is in; one inside a $( ) only that */
+  queue(function(){
+    if(!own)return;SINK=keepSink;STDIN=keepIn;SUB--;
+    if(!sum){SUBSH=was;SHID=shell;JOBSEE=see;LOOPD=ld;LOOPUP=lu;if(LOOP==='break'||LOOP==='continue')LOOPN=0;LOOP=loop;back()} /* a $(( )) that went wrong in it ends only it */
+  },true); /* a $(( )) that went wrong ends the line it is in */
   queue(function(){SUBST=STATUS;then(sink)});
 }
 var SUBST=null; /* the status of the last `command` in the command that is being worked out: bash's x=`false` takes it */
@@ -3861,7 +4521,7 @@ function hereText(h,then,fail){ /* in a step: the lines a here-document gives it
       if(t.charAt(i+2)==='('&&(j=sumEnd(t,i+1))>0){P.push(lit,{cmd:SUM+' "'+t.slice(i+3,j-1)+'"'});lit='';i=j;continue}
       if((j=parenEnd(t,i+1))>0){P.push(lit,{cmd:t.slice(i+2,j)});lit='';i=j;continue}
     }
-    else if(c==='$'&&(m=VAR_AT.exec(t.slice(i)))){P.push(lit,{v:m[1]});lit='';i+=m[0].length-1;continue}
+    else if(c==='$'&&(m=varAt(t,i))){P.push(lit,{v:m[1]});lit='';i+=m[0].length-1;continue}
     lit+=c;
   }
   P.push(lit);
@@ -3894,16 +4554,9 @@ function openQuote(s,q){ /* the quote a line leaves open, or '': a quote opens a
   }
   return '';
 }
-function quoteEnd(s,i){var c=s.charAt(i);return c==='"'?closeDq(s,i):c==="'"?s.indexOf(c,i+1):c==='`'?tickEnd(s,i):-1} /* where the quote or `command` at i ends, or -1 */
+function quoteEnd(s,i){var c=s.charAt(i);return c==='"'?closeDq(s,i):c==="'"?s.indexOf(c,i+1):c==='`'?tickEnd(s,i):c==='$'&&s.charAt(i+1)==='{'&&PROFILE.bash&&!CSH?braceEnd(s,i):-1} /* where the quote or `command` at i ends, or -1 */
 function tickEnd(s,i){for(var j=i+1;j<s.length;j++){if(s.charAt(j)==='\\')j++;else if(s.charAt(j)==='`')return j}return -1} /* the ` that ends the `command` at i: a \` in it is one inside it */
-function closeDq(s,i){ /* the " that closes the one at i: a `command` inside it may hold its own */
-  for(var j=i+1,k;j<s.length;j++){
-    if(s.charAt(j)==='\\'){j++;continue}
-    if(s.charAt(j)==='"')return j;
-    if(s.charAt(j)==='`'&&(k=tickEnd(s,j))>=0)j=k;
-  }
-  return -1;
-}
+function closeDq(s,i){return nestEnd(s,i,'d')} /* the " that closes the one at i: a `command` inside it may hold its own, and bash's "${x:-"a b"}" */
 function splitCmds(s){ /* on ; outside quotes.
                           And on a lone & outside ( ), after a command: it runs, and nothing waits for it. L.semi: bash's & ; */
   var L=[],start=0,ch,j,depth=0;
@@ -3996,7 +4649,8 @@ if(PROFILE.bash)CMDS[SUM]=function(a,raw,words){ /* bash's $(( )): what arith() 
 };
 if(PROFILE.bash)CMDS[DEEP]=function(){noFork()};
 function bashAt(){if(DASH)return SCRLN&&SCRIPTS?SCRLN.name+': '+SCRLN.ln+': ':'sh: '+(DAT||Math.max(SHLINE-DLN0-DSKIP,0))+': ';return SCRLN&&SCRIPTS?SCRLN.name+': line '+SCRLN.ln+': ':'bash: '} /* dash: name: N:, and at its prompt sh: and the line it has read */ /* how bash starts an error: in a script, its name and line */
-function arithBad(x){typeLine(bashAt()+x.arith,'err');STATUS=1;LOOP='abort'} /* a $(( )) that went wrong: the rest of the line does not run */
+function arithBad(x){typeLine(bashAt()+x.arith,'err');STATUS=x.st||1;if(x.st)queue(function(){STATUS=x.st});LOOP=x.quit&&SCRIPTS?'exit':'abort'} /* a $(( )) that went wrong: the rest of the line does not run. quit: a ${x?} or dash's Bad substitution, which ends a script */
+var ARITH_PREC={'||':1,'&&':2,'|':3,'^':4,'&':5,'==':6,'!=':6,'<':7,'>':7,'<=':7,'>=':7,'<<':8,'>>':8,'+':9,'-':9,'*':10,'/':10,'%':10}; /* the binary operators' levels, ** (11) apart */
 var ARITH_OPS=['<<=','>>=','**','<<','>>','<=','>=','==','!=','&&','||','*=','/=','%=','+=','-=','&=','^=','|=','++','--','=','+','-','*','/','%','<','>','&','^','|','!','~','?',':','(',')',','];
 function arith(e,depth){ /* bash 5.2's expr.c: 64-bit whole numbers, its operators and their order, names with or without $ (a name's value is itself
                             worked out), name[i] of an array, assignments, and its error messages with the token where it stopped */
@@ -4058,34 +4712,43 @@ function arith(e,depth){ /* bash 5.2's expr.c: 64-bit whole numbers, its operato
     var k=arrKey(n,i,true);return k===null?'':arrGet(n,k)||'';
   }
   function put(n,i,v){if(noeval)return v;if(i===null)setVar(n,String(v));else{var k=arrKey(n,i,false);if(k===null)bad('bad array subscript');arrPut(n,k,String(v))}return v}
-  function comma(){var v=assign();while(tok===','){next();v=assign()}return v}
-  function assign(){
-    var v=cond();
+  function* comma(){var v=yield assign();while(tok===','){next();v=yield assign()}return v}
+  function* assign(){
+    var v=yield cond();
     if(tok==='='||/^[-+*\/%&^|]=$|^(<<|>>)=$/.test(tok)){
       var op=tok,lv=v;
       if(last!=='STR')bad('attempted assignment to non-variable');
       var n=name,i=sub;
-      next();v=assign();
+      next();v=yield assign();
       if(op!=='=')v=binop(op.slice(0,-1),lv,v,lastp);
       return put(n,i,v);
     }
     return v;
   }
-  function cond(){
-    var c=lor();
+  function* cond(){
+    var c=yield bin(1);
     if(tok!=='?')return c;
     next();
     if(tok==='END'||tok===':')bad('expression expected');
-    if(c===Z)noeval++;var v1=comma();if(c===Z)noeval--;
+    if(c===Z)noeval++;var v1=yield comma();if(c===Z)noeval--;
     if(tok!==':')bad("`:' expected for conditional expression");
     next();
     if(tok==='END')bad('expression expected');
-    if(c!==Z)noeval++;var v2=cond();if(c!==Z)noeval--;
+    if(c!==Z)noeval++;var v2=yield cond();if(c!==Z)noeval--;
     return c!==Z?v1:v2;
   }
-  function lor(){var v=land();while(tok==='||'){var ne=v!==Z;if(ne)noeval++;next();var r=land();if(ne)noeval--;v=v!==Z||r!==Z?ONE:Z}return v}
-  function land(){var v=bor();while(tok==='&&'){var ne=v===Z;if(ne)noeval++;next();var r=bor();if(ne)noeval--;v=v!==Z&&r!==Z?ONE:Z}return v}
-  function level(ops,down){return function(){var v=down();while(ops.indexOf(tok)>=0){var o=tok;next();v=binop(o,v,down())}return v}}
+  function* bin(min){ /* expr.c's expression levels from || down to * / %, by precedence climbing: an operator binds what follows it up to one of
+                         its own level or lower. The right of && and || is worked out only for its side effects, as noeval */
+    var v=tok==='NUM'||tok==='STR'?operand1():yield unary();
+    if(tok==='**')v=yield power(v);
+    for(;;){
+      var o=tok,pr=has(ARITH_PREC,o)?ARITH_PREC[o]:0;
+      if(pr<min)return v;
+      if(pr<=2){var ne=pr===1?v!==Z:v===Z;if(ne)noeval++;next();var r=yield bin(pr+1);if(ne)noeval--;v=(pr===1?v!==Z||r!==Z:v!==Z&&r!==Z)?ONE:Z;continue}
+      var at;if(pr===10){at=p;while(at<s.length&&/\s/.test(s.charAt(at)))at++} /* exp2: the error token of a division by 0 is what follows the operator */
+      next();v=binop(o,v,yield bin(pr+1),at);
+    }
+  }
   function binop(o,x,y,at){ /* at: the error token of a division by 0 */
     if((o==='/'||o==='%')&&y===Z){if(noeval)return Z;lastp=at;bad('division by 0')}
     switch(o){
@@ -4097,53 +4760,54 @@ function arith(e,depth){ /* bash 5.2's expr.c: 64-bit whole numbers, its operato
       case '/':return y===-ONE?wrap(-x):x/y;case '%':return y===-ONE?Z:x%y;
     }
   }
-  function mul(){ /* exp2: the error token of a division by 0 is what follows the operator */
-    var v=power();
-    while(tok==='*'||tok==='/'||tok==='%'){
-      var o=tok,at=p;while(at<s.length&&/\s/.test(s.charAt(at)))at++;
-      next();v=binop(o,v,power(),at);
-    }
-    return v;
-  }
-  function power(){
-    var v=unary();
-    if(tok!=='**')return v;
-    next();var r=power();
+  function* power(v){ /* exp3, after its left operand: ** groups to the right */
+    next();var r=yield bin(11);
     if(r===Z)return ONE;
     if(r<Z)bad('exponent less than 0');
     for(var x=ONE,b=v;r>Z;r>>=ONE){if(r&ONE)x=wrap(x*b);b=wrap(b*b)}
     return x;
   }
-  function unary(){
-    if(tok==='!'){next();return unary()===Z?ONE:Z}
-    if(tok==='~'){next();return ~unary()}
-    if(tok==='-'){next();return wrap(-unary())}
-    if(tok==='+'){next();return unary()}
-    return operand();
+  function* unary(){
+    if(tok==='!'){next();return (yield unary())===Z?ONE:Z}
+    if(tok==='~'){next();return ~(yield unary())}
+    if(tok==='-'){next();return wrap(-(yield unary()))}
+    if(tok==='+'){next();return yield unary()}
+    return tok==='NUM'||tok==='STR'?operand1():yield operand();
   }
-  function operand(){
+  function* operand(){
     var v;
     if(tok==='PREINC'||tok==='PREDEC'){
       var up=tok==='PREINC';next();
       if(tok!=='STR')bad('identifier expected after pre-increment or pre-decrement');
       v=put(name,sub,wrap(val+(up?ONE:-ONE)));tok='NUM';next();return v;
     }
-    if(tok==='('){next();v=comma();if(tok!==')')bad("missing `)'");next();return v}
-    if(tok==='NUM'){v=val;next();return v}
-    if(tok==='STR'){
-      v=val;var n=name,i=sub;next();
-      if(tok==='POSTINC'||tok==='POSTDEC'){put(n,i,wrap(v+(tok==='POSTINC'?ONE:-ONE)));tok='NUM';next()}
-      return v;
-    }
+    if(tok==='('){next();v=yield comma();if(tok!==')')bad("missing `)'");next();return v}
     bad('syntax error: operand expected');
   }
-  var bor=level(['|'],level(['^'],level(['&'],level(['==','!='],level(['<','>','<=','>='],level(['<<','>>'],level(['+','-'],mul)))))));
+  function operand1(){ /* a number, or a name and its ++ or -- after: no nesting, so no generator */
+    var v=val;
+    if(tok==='NUM'){next();return v}
+    var n=name,i=sub;next();
+    if(tok==='POSTINC'||tok==='POSTDEC'){put(n,i,wrap(v+(tok==='POSTINC'?ONE:-ONE)));tok='NUM';next()}
+    return v;
+  }
   if(depth>=1024){lastp=0;bad('expression recursion level exceeded')}
   next();
   if(tok==='END')return Z;
-  var v=comma();
+  var v=nest(comma());
   if(tok!=='END')bad('syntax error in expression');
   return v;
+}
+function nest(g){ /* runs arith's parser, whose functions each yield the one they call: the nesting of (((1))) or - - 1 is on this stack, not JavaScript's,
+  so it goes as deep as bash's own does (a C stack of 8 MB) */
+  var st=[g],v,e,thrown=false,r;
+  for(;;){
+    try{r=thrown?st[st.length-1].throw(e):st[st.length-1].next(v)}
+    catch(x){st.pop();if(!st.length)throw x;e=x;thrown=true;continue}
+    thrown=false;v=undefined;
+    if(!r.done)st.push(r.value);
+    else{st.pop();v=r.value;if(!st.length)return v}
+  }
 }
 var SHLINE=0; /* the lines the shell has read from the terminal: bash's line number */
 function nextLine(then,p){ /* the rest of the command on a > line (p: another prompt): then(it, or null at ^D). ^C: bash just gives a new prompt */
@@ -4157,7 +4821,7 @@ function run(raw){
   JOB=null;JOBS=0; /* the jobs of the line before have finished */
   var typed=raw; /* as typed: synCheck reads its $( ) */
   if(PROFILE.bash)raw=dollarParen(raw);
-  SUB=0;SUBSH=0;LOOPD=0;LOOPSUB=[];
+  SUB=0;SUBSH=0;LOOPD=0;LOOPUP=0;LOOPSUB=[];
   if(!raw.trim()&&PH.blank){queue(function(){PH.blank()});nextPrompt();return} /* a machine that answers an empty line (VM/370's CMS and CP) */
   if(PROFILE.dos){
     if(raw.trim())execSeg(dosLine(raw));
@@ -4219,7 +4883,7 @@ function run(raw){
     nextPrompt();
     return;
   }
-  segs.forEach(function(x){queue(function(){if(!LOGOUT&&LOOP!=='abort')fgProc({text:x},function(){runOne(x);queue(function(){PIPEST=[STATUS]})})})});
+  segs.forEach(function(x){queue(function(){if(!LOGOUT&&LOOP!=='abort'&&LOOP!=='exit')fgProc({text:x},function(){runOne(x);queue(function(){PIPEST=[STATUS]})})})});
   nextPrompt();
 }
 
@@ -4252,21 +4916,31 @@ function ttCol(n){ /* the teletype's column where node n starts: what is printed
   var s='';for(n=n&&n.previousSibling;n;n=n.previousSibling)s=n.textContent+s;
   return s.length-s.lastIndexOf('\n')-1;
 }
-function renderBuf(){if(bufNode){bufNode.data=shownBuf();scrollBottom()}}
+function renderBuf(){ /* the cursor sits where the caret is: arrows back along the line move it, and typing goes in there */
+  if(!bufNode)return;
+  var t=shownBuf(),at=t.length;
+  if(!TELE.on&&t.length===buf.length&&kb.value===buf)at=Math.min(kb.selectionDirection==='backward'?kb.selectionStart:kb.selectionEnd,t.length);
+  bufNode.data=t.slice(0,at);bufTail.data=t.slice(at);cursor.classList.toggle('mid',at<t.length);scrollBottom();
+}
 function zEcho(){ /* ^Z at a read the shell does: the tty echoes it where the typing is and throws away what was typed (n_tty's isig flushes the line); the read goes on */
   if(!bufNode||!bufNode.parentNode){atCursor('^Z');return}
   bufNode.parentNode.insertBefore(document.createTextNode(shownBuf()+'^Z'),bufNode);setBuf('');
 }
 function setBuf(v){
-  buf=v.replace(/[\r\n]/g,'').slice(0,255);
+  buf=v.replace(/[\r\n]/g,'').slice(0,!PROFILE.bash?255:MODE==='shell'&&!DASH?Infinity:4095); /* a line the tty holds: 255 characters on the old systems; Linux's
+    N_TTY keeps 4095, and bash's prompt (readline, not the tty's line) takes any length */
   if(kb.value!==buf)kb.value=buf;
   if(TELE.on&&kb.selectionStart!==buf.length)kb.setSelectionRange(buf.length,buf.length); /* paper has no going back along the line: the caret stays at its end */
   renderBuf();
 }
-function leavePrompt(){bufNode=null;setBuf('');term.classList.remove('idle')}
+function leavePrompt(){if(bufNode){bufNode.data+=bufTail.data;bufTail.data='';cursor.classList.remove('mid')}bufNode=null;setBuf('');term.classList.remove('idle')}
 function finishRead(v){var r=READ;READ=null;leavePrompt();r(v)}
 function resumeHeld(){if(held){var h=held;held=null;h()}}
 function submit(){
+  try{enter()}
+  catch(e){if(!tooDeep(e))throw e;deepSay();nextPrompt()}
+}
+function enter(){
   if(TELE.on){if(TELE.echo){ttReturn();TELE.free=Date.now()+TT_NL}}else click(1,700); /* the echo of RETURN: CR LF, and the carriage's time (none with -echo) */
   if(!bufNode)return; /* no prompt up yet: output is still typing */
   var line=TELE.on&&!TELE.echo&&(MODE==='shell'||MODE==='read')?bufNode.parentNode:null; /* -echo: no CR LF either, so what comes next goes on after the prompt */
@@ -4374,7 +5048,8 @@ function kbInput(composing){
 kb.addEventListener('input',function(e){kbInput(e.isComposing)});
 function strike(k){if(TELE.on)ttStrike(k);else click(k==='Backspace'?.556:.667)} /* the sound of a key typed at the prompt */
 kb.addEventListener('compositionend',function(){if(KEYS)feedKb(true);else if(TELE.on)kbInput(false)});
-['pointerup','keyup'].forEach(function(t){kb.addEventListener(t,function(){if(TELE.on&&!KEYS&&kb.selectionStart!==kb.value.length)kb.setSelectionRange(kb.value.length,kb.value.length)})}); /* no caret back along the paper */
+['pointerup','keyup'].forEach(function(t){kb.addEventListener(t,function(){if(TELE.on&&!KEYS&&kb.selectionStart!==kb.value.length)kb.setSelectionRange(kb.value.length,kb.value.length);else if(!KEYS)renderBuf()})}); /* no caret back along the paper */
+kb.addEventListener('keydown',function(){if(!KEYS&&!TELE.on)setTimeout(renderBuf,0)}); /* the caret moved by an arrow, Home or End (held down, too) */
 function navKey(e){ /* Enter, the history arrows and scrollback paging, typed in either place */
   var k=e.key,d=k==='ArrowUp'||k==='PageUp'?-1:1;
   if(PROFILE.dos&&!PROFILE.dcl&&(k==='ArrowUp'||k==='ArrowDown'))return false; /* no history here, and no doskey yet */
@@ -4392,7 +5067,7 @@ function atCursor(s){var at=cursor.parentNode;if(at)at.insertBefore(document.cre
 function interrupt(){ /* ^C: stop whatever is typing and go back to the prompt */
   var q=PH.onInterrupt&&!(bufNode&&!READ&&MODE!=='shell')?PH.onInterrupt(!!(READ&&TRAP)):null; /* a machine's own QUIT (Multics): what it shows instead of ^C; true when a program takes the ^C itself */
   if(q&&typeof q==='object'){if(q.same&&(bufNode||GL.n)&&cursor.parentNode){JOIN=cursor.parentNode;JOIN.attnCut=true}q=q.says} /* {says, same}: what it shows, and no new line: the next read goes on in this one, at a read or in a line cut short as it typed (VM/370's TERMINAL ATTN OFF) */
-  atCursor(q==null?'^C':q);
+  if(q!=null||!PH.echoCtl||PH.echoCtl())atCursor(q==null?'^C':q); /* PH.echoCtl: a machine whose tty may have echoctl off (Linux's -echoctl) echoes no ^C then */
   HOLD=false; /* and, as the tty did, undo a ^S: nothing waits for a ^Q that will not come */
   if(TELE.on&&buf){ /* V7's flushtty: what was typed ahead is thrown away; what the paper shows of it stays */
     if(bufNode&&bufNode.parentNode)bufNode.parentNode.insertBefore(document.createTextNode(shownBuf()),bufNode);

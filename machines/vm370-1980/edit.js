@@ -73,7 +73,7 @@ function loop(E){
     if(l===null||l===P.INT)return;
     var r=sub(E,l);
     if(r==='input'){input(E);return}
-    if(r==='end')return;
+    if(r==='end'){if(V.edOwe){V.edOwe=false;V.edDone()}return} /* an attention in the CMS subset took the EDIT command's own ready message (cms.js) */
     loop(E);
   });
 }
@@ -314,17 +314,35 @@ function save(E,auto){
    where the editor is, is refused: INVALID SUBSET COMMAND, with no code and no ready message, and the ready message is the
    short one, R; or R(nnnnn); (DMSINT: SUBSET, INSUBMSG, NORTMSG; Command and Macro Reference, EDIT subcommand CMS) */
 var SUBSET=/^(CP|DEBUG|ERASE|FETCH|GENMOD|INCLUDE|LOAD|LOADMOD|START|STATE|STATEW|ACCESS|ASSGN|COMPARE|DISK|DLBL|FILEDEF|GENDIRT|GLOBAL|LISTFILE|MODMAP|OPTION|PRINT|PUNCH|QUERY|READCARD|RELEASE|RENAME|SET|SVCTRACE|SYNONYM|TAPE|TYPE|EXEC|SENTRIES)$/;
+/* the same goes for what an EXEC run there gives (DMSITS, BADMOD: LOADMOD's 32 is -2, RETM2, with no message, and NEGITS
+   set); the ready message, or INVALID SUBSET COMMAND when what was typed ends with that -2 (DMSINT ERR4, INVSUB), comes once
+   the EXEC is done */
+V.subsetRefuses=function(w){
+  var name=V.cmsName(w)||w,cms=V.cmsCmd(name)||V.find(w,'MODULE','*')||V.find(name,'MODULE','*');
+  return !!cms&&!SUBSET.test(name);
+};
 function subset(E){
+  V.inSubset=true;
   read(function(l){
-    if(l===null||l===P.INT)return;
+    if(l===null||l===P.INT){V.inSubset=false;V.subNext=null;V.edOwe=false;return}
     var w=up(l.trim()).split(/\s+/)[0]||'';
-    if(w==='RETURN'){out('EDIT:');loop(E);return}
-    if(w){
-      var name=V.cmsName(w)||w,cms=V.cmsCmd(name)||V.find(w,'MODULE','*')||V.find(name,'MODULE','*');
-      if(cms&&!SUBSET.test(name)&&!(V.opt.impex&&V.find(w,'EXEC','*')))err('INVALID SUBSET COMMAND');
-      else{V.unknown=false;var rc=V.command(l,{typed:true});if(!(rc===-3&&V.unknown))V.ready(rc,true);V.unknown=false}
-    }
-    subset(E);
+    if(w==='RETURN'){V.inSubset=false;out('EDIT:');loop(E);return}
+    if(!w){subset(E);return}
+    if(V.subsetRefuses(w)&&!(V.opt.impex&&V.find(w,'EXEC','*'))){err('INVALID SUBSET COMMAND');subset(E);return}
+    var was=V.rc; /* V.rc: the EDIT command's own, for its ready message at the end */
+    V.unknown=false;V.negits=false;V.subBase=V.execs.length; /* the EXECs that ran EDIT, which an attention to this command leaves waiting for the edit */
+    V.rc=V.command(l,{typed:true});
+    var quiet=V.rc===-3&&V.unknown;V.unknown=false;
+    /* once the command is done: its ready message, and the subset reads again. An attention (^C) while it runs drops
+       this step; CMS then calls V.subNext when the command is over (cms.js), as it would give its own ready message */
+    var k=V.subNext=function(){
+      if(V.subNext!==k)return;
+      V.subNext=null;
+      if(V.rc===-2&&V.negits)err('INVALID SUBSET COMMAND');else if(!quiet)V.ready(V.rc,true);
+      V.negits=false;V.rc=was;
+      subset(E);
+    };
+    P.queue(k);
   });
 }
 });

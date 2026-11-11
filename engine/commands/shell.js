@@ -22,7 +22,7 @@ function v7(p){return !p.bash&&!p.csh&&!p.noUnix&&!p.dos} /* V7's sh and tools *
 P.command({names:['man'],core:true,help:'the manual',
   man:function(pr){
     if(v7(pr))return {what:'print sections of this manual',syn:'man [ option ... ] [ chapter ] title ...',desc:[
-      'prints the section of this manual named title, in the chapter given; with no chapter, in whichever has it. options and chapter may be changed before each title. with no title at all, lists the commands, as help does.','',
+      'prints the section of this manual named title, in the chapter given; with no chapter, in whichever has it. options and chapter may be changed before each title. with no title at all, prints nothing.','',
       '-w   print the path names of the manual sections, but do not print the sections themselves.','',
       'the other options choose a typesetter (-t, -k) or a preprocessor (-e); on this terminal they print the section as it is.']};
     return {what:'print the manual',syn:'man name',desc:[
@@ -30,6 +30,7 @@ P.command({names:['man'],core:true,help:'the manual',
   },
   run:function(a){
     if(!a[0]){
+      if(v7(P.profile))return; /* V7's man script: no title leaves $all empty, and it exits */
       if(P.profile.perror){P.typeLine('Usage: man [ section ] name ...');return}
       if(P.has(P.cmds,'help')){P.cmds.help([],'help');return}
       P.say(['usage: man name',['pages: '+Object.keys(P.man).sort().join(', '),'dim',{hang:7}]]); /* help is switched off */
@@ -141,16 +142,35 @@ P.command({names:['unalias'],noHelpFlag:true,enabled:function(p){return p.bash},
     if(bad)P.queue(function(){P.status(1)});
   }});
 
+var ECHOESC={a:'\x07',b:'\b',e:'\x1b',E:'\x1b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\'};
+function echoEscapes(t,ext){ /* echo's backslash escapes: dash's \0nnn \a \b \c \f \n \r \t \v \\; bash's -e (ext) adds \e \E \xHH \uHHHH \UHHHHHHHH.
+  \c: nothing more, not even the newline. {t, cut} */
+  var cut=false;
+  t=t.replace(ext?/\\(0[0-7]{0,3}|x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[abceEfnrtv\\])/g:/\\(0[0-7]{0,3}|[abcfnrtv\\])/g,function(m,x){
+    if(cut)return '';
+    var c=x.charAt(0);
+    if(c==='c'){cut=true;return '\u0000'}
+    if(c==='0')return String.fromCharCode(parseInt(x,8)&255);
+    if(c==='x')return String.fromCharCode(parseInt(x.slice(1),16));
+    if(c==='u'||c==='U'){var v=parseInt(x.slice(1),16);return v>0x10FFFF?m:String.fromCodePoint(v)}
+    return ECHOESC[x];
+  });
+  if(cut)t=t.slice(0,t.indexOf('\u0000'));
+  return {t:t,cut:cut};
+}
 P.command({names:['echo'],core:true,path:'/bin',noHelpFlag:true, /* echo -h prints -h, as it should */
   man:{what:'echo arguments',syn:'echo [ -n ] [ arg ... ]',desc:[
     'prints its arguments, separated by spaces, and ends the line. -n leaves the line open: what comes next goes on in it.']},
   run:function(a,raw,words){
-    var n=words[1]==='-n',t=words.slice(n?2:1).join(' ');
-    if(P.bourne.dash()){ /* dash's echo: -n and nothing else, and the backslash escapes always; \c ends it all, newline and all */
-      var stop=false;t=t.replace(/\\(0[0-7]{0,3}|[abcfnrtv\\])/g,function(m,x){if(stop)return '';if(x==='c'){stop=true;return '\u0000'}return x.charAt(0)==='0'?String.fromCharCode(parseInt(x,8)&255):{a:'\x07',b:'\b',f:'\f',n:'\n',r:'\r',t:'\t',v:'\v','\\':'\\'}[x]});
-      if(stop){t=t.slice(0,t.indexOf('\u0000'));n=true}
-      var L=t.split('\n');L.open=n;P.say(L);return;
+    var n=words[1]==='-n',t=words.slice(n?2:1).join(' '),esc=null;
+    if(P.bourne.dash())esc='dash'; /* dash's echo: -n and nothing else, and the backslash escapes always */
+    else if(P.profile.bash){ /* bash's echo: -n, -e (the backslash escapes) and -E (none, as without), in any words that are only those letters */
+      var i=1,e=false;n=false;
+      for(;i<words.length&&/^-[neE]+$/.test(words[i]);i++)words[i].slice(1).split('').forEach(function(c){if(c==='n')n=true;else e=c==='e'});
+      t=words.slice(i).join(' ');
+      if(e)esc='bash';
     }
+    if(esc){var r=echoEscapes(t,esc==='bash'),L=r.t.split('\n');L.open=n||r.cut;P.say(L);return}
     P.typeLine(t,null,null,n?{open:true}:null);
   }});
 
@@ -168,6 +188,7 @@ P.command({names:['exit','logout'],help:'log out',
     if(P.subExit(a))return; /* ( ... exit 3 ): the subshell ends there, with that status */
     if(P.subshell())return; /* a stage of a pipeline is its own process, and only that process exits */
     if(P.inScript()){P.status(parseInt(a[0],10)||0);P.loop('exit');return} /* exit in a script ends the script */
+    if(P.bourne.canLeave()&&P.stoppedWarn())return; /* a shell started at the terminal with stopped jobs */
     if(P.bourne.leave(a[0]===undefined?P.lastStatus():parseInt(a[0],10)||0))return; /* 4.3BSD's sh at the terminal: back to csh */
     if(P.unsu())return; /* out of su, back to who you were */
     if(P.stoppedWarn())return; /* There are stopped jobs. */

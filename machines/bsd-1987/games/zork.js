@@ -13331,6 +13331,7 @@ function step(v){
       if(e===STOP){flush();return}
       if(e instanceof RangeError&&e.fmt&&P.machine==='linux'){ /* Debian's dungeon, built with f2c as its Makefile says: libf2c's own complaint, then abort() */
         flush();
+        if(e.eof&&!pipe&&!P.piped())P.joinLast(); /* ^D at the keyboard echoes nothing: the complaint starts on the prompt's line, after the > */
         [e.eof?'fmt: end of file':'fmt: read unexpected character','apparent state: unit 5 (unnamed)','last format: ('+e.fmt.toLowerCase()+')','lately reading sequential formatted external IO','Aborted'].forEach(function(l){P.typeLine(l,'err')});
         P.queue(function(){P.status(134)});return;
       }

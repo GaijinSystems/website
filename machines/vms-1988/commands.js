@@ -239,7 +239,7 @@ function need(raw,ask){ /* a verb with a parameter left off: DCL asks for it, ti
                             on it (COPY asks _From:, then _To:); a command procedure cannot be asked */
   if(P.inScript()){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
   var line=raw.trim().replace(/^\$\s*/,''),word=line.split(/[\s\/]/)[0];
-  (function again(){P.ask(ask,function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}P.fallback(word,line+' '+l.trim())},true)})();
+  (function again(){P.ask(ask,function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}P.fallback(word,line+' '+substitute(l.trim()))},true)})(); /* the answer is command input: its 'NAME's are put in (DCL Concepts, 7.3) */
 }
 function list(a){return a.join(',').split(',').filter(Boolean)} /* TYPE A.TXT,B.TXT: a parameter is a list */
 verb('set',3,function(a,q,raw){
@@ -314,11 +314,19 @@ verb('show',2,function(a,q,raw){
   var k=showKey((a[0]||'').toLowerCase());
   return k&&typeof k!=='string'?k[2]:null;
 });
+/* WRITE SYS$OUTPUT expression[,...]: each a string expression (strings, symbols, numbers, + and -, * and /), the values put
+   together as one record (the VMS 5.0 DCL Dictionary, WRITE). Its qualifiers come before the expressions, so a / after
+   them is division */
+var WRITEQ=['symbol','error','update'];
 verb('write',2,function(a,q,raw){
-  var m=raw.match(/sys\$output\s+(.*)$/i);
+  var m=raw.trim().replace(/^\$\s*/,'').match(/^[^\s\/]*((?:\s*\/[^\s\/]*)*)\s+sys\$output((?:\s*\/[^\s\/]*)*)\s+(\S[\s\S]*)$/i);
   if(!m){err('%DCL-W-INSFPRM, missing command parameters - supply all required parameters');return}
-  P.typeLine(m[1].replace(/^"(.*)"$/,'$1'));
-},['symbol','error','update']);
+  var badQ=(m[1]+m[2]).split('/').map(function(x){return x.trim().split('=')[0].toLowerCase()}).slice(1).filter(function(k){return !k||!WRITEQ.some(function(n){return n.indexOf(k)===0})})[0];
+  if(badQ!==undefined){err('%DCL-W-IVQUAL, unrecognized qualifier - check validity, spelling, and placement',' \\'+up(badQ)+'\\');return}
+  var o='',items=m[3].match(/(?:"(?:[^"]|"")*"?|[^",])+/g)||[]; /* an unclosed string runs to the end, for evaluate() to refuse */
+  for(var i=0;i<items.length;i++){var v=evaluate(items[i]);if(v===undefined)return;o+=v}
+  P.typeLine(o);
+},function(){return null}); /* WRITEQ, checked above */
 verb('exit',3,function(){if(P.inScript())P.loop('exit')}); /* the end of a command procedure; at the prompt, nothing */
 verb('logout',2,function(a,q){
   P.say(['  '+up(P.st.user)+'      logged out at '+timeStr(now())]);
@@ -327,7 +335,7 @@ verb('logout',2,function(a,q){
   P.logout();
 },['brief','full','hangup']);
 verb('run',2,function(a){
-  if(!a[0]){(function again(){P.ask('_File: ',function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}V.run.run([l.trim()],[],l.trim())},true)})();return} /* DCL asks for what it needs, until it gets it */
+  if(!a[0]){(function again(){P.ask('_File: ',function(l){if(l===null||l===P.INT)return;if(!l.trim()){again();return}l=substitute(l.trim());V.run.run([l],[],l)},true)})();return} /* DCL asks for what it needs, until it gets it; 'NAME's put in, as in need() */
   if(/[*%]/.test(a[0])){err('%DCL-W-ACTIMAGE, error activating image '+up(a[0]),'-RMS-F-WLD, invalid wildcard operation');return}
   var spec=a[0]||'',r=pick(/\./.test(spec.replace(/^.*\]/,''))?spec:spec.replace(/(;\d*)?$/,'.exe$1')); /* MORIA;1 is MORIA.EXE;1 */
   if(spec&&r.S.name&&r.e&&r.S.abs==='/games'){
@@ -380,8 +388,8 @@ function evaluate(src){ /* the value, or undefined after saying why */
     var v=primary();
     while(T[k]&&(T[k].op==='*'||T[k].op==='/')){
       var op=T[k++].op,w=num(primary());v=num(v);
-      if(op==='/'&&w===0){if(!fail)err('%DCL-W-DIVBY0, division by zero');fail='said';return 0}
-      v=op==='*'?Math.imul(v,w):(v/w)|0;
+      v=op==='*'?Math.imul(v,w):w===0?(v<0?-2147483648:2147483647):(v/w)|0; /* by zero: no message, the largest integer of
+        the dividend's sign (WRITE SYS$OUTPUT 1/0 gives 2147483647, -1/0 -2147483648: comp.os.vms, "Symbol Substitution Mystery", 2008) */
     }
     return v;
   }
@@ -449,7 +457,7 @@ P.symbols=function(line){ /* the engine gives a line here first: MORIA :== RUN M
 };
 function symLine(name,y){
   var v=y.v,n=v>>>0;
-  return '  '+up(name)+' '+(y.g?'==':'=')+' '+(typeof v==='number'?v+'   Hex = '+n.toString(16).toUpperCase().padStart(8,'0')+'  Octal = '+n.toString(8).padStart(11,'0'):'"'+v.replace(/"/g,'""')+'"');
+  return '  '+up(name)+' '+(y.g?'==':'=')+' '+(typeof v==='number'?v+'   Hex = '+n.toString(16).toUpperCase().padStart(8,'0')+'  Octal = '+n.toString(8).padStart(11,'0'):'"'+v+'"'); /* a quote in it shown as it is: TEST = "this is a "test" string" (VMS 5.0 DCL Dictionary, :=) */
 }
 function showSymbol(name,q,raw){
   var which=has(q,'global')?'global':has(q,'local')?'local':null;
