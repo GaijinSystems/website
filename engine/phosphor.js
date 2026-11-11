@@ -219,7 +219,7 @@ class SafeRe extends RegExp{
   constructor(src,flags){
     super(src,flags);
     var T=null;
-    try{if(!/[msuv]/.test(this.flags)){T=reParse(this.source);if(!T.hard)T=null;else{T.prog=reCompile(T,this.ignoreCase,false);if(T.refs.length)T.pre=reCompile(T,this.ignoreCase,true)}}}catch(e){if(e===SAFE_BIG)T=reFlat(T)?null:{big:true};else if(e!==SAFE_BAIL)throw e;else T=null} /* too big to run safely: it matches nothing, as overflow (regcomp's REG_ESPACE); one fixed repeat of plain characters (a{30000}) is the RegExp's own, which runs it straight through */
+    try{if(!/[msuv]/.test(this.flags)){T=reParse(this.source);if(!T.hard)T=null;else{T.prog=reCompile(T,this.ignoreCase,false);if(T.refs.length)T.pre=reCompile(T,this.ignoreCase,true)}}}catch(e){if(e===SAFE_BIG)T={big:true};else if(e!==SAFE_BAIL)throw e;else T=null} /* too big to run safely: it matches nothing, as overflow (regcomp's REG_ESPACE) */
     this.safe=T;this.overflow=false;
   }
   exec(s){
@@ -237,13 +237,6 @@ class SafeRe extends RegExp{
     r.index=c[0];r.input=s;r.groups=undefined;
     return r;
   }
-}
-function reFlat(T){ /* the parsed pattern has one repeat at most, of a fixed count (a{30000}) and of plain characters, and no alternation or backreference: nothing to go back over */
-  var reps=0;
-  function one(nd){return /^(char|set|any)$/.test(nd.t)}
-  function body(e){return one(e)||e.t==='group'&&e.e.t==='seq'&&e.e.L.length>0&&e.e.L.every(one)}
-  function ok(nd){if(nd.t==='ref'||nd.t==='alt')return false;if(nd.t==='rep')return ++reps===1&&nd.min===nd.max&&body(nd.e);return (!nd.e||ok(nd.e))&&(nd.L||[]).every(ok)}
-  return !!(T&&T.tree&&!T.refs.length&&ok(T.tree));
 }
 function safeRe(src,flags){return new SafeRe(src,flags)}
 
