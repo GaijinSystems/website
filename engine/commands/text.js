@@ -246,6 +246,79 @@ function newMode(spec,m){ /* the mode string m after spec, or null when spec is 
 }
 
 var POSIXCL={alpha:'A-Za-z',digit:'0-9',alnum:'0-9A-Za-z',upper:'A-Z',lower:'a-z',space:' \\t\\n\\r\\f\\v',blank:' \\t',punct:'!-\\/:-@\\[-`{-~',print:' -~',graph:'!-~',cntrl:'\\x00-\\x1f\\x7f',xdigit:'0-9A-Fa-f'};
+function grepOpts(w,quiet){ /* grep's words as it reads them: its option letters, its patterns (GNU's -e and -f; else the first word of rest) and its files. null: it has said what is wrong (quiet: said nothing) */
+  var fl=flags(w),rest=w.filter(function(x){return x.charAt(0)!=='-'||x==='-'&&P.profile.bash}),pats=null; /* GNU's - : its input */
+  if(P.profile.bash){ /* GNU's getopt: options anywhere before --; -e PATTERNS and -f FILE, as often as you like, and then every other word is a file */
+    fl='';rest=[];
+    var no=function(t){if(quiet)return;P.typeLine('grep: '+t,'err');P.typeLine('Usage: grep [OPTION]... PATTERNS [FILE]...','err');P.typeLine("Try 'grep --help' for more information.",'err');P.queue(function(){P.status(2)})};
+    var add=function(c,v){
+      if(c==='e'){pats=(pats||[]).concat(v.split('\n'));return true}
+      var n=P.find(v);
+      if(!n||n.type==='d'||n.prot||!P.may(n,'r')){if(!quiet){P.typeLine('grep: '+v+': '+(!n?P.why(v,true):n.type==='d'?'Is a directory':'Permission denied'),'err');P.queue(function(){P.status(2)})}return false}
+      pats=(pats||[]).concat(P.text(n)); /* -f: a pattern a line; an empty file, none, which nothing matches */
+      return true;
+    };
+    for(var i=0;i<w.length;i++){
+      var x=w[i],m=/^--(regexp|file)(?:=([\s\S]*))?$/.exec(x);
+      if(x==='--'){rest=rest.concat(w.slice(i+1));break}
+      if(m){var v=m[2]!==undefined?m[2]:w[++i];if(v===undefined){no("option '--"+m[1]+"' requires an argument");return null}if(!add(m[1]==='file'?'f':'e',v))return null;continue}
+      if(/^-[^-]/.test(x)){
+        for(var j=1;j<x.length;j++){
+          var c=x.charAt(j);
+          if(c!=='e'&&c!=='f'){fl+=c;continue}
+          var val=j+1<x.length?x.slice(j+1):w[++i];
+          if(val===undefined){no("option requires an argument -- '"+c+"'");return null}
+          if(!add(c,val))return null;
+          break;
+        }
+        continue;
+      }
+      rest.push(x);
+    }
+    if(pats)rest.unshift(null); /* the files are all the words */
+  }
+  return {fl:fl,rest:rest,pats:pats};
+}
+function grepRe(o,lit){ /* the pattern those words give (pieces: its patterns' sources, one by one), or what is wrong with it thrown */
+  var gnu=P.profile.bash,fl=o.fl,pats=o.pats,one=function(p){return gnu&&/F/.test(fl)?p.replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):greSrc(p,gnu,gnu||P.profile.sysv,lit)}; /* GNU's -F: the pattern as it is */
+  var off=0; /* each -e's groups: \1 in the second pattern is its own first group, after the first pattern's */
+  var pieces=pats?pats.map(function(p){var r=reShift(one(p),off);off+=r.n;return r.s}):[one(o.rest[0])];
+  var re=P.safeRe(pats?(pieces.length?pieces.map(function(x){return '(?:'+x+')'}).join('|'):'(?!)'):pieces[0],/i/.test(fl)?'i':''); /* several: any of them */
+  re.pieces=pieces;
+  return re;
+}
+var BREF=/\(\?:\\[1-9]\d*\)/; /* a backreference, as greSrc and reShift write it */
+function grepSet(o){ /* GNU's two matchers, where they differ. re: which lines (its DFA's reading); also: with a backreference, glibc's regex must agree; out: what -o prints is glibc's */
+  var re=grepRe(o,false),lre=null;
+  if(P.profile.bash&&!/F/.test(o.fl)){try{lre=grepRe(o,true)}catch(e){lre=null}if(lre&&lre.source===re.source)lre=null}
+  return {re:re,also:lre&&BREF.test(re.source)?lre:null,out:lre||re};
+}
+function splitTop(s){ /* a RegExp source's alternatives, at its top level */
+  var out=[],d=0,cur='';
+  for(var i=0;i<s.length;i++){
+    var c=s.charAt(i);
+    if(c==='\\'){cur+=c+s.charAt(++i);continue}
+    if(c==='['){var j=i+1;for(;j<s.length&&s.charAt(j)!==']';j++)if(s.charAt(j)==='\\')j++;cur+=s.slice(i,j+1);i=j;continue}
+    if(c==='(')d++;else if(c===')')d--;
+    else if(c==='|'&&!d){out.push(cur);cur='';continue}
+    cur+=c;
+  }
+  out.push(cur);
+  return out;
+}
+function grepAlts(re){ /* -o prints the longest of the alternatives that match where the match starts (POSIX's leftmost-longest), not the first of them: each alternative, to look for from there. With a
+                          backreference the groups keep their numbers, so the others stay in place, failing at once; too many, and it is the first as before */
+  var A=[];re.pieces.forEach(function(x){A=A.concat(splitTop(x))});
+  if(A.length<2)return null;
+  var f=re.flags.replace(/[gy]/g,'')+'g';
+  if(!BREF.test(re.source))return A.length>200?null:A.map(function(a){return P.safeRe(a,f)});
+  return A.length>16?null:A.map(function(a,k){return P.safeRe(A.map(function(b,i){return i===k?b:'(?!)'+b}).join('|'),f)});
+}
+P.grepPlan=function(w){ /* for the shell, which works out what a grep in a pipe lets through: its letters, files and which lines, as grep itself reads them; null where grep would only complain */
+  var o=grepOpts(w,true);
+  if(!o||!o.rest.length)return null;
+  try{var g=grepSet(o);return {re:g.re,test:function(l){return g.re.test(l)&&(!g.also||g.also.test(l))},fl:o.fl,files:o.rest.slice(1)}}catch(e){return null}
+};
 function reShift(src,off){ /* a RegExp source's backreferences moved on by off groups, and how many groups it has */
   var o='',n=0,cl=false;
   for(var i=0;i<src.length;i++){
@@ -256,17 +329,28 @@ function reShift(src,off){ /* a RegExp source's backreferences moved on by off g
   }
   return {s:o,n:n};
 }
-function greSrc(p,gnu,iv){ /* grep's pattern, a basic regular expression, as a RegExp's source; a bad one is thrown. V7's and 4.3BSD's: . * [ ] \( \) \1,
+function greSrc(p,gnu,iv,lit){ /* grep's pattern, a basic regular expression, as a RegExp's source; a bad one is thrown. V7's and 4.3BSD's: . * [ ] \( \) \1,
   ^ only first and $ only last (else themselves), * first is itself, and \c for any other c is c. System V's (iv) adds \{m,n\}; GNU's \| \+ \? \< \>
   \b \w \s and [:class:] too. + ? | ( ) { } are themselves: M-^? is the four characters cat -v shows */
   function esc(c){return c.replace(/[\\^$.*+?()[\]{}|\/-]/g,'\\$&')}
-  var o='',depth=0,start=true,ng=0,open=[],done={};
+  var o='',depth=0,start=true,ng=0,open=[],done=0,atom=-1,reps=false,gs=[],hat=false,asr=null,pend=null,ini=[0],acc=[0]; /* done: the groups closed so far, a bit each for 1 to 9 (all a backreference can name). ini, acc: glibc's completed groups at the start of each open alternation, and those its earlier alternatives closed: an alternative starts from the first, and the others' come back when it ends */
+  /* A: something that can be repeated; Q: a repeat, of all that the one before it repeated (a*\? is (a*)?, not JS's lazy a*?; a\?\+ is (a?)+);
+     Z: what takes no characters, or begins or divides: nothing there to repeat */
+  function A(t){atom=o.length;o+=t;reps=false}
+  function Q(t){if(reps&&atom>=0)o=o.slice(0,atom)+'(?:'+o.slice(atom)+')';o+=t;reps=true}
+  function R(t,min){ /* a repeat as GNU's takes it: of the \< \> \b \B just before it, which it leaves out if that may be no times and keeps if not; of the atom before it; or, with nothing there, itself */
+    if(pend&&lit)return false; /* lit: as glibc's regex has it, which GNU's grep uses for -o and with a backreference: the repeat there is its own characters */
+    if(pend){if(!min&&!pend.gone){o=o.slice(0,pend.at);pend.gone=true}asr=pend;return true}
+    if(atom<0)return false;
+    Q(t);return true;
+  }
+  function Z(t){o+=t;atom=-1;reps=false}
   for(var i=0;i<p.length;i++){
-    var c=p.charAt(i),was=start,m;start=false;
-    if(c==='^'&&was){o+='^';start=true;continue}
-    if(c==='$'&&(i===p.length-1||gnu&&/^\\[)|]/.test(p.substr(i+1,2)))){o+='$';continue}
-    if(c==='*'){o+=was?'\\*':'*';continue}
-    if(c==='.'){o+='.';continue}
+    var c=p.charAt(i),was=start,wasHat=hat,m;start=false;hat=false;pend=asr;asr=null;
+    if(c==='^'&&was&&!wasHat){Z('^');start=true;hat=true;continue} /* a second ^ is itself */
+    if(c==='$'&&(i===p.length-1||gnu&&/^\\[)|]/.test(p.substr(i+1,2)))){Z('$');continue}
+    if(c==='*'){if(was||!(gnu?R('*',0):(Q('*'),true)))A('\\*');continue}
+    if(c==='.'){A('.');continue}
     if(c==='['){
       var j=i+1,neg=false,b='',prev=null; /* prev: the item before, for GNU's range check: a character's code, or 'cl' for a [:class:] */
       if(p.charAt(j)==='^'){neg=true;j++}
@@ -283,20 +367,29 @@ function greSrc(p,gnu,iv){ /* grep's pattern, a basic regular expression, as a R
         b+=ch==='\\'||ch==='['||ch==='^'?'\\'+ch:ch;
       }
       if(j>=p.length)throw 'unmatched [';
-      o+='['+(neg?'^':'')+b+']';i=j;continue;
+      A('['+(neg?'^':'')+b+']');i=j;continue;
     }
-    if(c!=='\\'){o+=esc(c);continue}
+    if(c!=='\\'){A(esc(c));continue}
     if(++i>=p.length)throw 'trailing backslash';
     var n=p.charAt(i);
-    if(n==='('){o+='(';depth++;start=true;open.push(++ng);continue}
-    if(n===')'){if(!depth)throw 'unmatched )';o+=')';depth--;done[open.pop()]=true;continue}
-    if(n==='{'&&iv){if(!(m=/^(\d+)(,?)(\d*)\\\}/.exec(p.slice(i+1))))throw 'unmatched {';o+='{'+m[1]+m[2]+m[3]+'}';i+=m[0].length;continue}
-    if(/[1-9]/.test(n)){if(gnu&&!done[n])throw 'Invalid back reference';o+='(?:\\'+n+')';continue} /* GNU's regcomp: only a group already closed (REG_ESUBREG); (?:) keeps a digit after it its own */
-    if(gnu&&n==='|'){o+='|';start=true;continue}
-    if(gnu&&(n==='+'||n==='?')){o+=n;continue}
-    if(gnu&&(n==='<'||n==='>')){o+=n==='<'?'\\b(?=\\w)':'\\b(?<=\\w)';continue}
-    if(gnu&&/[bBwWsS]/.test(n)){o+='\\'+n;continue}
-    o+=esc(n);
+    if(n==='('){gs.push(o.length);Z('(');depth++;start=true;open.push(++ng);ini.push(done);acc.push(0);continue}
+    if(n===')'){if(!depth)throw 'unmatched )';o+=')';atom=gs.pop();reps=false;depth--;ini.pop();done|=acc.pop();var gn=open.pop();if(gn<10)done|=1<<gn;continue}
+    if(n==='{'&&iv){
+      if(!(m=(gnu?/^(\d*)(,?)(\d*)\\\}/:/^(\d+)(,?)(\d*)\\\}/).exec(p.slice(i+1)))||!m[1]&&!m[2])throw 'unmatched {';
+      i+=m[0].length;
+      if(!gnu)Q('{'+m[1]+m[2]+m[3]+'}');
+      else if(was||!R('{'+(m[1]||'0')+m[2]+m[3]+'}',+m[1]))('{'+m[1]+m[2]+m[3]+'}').split('').forEach(function(x){A(esc(x))}); /* GNU's \{,2\} is 0 to 2; with nothing to repeat, the characters themselves */
+      continue;
+    }
+    if(/[1-9]/.test(n)){if(gnu&&!(done>>+n&1))throw 'Invalid back reference';A('(?:\\'+n+')');continue} /* GNU's regcomp: only a group already closed (REG_ESUBREG); (?:) keeps a digit after it its own */
+    if(gnu&&n==='|'){Z('|');start=true;acc[acc.length-1]|=done;done=ini[ini.length-1];continue}
+    if(gnu&&(n==='+'||n==='?')){if(was||!R(n,n==='+'?1:0))A('\\'+n);continue} /* with nothing before it to repeat (at the start, after \( \| \< \> or \b), it is the character itself, as in GNU's */
+    if(gnu&&/[<>bB]/.test(n)){ /* first in its expression, what follows has nothing to repeat; after something, a repeat next is its own */
+      if(was){start=true;hat=true}else asr={at:o.length,gone:false}; /* and a ^ next is itself */
+      Z(n==='<'?'\\b(?=\\w)':n==='>'?'\\b(?<=\\w)':'\\'+n);continue;
+    }
+    if(gnu&&/[wWsS]/.test(n)){A('\\'+n);continue}
+    A(esc(n));
   }
   if(depth)throw 'unmatched (';
   return o;
@@ -319,62 +412,51 @@ cmd('grep','search for a pattern','grep [ -cinv ] pattern [ file ... ]',function
     sys5?'-s   error messages about files that do not exist or cannot be read are suppressed.':'-s   silent mode: nothing is printed (except error messages), only the status.'].concat(bsd?[
     '-h   do not print filename headers with output lines.']:[])];
 },function(a,raw,words){
-  var w=words.slice(1),fl=flags(w),rest=w.filter(function(x){return x.charAt(0)!=='-'||x==='-'&&P.profile.bash}),re,pats=null; /* GNU's - : its input */
-  if(P.profile.bash){ /* GNU's getopt: options anywhere before --; -e PATTERNS and -f FILE, as often as you like, and then every other word is a file */
-    fl='';rest=[];
-    var no=function(t){P.typeLine('grep: '+t,'err');P.typeLine('Usage: grep [OPTION]... PATTERNS [FILE]...','err');P.typeLine("Try 'grep --help' for more information.",'err');P.queue(function(){P.status(2)})};
-    var add=function(c,v){
-      if(c==='e'){pats=(pats||[]).concat(v.split('\n'));return true}
-      var n=P.find(v);
-      if(!n||n.type==='d'||n.prot||!P.may(n,'r')){P.typeLine('grep: '+v+': '+(!n?P.why(v,true):n.type==='d'?'Is a directory':'Permission denied'),'err');P.queue(function(){P.status(2)});return false}
-      pats=(pats||[]).concat(P.text(n)); /* -f: a pattern a line; an empty file, none, which nothing matches */
-      return true;
-    };
-    for(var i=0;i<w.length;i++){
-      var x=w[i],m=/^--(regexp|file)(?:=([\s\S]*))?$/.exec(x);
-      if(x==='--'){rest=rest.concat(w.slice(i+1));break}
-      if(m){var v=m[2]!==undefined?m[2]:w[++i];if(v===undefined){no("option '--"+m[1]+"' requires an argument");return}if(!add(m[1]==='file'?'f':'e',v))return;continue}
-      if(/^-[^-]/.test(x)){
-        for(var j=1;j<x.length;j++){
-          var c=x.charAt(j);
-          if(c!=='e'&&c!=='f'){fl+=c;continue}
-          var val=j+1<x.length?x.slice(j+1):w[++i];
-          if(val===undefined){no("option requires an argument -- '"+c+"'");return}
-          if(!add(c,val))return;
-          break;
-        }
-        continue;
-      }
-      rest.push(x);
-    }
-    if(pats)rest.unshift(null); /* the files are all the words */
+  var o=grepOpts(words.slice(1),false),re;
+  if(!o)return;
+  var fl=o.fl,rest=o.rest,pats=o.pats;
+  var gnu=P.profile.bash,only=gnu&&/o/.test(fl); /* -o: just what matched */
+  if(!rest.length){ /* no pattern: GNU's two lines and status 2 */
+    if(gnu){P.typeLine('Usage: grep [OPTION]... PATTERNS [FILE]...','err');P.typeLine("Try 'grep --help' for more information.",'err');P.queue(function(){P.status(2)})}
+    else P.typeLine('usage: '+P.man.grep.syn);
+    return;
   }
-  if(!rest.length){P.typeLine('usage: '+P.man.grep.syn);return}
-  var gnu=P.profile.bash,only=gnu&&/o/.test(fl),one=function(p){return gnu&&/F/.test(fl)?p.replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):greSrc(p,gnu,gnu||P.profile.sysv)}; /* GNU's -F: the pattern as it is; -o: just what matched */
-  var off=0; /* each -e's groups: \1 in the second pattern is its own first group, after the first pattern's */
-  try{var pat=pats?(pats.length?pats.map(function(p){var r=reShift(one(p),off);off+=r.n;return '(?:'+r.s+')'}).join('|'):'(?!)'):one(rest[0]); /* several: any of them */
-    re=P.safeRe(pat,/i/.test(fl)?'i':'')}catch(e){if(gnu&&(e==='Invalid range end'||e==='Invalid back reference')){P.typeLine('grep: '+e,'err');P.queue(function(){P.status(2)});return} /* GNU's, from regerror */P.typeLine('grep: bad pattern '+(pats?pats.join(' '):rest[0]),'err');return}
+  var set;
+  try{set=grepSet(o);re=set.re}catch(e){if(gnu&&(e==='Invalid range end'||e==='Invalid back reference')){P.typeLine('grep: '+e,'err');P.queue(function(){P.status(2)});return} /* GNU's, from regerror */P.typeLine('grep: bad pattern '+(pats?pats.join(' '):rest[0]),'err');return}
   /* the files in turn, each line with its file's name when there are more than one (and no -h). A file it cannot open: V7's grep
      says so and stops there (status 2); 4.3BSD's, System V's (IRIX) and GNU's go on, and end with status 2 all the same. -s: V7's
      and 4.3BSD's print nothing, for the status alone; System V's and GNU's leave out the messages about files. GNU's -q prints
      nothing and stops at the first match, which makes the status 0 whatever went wrong */
   var v7=!gnu&&!P.profile.csh,sys5=!gnu&&P.profile.sysv,S=/s/.test(fl);
   var quiet=gnu?/q/.test(fl):S&&!sys5,hush=S&&(gnu||sys5),F=rest.slice(1),many=F.length>1&&!((gnu||P.profile.perror)&&/h/.test(fl)),total=0,bad=false;
-  var all=only?P.safeRe(re.source,re.flags+'g'):null,v=/v/.test(fl),num=/n/.test(fl),cnt=/c/.test(fl); /* all: each line's exec runs to its null, which leaves lastIndex at 0 for the next */
+  var all=only?P.safeRe(set.out.source,re.flags+'g'):null,alts=only&&gnu?grepAlts(set.out):null,also=set.also,v=/v/.test(fl),num=/n/.test(fl),cnt=/c/.test(fl); /* all: each line's exec runs to its null, which leaves lastIndex at 0 for the next */
   function scan(L,name){
     var hits=[],n=0,pre=name!==undefined&&many?name+':':'';
     for(var i=0;i<L.length;i++){
       var l=L[i];
-      var hit=re.test(l);
-      if(re.overflow&&gnu){dead=true;break}
+      var hit=re.test(l)&&(!also||also.test(l));
+      if((re.overflow||also&&also.overflow)&&gnu){dead=true;break}
       if(hit===v)continue;
       n++;
       if(quiet&&gnu)break;
       var at=pre+(num?(i+1)+':':'');
       if(!only){hits.push(at+l);continue}
       if(v)continue; /* -v -o: the lines that do not match have no matching part to print */
-      for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
-      if(all.overflow&&gnu){dead=true;break}
+      var ovf=false;
+      if(alts){ /* each alternative's next match from where the last one printed ended, looked for again only once that is passed: the leftmost start, and the longest there */
+        for(var pos=0,nx=alts.map(function(){return -1}),ln=[];pos<=l.length&&!ovf;){
+          var st=Infinity,len=0;
+          for(var k=0;k<alts.length;k++){
+            if(nx[k]<pos){alts[k].lastIndex=pos;var x=alts[k].exec(l);if(alts[k].overflow)ovf=true;nx[k]=x?x.index:Infinity;ln[k]=x?x[0].length:0;alts[k].lastIndex=0}
+            if(nx[k]<st){st=nx[k];len=ln[k]}else if(nx[k]===st&&ln[k]>len)len=ln[k];
+          }
+          if(st===Infinity)break;
+          if(!len){pos=st+1;continue} /* an empty one is not printed */
+          hits.push(at+l.substr(st,len));pos=st+len;
+        }
+      }
+      else for(var m;(m=all.exec(l));){if(!m[0]){all.lastIndex++;continue}hits.push(at+m[0])} /* each match on its own line; an empty one is not printed. exec's null leaves lastIndex at 0 */
+      if((all.overflow||ovf)&&gnu){dead=true;break}
     }
     total+=n;
     if(!quiet&&!(dead&&cnt)){if(cnt)P.typeLine(pre+n);else P.say(hits)}

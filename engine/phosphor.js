@@ -50,15 +50,16 @@ function bre(s){
    the same place twice (RE2's BitState): the same matches, the same leftmost alternative first and the same groups, in steps
    bounded by the pattern's size times the line's. A backreference makes the groups it names part of that place, checked first
    against the pattern with any text in its stead, and then given a budget: past it, exec says no and sets overflow, as
-   regexec's REG_ESPACE does. A pattern with no repetition or alternation, or with what it does not know (a lookaround of more
+   regexec's REG_ESPACE does. One character repeated (a*, .{0,30000}, \(a\)\{9\}) is a single counted step, whatever its count.
+   All the matching one command or key sets off has an allowance of steps as well. A pattern with no repetition or alternation, or with what it does not know (a lookaround of more
    than one character, an octal escape), is the RegExp's own */
-var SAFE_BUDGET=5e5,SAFE_STEPS=1e6,SAFE_BAIL={},SAFE_BIG={}; /* BUDGET: steps with a backreference; STEPS: without, past the table's 4e6 places; BIG: a program too large to build */
+var SAFE_BUDGET=5e5,SAFE_STEPS=1e7,SAFE_SET=3e5,SAFE_BURST=3e7,SAFE_GONE=64,SAFE_RUN=0,SAFE_TIME=2000,SAFE_MS=0,SAFE_SPENT=0,SAFE_BAIL={},SAFE_BIG={}; /* steps allowed: BUDGET with a backreference; STEPS without; SET past the table's 1.28e8 places; BURST in all for one command or key (SPENT: so far). TIME: milliseconds of matching in all for one command or key (MS: so far), whatever the steps cost. BIG: a program too large to build */
 function reCanon(c){var u=String.fromCharCode(c).toUpperCase();if(u.length!==1)return c;var cu=u.charCodeAt(0);return c>=128&&cu<128?c:cu} /* the spec's Canonicalize, without the u flag */
 function reLower(c){var l=String.fromCharCode(c).toLowerCase();return l.length===1?l.charCodeAt(0):c}
 function reWord(c){return c>=48&&c<=57||c>=65&&c<=90||c===95||c>=97&&c<=122}
 function reSpace(c){return c===9||c===10||c===11||c===12||c===13||c===32||c===0xa0||c===0x1680||c>=0x2000&&c<=0x200a||c===0x2028||c===0x2029||c===0x202f||c===0x205f||c===0x3000||c===0xfeff}
 function reParse(src){ /* a RegExp's source (already valid) as a tree, or SAFE_BAIL thrown */
-  var i=0,n=src.length,ng=0,gi=0,hard=false,refs=[];
+  var i=0,n=src.length,ng=0,gi=0,hard=false,wide=false,refs=[];
   for(var k=0,cl=false;k<n;k++){var ch=src.charAt(k);if(ch==='\\'){k++;continue}if(cl){if(ch===']')cl=false;continue}if(ch==='[')cl=true;else if(ch==='('&&src.charAt(k+1)!=='?')ng++}
   function bail(){throw SAFE_BAIL}
   function alt(){var L=[seq()];while(src.charAt(i)==='|'){i++;L.push(seq())}if(L.length>1)hard=true;return L.length>1?{t:'alt',L:L}:L[0]}
@@ -116,14 +117,16 @@ function reParse(src){ /* a RegExp's source (already valid) as a tree, or SAFE_B
     function add(x){if(x.f)F.push(x.f);else R.push([x.c,x.c])}
     while(i<n&&src.charAt(i)!==']'){
       var a=one();
-      if(src.charAt(i)==='-'&&i+1<n&&src.charAt(i+1)!==']'){i++;var b=one();if(a.f||b.f){add(a);add({c:45});add(b)}else R.push([a.c,b.c]);continue}
+      if(src.charAt(i)==='-'&&i+1<n&&src.charAt(i+1)!==']'){i++;var b=one();if(a.f||b.f){add(a);add({c:45});add(b)}else R.push([a.c,b.c]);if(R.length+F.length>1000)wide=true;continue}
       add(a);
+      if(R.length+F.length>1000)wide=true; /* a class of thousands: each character tried against it would take its time, uncounted */
     }
     i++;
     return {t:'set',f:function(x){for(var k=0;k<R.length;k++)if(x>=R[k][0]&&x<=R[k][1])return true;for(k=0;k<F.length;k++)if(F[k](x))return true;return false},neg:neg};
   }
   var tree=alt();
   if(i<n)bail();
+  if(wide&&hard)throw SAFE_BIG; /* with no repetition or alternation it is the RegExp's own, which goes straight through */
   return {tree:tree,ng:ng,hard:hard,refs:refs.filter(function(r,k){return refs.indexOf(r)===k})};
 }
 function reCompile(T,ic,pre){ /* the tree as a program; pre: each backreference as any text at all */
@@ -160,6 +163,10 @@ function reCompile(T,ic,pre){ /* the tree as a program; pre: each backreference 
       if(pre){var l0=emit({op:2,x:0,y:0});emit({op:0,f:function(){return true}});emit({op:3,x:l0});prog[l0].x=l0+1;prog[l0].y=prog.length;return}
       emit({op:6,n:nd.n});return;
     case 'rep':
+      var grp=nd.e.t==='group'&&nd.e.e.t==='seq'&&nd.e.e.L.length===1,one=grp?nd.e.e.L[0]:nd.e,cg=grp?nd.e.n:0; /* (a){3}: the group is the last a */
+      if(one.t==='char'||one.t==='set'||one.t==='any'){ /* a{30000}, .*: one character, counted: one instruction that takes the run, and one that gives it back a character at a time */
+        var pf=pred(one);emit({op:10,f:pf,min:nd.min,max:nd.max,greedy:nd.greedy});emit({op:11,f:pf,min:nd.min,max:nd.max,greedy:nd.greedy,g:cg});return;
+      }
       var G=groups(nd.e,[]),clr=function(){if(G.length)emit({op:5,g:G})};
       for(k=0;k<nd.min;k++){clr();comp(nd.e)}
       var opt=function(){var r=nreg++;emit({op:8,r:r});act.push(r);clr();comp(nd.e);emit({op:9,r:r});act.pop()}; /* past its minimum, an iteration that matched nothing fails (RepeatMatcher) */
@@ -174,39 +181,90 @@ function reCompile(T,ic,pre){ /* the tree as a program; pre: each backreference 
   return prog;
 }
 function reRun(prog,ng,refs,ic,s,from,sticky,budget){ /* the leftmost match from from on: its group bounds, null, or false past the budget */
-  var n=s.length,W=n+1,m=prog.length,D=prog.deep+1,big=m*W*D>4e6,seen=refs.length||big?new Set():new Uint8Array(m*W*D),steps=0;
-  var caps=[],regs=[],stack=[];
+  var n=s.length,W=n+1,m=prog.length,D=prog.deep+1,big=m*W*D>1.28e8,need=(m*W*D>>3)+1,seen,touched=null,steps=0,t0=Date.now();
+  if(SAFE_MS>SAFE_TIME)return false;
+  if(refs.length||big)seen=new Set();
+  else if(need>1<<20){seen=new Uint8Array(need);steps=need>>8} /* the places been at, a bit each; a large table's making counts as steps */
+  else{seen=prog.tab&&prog.tab.length>=need?prog.tab:(prog.tab=new Uint8Array(need));touched=[]} /* a small one is kept, and wiped where it was written: the next match along the same line starts clean at no cost */
+  var lim=Math.min(refs.length?budget:big?SAFE_SET:SAFE_STEPS,SAFE_BURST-SAFE_SPENT);
+  var caps=[],regs=[],stack=[],runs=prog.rs===s?prog.rr:(prog.rs=s,prog.rr=[]),gone=[],goneN=0,run=++SAFE_RUN,tick=0; /* runs: where each counted character's runs are in this line, kept for the next match along it (grep -o, s///g) */
+  try{
   for(var st=from;st<=n;st++){
     for(var k=0;k<2*(ng+1);k++)caps[k]=-1;
     caps[0]=st;stack.length=0;stack.push(0,st,-1);
+    if((tick+=ng+1)>4096){tick=0;if(SAFE_MS+Date.now()-t0>SAFE_TIME)return false}
     while(stack.length){
       var z=stack.pop(),pos=stack.pop(),pc=stack.pop();
       if(z>=0){caps[z]=pos;continue} /* a group's bound put back */
       if(z<-1){regs[-2-z]=pos;continue} /* where an iteration began, put back */
+      var o=prog[pc];
+      if(o.op===11){ /* a counted run, from S, ending at E this time; the next end to try is left behind */
+        var E=pos%W,S=(pos-E)/W,A=prog[pc+1].act,U=null,to,v,at;
+        if(++steps>lim)return false;
+        /* gone: for each end already gone on from (with no iteration starting there, so at the one place), how far the next one not yet
+           gone on from is: those between need not be come back to, and are stepped over at once, but for an iteration's start among them */
+        if(!refs.length&&!(U=gone[pc])&&(o.n=o.x===run?o.n+1:(o.x=run,1))>SAFE_GONE&&(goneN+=W+2)<=4e6){U=gone[pc]=new Int32Array(W+2);steps+=W>>4} /* kept from the 64th time it comes back in one search: before that there is little to step over */
+        if(o.greedy){
+          var low=S+o.min;
+          if(U){
+            to=E;while(to>=0&&U[to])to-=U[to];
+            for(v=E;v>to;){at=U[v];U[v]=v-to;v-=at}
+            at=-1;if(A)for(k=0;k<A.length;k++){v=regs[A[k]];if(v>to&&v<=E&&v>=low&&v>at)at=v}
+            if(at>=0)E=at;
+            else{if(to<low)continue;E=to;U[E]=1}
+          }
+          if(E>low)stack.push(pc,(E-1)+S*W,-1);
+        }else{
+          var c0=runs[pc-1],top=c0&&S>=c0[0]&&S<=c0[1]?Math.min(c0[1],S+o.max):-1; /* how far the run goes, where that is still known */
+          if(U&&top>=0){
+            to=E;while(to<=n&&U[to])to+=U[to];
+            for(v=E;v<to;){at=U[v];U[v]=to-v;v+=at}
+            at=-1;if(A)for(k=0;k<A.length;k++){v=regs[A[k]];if(v>=E&&v<to&&v<=top&&(at<0||v<at))at=v}
+            if(at>=0)E=at;
+            else{if(to>top)continue;E=to;U[E]=1}
+          }
+          if(top>=0?E<top:E-S<o.max&&E<n&&o.f(s.charCodeAt(E)))stack.push(pc,(E+1)+S*W,-1);
+        }
+        if(o.g){stack.push(0,caps[2*o.g],2*o.g,0,caps[2*o.g+1],2*o.g+1);caps[2*o.g]=E>S?E-1:-1;caps[2*o.g+1]=E>S?E:-1}
+        pos=E;pc++;
+      }
       for(;;){
-        var o=prog[pc],e=0; /* e: of the iterations it is inside, how many have matched nothing yet; the loops' starts nest, so that is all they add to the place */
+        o=prog[pc];var e=0; /* e: of the iterations it is inside, how many have matched nothing yet; the loops' starts nest, so that is all they add to the place */
         if(o.act)for(k=0;k<o.act.length;k++)if(regs[o.act[k]]===pos)e++;
         if(refs.length){
           var key=pc+','+pos+','+e;for(k=0;k<refs.length;k++)key+=','+caps[2*refs[k]]+','+caps[2*refs[k]+1];
-          if(seen.has(key))break;seen.add(key);if(++steps>budget)return false;
-        }else{var kk=(pc*W+pos)*D+e;if(big){if(seen.has(kk))break;seen.add(kk)}else{if(seen[kk])break;seen[kk]=1}if(big&&++steps>SAFE_STEPS)return false} /* each place once; past the table, not more than STEPS of them */
+          if(seen.has(key))break;seen.add(key);
+        }else{var kk=(pc*W+pos)*D+e;if(big){if(seen.has(kk))break;seen.add(kk)}else{var bi=kk>>3,bm=1<<(kk&7);if(seen[bi]&bm)break;if(touched&&!seen[bi])touched.push(bi);seen[bi]|=bm}} /* each place once */
+        if(++steps>lim)return false;
+        if(++tick>4096){tick=0;if(SAFE_MS+Date.now()-t0>SAFE_TIME)return false}
         switch(o.op){
         case 0:if(pos<n&&o.f(s.charCodeAt(pos))){pc++;pos++;continue}break;
         case 1:if(o.f(s,pos)){pc++;continue}break;
         case 2:stack.push(o.y,pos,-1);pc=o.x;continue;
         case 3:pc=o.x;continue;
         case 4:stack.push(0,caps[o.k],o.k);caps[o.k]=pos;pc++;continue;
-        case 5:for(k=0;k<o.g.length;k++){var g=o.g[k];stack.push(0,caps[2*g],2*g,0,caps[2*g+1],2*g+1);caps[2*g]=caps[2*g+1]=-1}pc++;continue;
+        case 5:tick+=o.g.length;if(stack.length>2e7)return false;for(k=0;k<o.g.length;k++){ /* thousands of groups cleared each time round: the way back is not kept without end */var g=o.g[k];stack.push(0,caps[2*g],2*g,0,caps[2*g+1],2*g+1);caps[2*g]=caps[2*g+1]=-1}pc++;continue;
         case 6:
           var a=caps[2*o.n],b=caps[2*o.n+1];
           if(a<0||b<0){pc++;continue} /* a group that took part in nothing matches the empty string */
           var len=b-a;if(pos+len>n)break;
+          tick+=len;if(tick>4096){tick=0;if(SAFE_MS+Date.now()-t0>SAFE_TIME)return false}
           for(k=0;k<len;k++){var x=s.charCodeAt(a+k),y=s.charCodeAt(pos+k);if(x!==y&&!(ic&&reCanon(x)===reCanon(y)))break}
           if(k<len)break;
           pos+=len;pc++;continue;
         case 7:caps[1]=pos;return caps.slice();
         case 8:stack.push(0,regs[o.r],-2-o.r);regs[o.r]=pos;pc++;continue;
         case 9:if(pos===regs[o.r])break;pc++;continue;
+        case 10:
+          var c=runs[pc],b; /* the run of its character from here on: found once, and kept */
+          if(c&&pos>=c[0]&&pos<=c[1])b=c[1];
+          else{
+            b=pos;while(b<n&&o.f(s.charCodeAt(b))){b++;if(++steps>lim)return false;if(++tick>4096){tick=0;if(SAFE_MS+Date.now()-t0>SAFE_TIME)return false}if(c&&b===c[0]){b=c[1];break}}
+            if(c&&pos<c[0]&&b===c[1])c[0]=pos;else runs[pc]=[pos,b];
+          }
+          var r=Math.min(b-pos,o.max);
+          if(r>=o.min)stack.push(pc+1,(o.greedy?pos+r:pos+o.min)+pos*W,-1);
+          break;
         }
         break;
       }
@@ -214,29 +272,47 @@ function reRun(prog,ng,refs,ic,s,from,sticky,budget){ /* the leftmost match from
     if(sticky)break;
   }
   return null;
+  }finally{
+    SAFE_SPENT+=steps;SAFE_MS+=Date.now()-t0;
+    if(touched){if(touched.length*16<need)for(k=0;k<touched.length;k++)seen[touched[k]]=0;else seen.fill(0,0,need)}
+  }
 }
 class SafeRe extends RegExp{
   constructor(src,flags){
     super(src,flags);
     var T=null;
-    try{if(!/[msuv]/.test(this.flags)){T=reParse(this.source);if(!T.hard)T=null;else{T.prog=reCompile(T,this.ignoreCase,false);if(T.refs.length)T.pre=reCompile(T,this.ignoreCase,true)}}}catch(e){if(e===SAFE_BIG)T={big:true};else if(e!==SAFE_BAIL)throw e;else T=null} /* too big to run safely: it matches nothing, as overflow (regcomp's REG_ESPACE) */
+    try{if(!/[msuv]/.test(this.flags)){if(this.source.length>2e5){if(/[*+?{|(]/.test(this.source))throw SAFE_BIG;throw SAFE_BAIL} /* megabytes of pattern: not gone through at all */
+      T=reParse(this.source);if(!T.hard)T=null;else{T.prog=reCompile(T,this.ignoreCase,false);if(T.refs.length)T.pre=reCompile(T,this.ignoreCase,true)}}}catch(e){if(e===SAFE_BIG||e instanceof RangeError)T={big:true};else if(e!==SAFE_BAIL)throw e;else T=reTame(this.source)?null:{big:true}} /* what it does not know, with a repeat, an alternative or a backreference in it, is not the RegExp's to go round and round on: refused as well */ /* RangeError: nested thousands deep */ /* too big to run safely: it matches nothing, as overflow (regcomp's REG_ESPACE) */
     this.safe=T;this.overflow=false;
+    if(!T&&this.source.length>1000){RegExp.prototype.exec.call(this,'');this.lastIndex=0} /* one too large for the RegExp says so now, as a bad pattern, not at its first line */
   }
   exec(s){
     var T=this.safe;
     if(!T)return super.exec(s);
-    if(T.big||this.overflow){this.overflow=true;if(this.global||this.sticky)this.lastIndex=0;return null}
+    this.overflow=false;
+    if(T.big){this.overflow=true;if(this.global||this.sticky)this.lastIndex=0;return null}
     s=String(s);
-    var g=this.global||this.sticky,from=g?Math.max(+this.lastIndex||0,0):0;
+    var g=this.global||this.sticky,from=g?Math.max(Math.floor(+this.lastIndex)||0,0):0;
     if(from>s.length){if(g)this.lastIndex=0;return null}
     var pre=T.pre&&reRun(T.pre,T.ng,[],this.ignoreCase,s,from,this.sticky,0),c=pre===false?false:T.pre&&!pre?null:reRun(T.prog,T.ng,T.refs,this.ignoreCase,s,from,this.sticky,SAFE_BUDGET);
     if(c===false){this.overflow=true;c=null}
     if(!c){if(g)this.lastIndex=0;return null}
     if(g)this.lastIndex=c[1];
-    var r=[];for(var k=0;k<=T.ng;k++)r.push(c[2*k]>=0&&c[2*k+1]>=0?s.slice(c[2*k],c[2*k+1]):undefined);
+    var t0=Date.now(),r=[];for(var k=0;k<=T.ng;k++)r.push(c[2*k]>=0&&c[2*k+1]>=0?s.slice(c[2*k],c[2*k+1]):undefined);
     r.index=c[0];r.input=s;r.groups=undefined;
+    if(T.ng>64)SAFE_MS+=Date.now()-t0; /* thousands of groups, given back match after match, take their time too */
     return r;
   }
+}
+function reTame(src){ /* nothing in it to go back over: no repeat, alternative or backreference, classes and escapes apart */
+  for(var i=0;i<src.length;i++){
+    var c=src.charAt(i),m;
+    if(c==='\\'){if(/[1-9k]/.test(src.charAt(i+1)))return false;i++;continue}
+    if(c==='['){for(i++;i<src.length&&src.charAt(i)!==']';i++)if(src.charAt(i)==='\\')i++;continue}
+    if(c==='('&&src.charAt(i+1)==='?'){if(!(m=/^\(\?(?:<[A-Za-z_$][\w$]*>|<?[=!]|:)/.exec(src.slice(i))))return false;i+=m[0].length-1;continue}
+    if(/[*+?{|]/.test(c))return false;
+  }
+  return true;
 }
 function safeRe(src,flags){return new SafeRe(src,flags)}
 
@@ -1691,6 +1767,17 @@ if(OWNED&&OWNER!==ST.user)(function(){
     if(n.type==='d')walk(n,p);
   })})(H,ST.home);
   H.owner=ST.user;
+  var own=PROFILE.home?null:find(PROFILE.homes+'/'+OWNER,true); /* the owner's own home, where the machine has one: it, and what the site puts in it, are the owner's alone, to read and to write */
+  if(own&&own!==H&&own.type==='d'){
+    if(own.owner===OWNER&&!own.mode)own.mode='drwx------';
+    (function mine(d){Object.keys(d.kids).forEach(function(k){
+      var n=d.kids[k];
+      if(seen.has(n))return;
+      seen.add(n);
+      if(n.owner===OWNER&&!n.mode&&!n.dev&&n.type!=='s')n.mode=n.type==='d'?'drwx------':n.bin?'-rwx------':'-rw-------';
+      if(n.type==='d')mine(n);
+    })})(own);
+  }
   PROFILE.files.map(function(f){return f.name}).concat(PROFILE.dirs,PROFILE.protected).forEach(function(p){
     var abs=norm(p.replace(/\/+$/,''));
     if(abs===ST.home||abs.indexOf(ST.home+'/')===0)return;
@@ -3792,6 +3879,7 @@ function unparkJobs(p){
 }
 function endJobs(){TABLE.slice().forEach(function(j){j.dead=true;j.state='Killed';j.sig=1;ended(j)});TABLE=[];CUR={c:null,p:null};V7NOTE=[];FGJOB=null} /* logout: the session's jobs go with it */
 function execSeg(seg){
+  SAFE_SPENT=SAFE_MS=0;queue(function(){SAFE_SPENT=SAFE_MS=0}); /* each command has the matcher's whole allowance, when it is read and when its turn comes */
   var fm;if(SV&&(fm=FNDEF.exec(seg))&&fm[2].trim()){queue(function(){fnDefine(fm)});return} /* System V's name() command */
   if(!PROFILE.dos&&/[^&><|\s\\]\s*&\s*$/.test(seg)&&isBack(seg)){ /* echo a &: its own process, which nobody waits for. exit, break or cd in it end or change only that process */
     var back=null,was,text=seg.replace(/&\s*$/,'');
@@ -4132,9 +4220,12 @@ function pipeReader(stages,i){ /* what the command at stages[i] does with the pi
   }
   var ops=w.slice(1).filter(function(x){return x.charAt(0)!=='-'||x==='-'}),pass,fl,re;
   if(w[0]==='cat'||w[0]==='tee'||w[0]==='tr')pass=function(){return true};
-  else if(w[0]==='grep'&&ops.length&&!/[co]/.test(fl=w.slice(1).filter(function(x){return /^-./.test(x)}).join(''))){ /* the lines it prints */
-    try{re=safeRe(PROFILE.bash&&/F/.test(fl)?ops[0].replace(/[\\^$.*+?()[\]{}|\/]/g,'\\$&'):ops[0],/i/.test(fl)?'i':'')}catch(e){return gone}
-    pass=function(l){return re.test(l)!==/v/.test(fl)};ops=ops.slice(1);
+  else if(w[0]==='grep'&&PH.grepPlan){ /* the lines it prints */
+    var g=PH.grepPlan(w.slice(1));
+    if(!g)return gone; /* it only complains, and reads nothing */
+    if(/[co]/.test(g.fl))return null;
+    re=g.re;fl=g.fl;ops=g.files;
+    pass=function(l){return g.test(l)!==/v/.test(fl)};
   }
   else return null;
   if(w[0]!=='tee'&&w[0]!=='tr'&&ops.some(function(x){return x!=='-'}))return gone; /* cat f, grep x f: they read their files */
@@ -5038,7 +5129,8 @@ function kbInput(composing){
   if(grew)strike(v.slice(-1));
   setBuf(v);
 }
-kb.addEventListener('input',function(e){kbInput(e.isComposing)});
+kb.addEventListener('input',function(e){SAFE_SPENT=SAFE_MS=0;kbInput(e.isComposing)});
+document.addEventListener('keydown',function(){SAFE_SPENT=SAFE_MS=0},true); /* and so has each key (vi's, ed's lines) */
 function strike(k){if(TELE.on)ttStrike(k);else click(k==='Backspace'?.556:.667)} /* the sound of a key typed at the prompt */
 kb.addEventListener('compositionend',function(){if(KEYS)feedKb(true);else if(TELE.on)kbInput(false)});
 ['pointerup','keyup'].forEach(function(t){kb.addEventListener(t,function(){if(TELE.on&&!KEYS&&kb.selectionStart!==kb.value.length)kb.setSelectionRange(kb.value.length,kb.value.length);else if(!KEYS)renderBuf()})}); /* no caret back along the paper */
