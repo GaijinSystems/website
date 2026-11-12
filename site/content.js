@@ -25,12 +25,19 @@ this is a workshop of adventure, tinkering, and low cunning. in it you will find
 here is what is on the bench:
 ~ tap or click a title to visit.
 
-phosphor-9          ~~2026-11-01~~ {year}-11-01 -> https://phosphor.gaijin.systems
+account register               2026-11-12 -> https://github.com/GaijinSystems/accountregister
+phosphor-9                     2026-11-01 -> https://github.com/GaijinSystems/phosphor
 
 ~ no terminal should be without one!
 
 to reach the operator, write to:
 {email} -> mailto:{email}
+
+# The source command, in place of the built-in one (switched off with "commands: -source" in site/config.js).
+== command: source | where to get the source code ==
+this terminal is free software (gnu agpl v3 or later).
+the source code for it, and for every project in the letter, is at:
+https://github.com/GaijinSystems -> https://github.com/GaijinSystems
 
 == aliases ==
 cl = clear
