@@ -25,7 +25,7 @@ this is a workshop of adventure, tinkering, and low cunning. in it you will find
 here is what is on the bench:
 ~ tap or click a title to visit.
 
-account register               2026-11-12 -> https://github.com/GaijinSystems/accountregister
+account register               2026-11-12 -> https://github.com/GaijinSystems/account-register
 phosphor-9                     2026-11-01 -> https://github.com/GaijinSystems/phosphor
 
 ~ no terminal should be without one!
