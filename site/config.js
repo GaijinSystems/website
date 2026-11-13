@@ -9,7 +9,7 @@ Phosphor.content(String.raw`
 #   {year}      the connected machine's year, from machines/machines.js (not set here)
 
 machine:   linux
-machines:  linux, bbs, c128, apple2, dos, trs80
+machines:  v7, vm370, trs80, multics, cpm, apple2, tops20, c128, bsd, dos, vms, bbs, irix, linux
 name:      gaijin
 email:     support@gaijin.systems
 domain:    gaijin.systems
