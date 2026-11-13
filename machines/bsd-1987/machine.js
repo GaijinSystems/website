@@ -133,7 +133,7 @@ alias la 'ls -a'
 alias ll 'ls -l'
 alias lla 'ls -l -a'
 
-== file: .exfiltrated/.adventure ==
+== file: .adventure ==
 ~ saved game - colossal cave
 you are in a maze of twisty little passages, all alike.
 score: 36 of 350.
