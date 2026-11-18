@@ -25,6 +25,7 @@ this is a workshop of adventure, tinkering, and low cunning. in it you will find
 here is what is on the bench:
 ~ tap or click a title to visit.
 
+opencloud sid player           2026-11-17 -> https://github.com/GaijinSystems/opencloud-sidplayer
 opencloud radio                2026-11-15 -> https://github.com/GaijinSystems/opencloud-radio
 opencloud comic reader         2026-11-14 -> https://github.com/GaijinSystems/opencloud-comicreader
 account register               2026-11-12 -> https://github.com/GaijinSystems/account-register
