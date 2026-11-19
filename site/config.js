@@ -8,8 +8,8 @@ Phosphor.content(String.raw`
 #   {site}      the address the page was served from (not set here); {hostname} from a file
 #   {year}      the connected machine's year, from machines/machines.js (not set here)
 
-machine:   linux
-machines:  v7, vm370, trs80, multics, cpm, apple2, tops20, c128, bsd, dos, vms, bbs, irix, linux
+machine:   v7
+machines:  v7
 name:      gaijin
 email:     support@gaijin.systems
 domain:    gaijin.systems
@@ -22,7 +22,7 @@ teletype:  yes
 source:    https://github.com/GaijinSystems
 # the site's own source command (site/content.js) takes the built-in one's place
 commands:  -source
-protected: /home/gaijin/photo01.pic, /home/gaijin/photo02.pic, /home/gaijin/photo03.pic, /home/gaijin/secrets, .old/terminal.rom
+protected: /usr/gaijin/photo01.pic, /usr/gaijin/photo02.pic, /usr/gaijin/photo03.pic, /usr/gaijin/secrets, .old/terminal.rom
 guest files: .profile, .trash
 # persist:  no
 

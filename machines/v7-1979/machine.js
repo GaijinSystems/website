@@ -37,6 +37,7 @@ Boot @300
 : hp(0,0)unix @500
 mem = 1032192 @400
 ~ (going multi-user) @400
+~
 
 == dmesg ==
 unix/v7 (pdp-11/70)

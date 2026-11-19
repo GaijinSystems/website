@@ -11,7 +11,7 @@
    teletype:true: a machine that can drive a Teletype Model 33 ("teletype: yes" in site/config.js); the others ignore that setting.
    Listed oldest first; connect lists them by year whatever order a site gives. */
 Phosphor.machines({
-  v7:{name:'pdp-11/70, version 7 unix',year:1979,teletype:true,dir:'machines/v7-1979',files:['later.js','machine.js','fs.js']},
+  v7:{name:'pdp-11/70, version 7 unix',year:1979,teletype:true,dir:'machines/v7-1979',files:['later.js','machine.js','fs.js','../shared/after-login.js','../shared/connect.js']},
   vm370:{name:'ibm system/370, vm/370 release 6',year:1980,saves:'own',dir:'machines/vm370-1980',files:['machine.js','disk.js','cp.js','edit.js','exec.js','sys.js','cms.js']},
   trs80:{name:'trs-80 model iii, trsdos 1.3',year:1981,saves:'own',dir:'machines/trs80-1981',files:['trs80.css','machine.js','basic.js','disk.js','trs80.js']},
   multics:{name:'honeywell level 68, multics mr8.0',year:1981,saves:'own',dir:'machines/multics-1981',files:['machine.js','commands.js','qedx.js','fs.js','info.js']},
